@@ -1,0 +1,32 @@
+{
+  "name": "hotelbooking",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "npm start --prefix backend",
+    "deploy": "node build_and_deploy.cjs"
+  },
+  "dependencies": {
+    "bootstrap": "^5.3.8",
+    "framer-motion": "^12.23.24",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-router-dom": "^7.9.4",
+    "react-to-print": "^3.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.0.27",
+    "@types/react-dom": "^18.0.10",
+    "@vitejs/plugin-react": "^3.1.0",
+    "autoprefixer": "^10.4.13",
+    "postcss": "^8.4.21",
+    "react-icons": "^4.12.0",
+    "tailwindcss": "^3.2.6",
+    "vite": "^4.1.0",
+    "vite-plugin-svgr": "^2.4.0"
+  }
+}

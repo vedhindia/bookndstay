@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-and-package:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Install admin dependencies
+        working-directory: admin
+        run: npm ci
+
+      - name: Install vendor dependencies
+        working-directory: vendor
+        run: npm ci
+
+      - name: Install root dependencies and build frontends
+        run: |
+          npm install
+          npm run deploy
+
+      - name: Upload backend bundle with built frontends
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-with-built-frontends
+          path: |
+            backend/**
+            !backend/node_modules/**
+            !backend/**/*.log

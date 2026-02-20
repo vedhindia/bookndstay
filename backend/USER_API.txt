@@ -1,0 +1,78 @@
+USER API DOCUMENTATION
+======================
+Base URL: /api/user
+
+AUTHENTICATION
+--------------
+POST /api/user/auth/register
+- Body: { name, email, password, phone, role } (role: USER)
+POST /api/user/auth/login
+- Body: { email, password }
+- Response: { token, user }
+
+HOTELS
+------
+GET /api/public/hotels
+- Query: ?location=London&checkIn=...
+GET /api/user/hotels/:hotelId
+- Get detailed hotel info
+
+BOOKINGS
+--------
+POST /api/user/bookings
+- Body: { 
+    hotel_id: 1, 
+    room_type: "AC" | "NON_AC", 
+    check_in: "YYYY-MM-DD", 
+    check_out: "YYYY-MM-DD", 
+    guests: 2,
+    coupon_code: "WELCOME20" (Optional)
+  }
+GET /api/user/bookings
+GET /api/user/bookings/:bookingId
+POST /api/user/bookings/:bookingId/cancel
+
+PAYMENTS
+--------
+GET /api/public/payment-key
+- Returns: { key: "rzp_test_..." }
+POST /api/user/bookings/:bookingId/pay
+- Returns: { order_id, amount, currency, key }
+POST /api/user/bookings/:bookingId/payment/complete
+- Body: { gateway_payment_id, status: "success" | "failed" }
+
+COUPONS
+-------
+GET /api/user/coupons/available
+- Returns: List of active global coupons
+
+POST /api/user/coupons/apply
+- Body: { 
+    code: "SAVE20", 
+    amount: 1000 (Optional, to calculate exact discount) 
+  }
+- Response: {
+    success: true,
+    data: {
+      coupon: { code, type, value },
+      discount: {
+        input_amount: 1000,
+        discount_amount: 200,
+        total_after_discount: 800
+      }
+    }
+  }
+
+REVIEWS
+-------
+POST /api/user/reviews
+- Body: { hotel_id: 1, rating: 5, comment: "Great stay!" }
+GET /api/user/reviews/my-reviews
+PUT /api/user/reviews/:reviewId
+DELETE /api/user/reviews/:reviewId
+
+PROFILE
+-------
+GET /api/user/profile
+PUT /api/user/profile
+- Multipart form data: full_name, phone, address, profile_photo (file)
