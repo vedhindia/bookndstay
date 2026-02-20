@@ -1,4 +1,4 @@
-name: CI
+name: CI/CD
 
 on:
   push:
@@ -47,3 +47,43 @@ jobs:
             backend/**
             !backend/node_modules/**
             !backend/**/*.log
+
+  deploy-to-vps:
+    needs: build-and-package
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Download backend bundle with built frontends
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-with-built-frontends
+          path: release
+
+      - name: Copy backend bundle to VPS
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          source: "release/backend/*"
+          target: ${{ secrets.APP_DIR }}
+          rm: true
+
+      - name: Install dependencies and restart app on VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            cd ${{ secrets.APP_DIR }}
+            npm install --production
+            if pm2 describe bookndstay >/dev/null 2>&1; then
+              pm2 restart bookndstay
+            else
+              pm2 start server.js --name bookndstay
+            fi
+            pm2 save
