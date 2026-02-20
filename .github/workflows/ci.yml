@@ -13,6 +13,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Build frontends into backend/public
+        run: node build_and_deploy.cjs
+
       - name: Copy backend bundle to VPS
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -20,7 +28,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.VPS_PORT }}
-          source: "release/backend/"
+          source: "backend/"
           target: "/var/www/bookndstay"
           rm: true
 
