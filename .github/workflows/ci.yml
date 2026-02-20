@@ -1,89 +1,27 @@
-name: CI/CD
+- name: Copy backend bundle to VPS
+  uses: appleboy/scp-action@v0.1.7
+  with:
+    host: ${{ secrets.VPS_HOST }}
+    username: ${{ secrets.VPS_USER }}
+    key: ${{ secrets.SSH_PRIVATE_KEY }}
+    port: ${{ secrets.VPS_PORT }}
+    source: "release/backend/"
+    target: "/var/www/bookndstay"
+    rm: true
 
-on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
-
-jobs:
-  build-and-package:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      - name: Install backend dependencies
-        working-directory: backend
-        run: npm ci
-
-      - name: Install admin dependencies
-        working-directory: admin
-        run: npm ci
-
-      - name: Install vendor dependencies
-        working-directory: vendor
-        run: npm ci
-
-      - name: Install root dependencies and build frontends
-        run: |
-          npm install
-          npm run deploy
-
-      - name: Upload backend bundle with built frontends
-        uses: actions/upload-artifact@v4
-        with:
-          name: backend-with-built-frontends
-          path: |
-            backend/**
-            !backend/node_modules/**
-            !backend/**/*.log
-
-  deploy-to-vps:
-    needs: build-and-package
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-
-    steps:
-      - name: Download backend bundle with built frontends
-        uses: actions/download-artifact@v4
-        with:
-          name: backend-with-built-frontends
-          path: release
-
-      - name: Copy backend bundle to VPS
-        uses: appleboy/scp-action@v1
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          source: "release/backend/*"
-          target: ${{ secrets.APP_DIR }}
-          rm: true
-
-      - name: Install dependencies and restart app on VPS
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          script: |
-            cd ${{ secrets.APP_DIR }}
-            npm install --production
-            if pm2 describe bookndstay >/dev/null 2>&1; then
-              pm2 restart bookndstay
-            else
-              pm2 start server.js --name bookndstay
-            fi
-            pm2 save
+- name: Install dependencies and restart app on VPS
+  uses: appleboy/ssh-action@v0.1.10
+  with:
+    host: ${{ secrets.VPS_HOST }}
+    username: ${{ secrets.VPS_USER }}
+    key: ${{ secrets.SSH_PRIVATE_KEY }}
+    port: ${{ secrets.VPS_PORT }}
+    script: |
+      cd /var/www/bookndstay
+      npm install --production
+      if pm2 describe bookndstay >/dev/null 2>&1; then
+        pm2 restart bookndstay
+      else
+        pm2 start server.js --name bookndstay
+      fi
+      pm2 save
