@@ -9,6 +9,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -22,26 +23,29 @@ jobs:
         run: node build_and_deploy.cjs
 
       - name: Copy backend bundle to VPS
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.VPS_PORT }}
-          source: "backend/"
+          source: "backend/*"
           target: "/var/www/bookndstay"
           rm: true
+          timeout: 60s
 
       - name: Install dependencies and restart app on VPS
-        uses: appleboy/ssh-action@v0.1.10
+        uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.VPS_PORT }}
+          timeout: 60s
           script: |
             cd /var/www/bookndstay
             npm install --production
+            npm install -g pm2 || true
             if pm2 describe bookndstay >/dev/null 2>&1; then
               pm2 restart bookndstay
             else
