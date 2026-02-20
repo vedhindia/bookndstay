@@ -1,27 +1,42 @@
-- name: Copy backend bundle to VPS
-  uses: appleboy/scp-action@v0.1.7
-  with:
-    host: ${{ secrets.VPS_HOST }}
-    username: ${{ secrets.VPS_USER }}
-    key: ${{ secrets.SSH_PRIVATE_KEY }}
-    port: ${{ secrets.VPS_PORT }}
-    source: "release/backend/"
-    target: "/var/www/bookndstay"
-    rm: true
+name: CI
 
-- name: Install dependencies and restart app on VPS
-  uses: appleboy/ssh-action@v0.1.10
-  with:
-    host: ${{ secrets.VPS_HOST }}
-    username: ${{ secrets.VPS_USER }}
-    key: ${{ secrets.SSH_PRIVATE_KEY }}
-    port: ${{ secrets.VPS_PORT }}
-    script: |
-      cd /var/www/bookndstay
-      npm install --production
-      if pm2 describe bookndstay >/dev/null 2>&1; then
-        pm2 restart bookndstay
-      else
-        pm2 start server.js --name bookndstay
-      fi
-      pm2 save
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Copy backend bundle to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          source: "release/backend/"
+          target: "/var/www/bookndstay"
+          rm: true
+
+      - name: Install dependencies and restart app on VPS
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          script: |
+            cd /var/www/bookndstay
+            npm install --production
+            if pm2 describe bookndstay >/dev/null 2>&1; then
+              pm2 restart bookndstay
+            else
+              pm2 start server.js --name bookndstay
+            fi
+            pm2 save
