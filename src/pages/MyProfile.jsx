@@ -6,15 +6,8 @@ import authApi from '../api/auth';
 
 export default function MyProfile() {
   const navigate = useNavigate();
-  const apiBase = (import.meta.env.VITE_API_BASE || 'http://localhost:3001/api/user/auth');
-  const hostBase = (() => {
-    try {
-      const url = new URL(apiBase);
-      return `${url.protocol}//${url.host}`;
-    } catch {
-      return 'http://localhost:3001';
-    }
-  })();
+  const apiBase = (import.meta.env.VITE_API_BASE || '/api/user/auth');
+  const hostBase = (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001');
   const filesBase = (import.meta.env.VITE_FILES_BASE || hostBase);
   const resolveProfilePhotoUrl = (val) => {
     if (!val || typeof val !== 'string') return null;

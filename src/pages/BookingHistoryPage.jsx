@@ -13,18 +13,17 @@ export default function BookingHistoryPage() {
 
   // Fixed API base URL construction
   const apiUserBase = (() => {
-    const base = (import.meta.env.VITE_API_BASE || 'http://localhost:3001/api/auth').replace(/\/+$/, '');
-    // Remove /auth from the end if present, then add /user
+    const base = (import.meta.env.VITE_API_BASE || '/api/auth').replace(/\/+$/, '');
     const cleaned = base.replace(/\/auth\/?$/, '');
     return `${cleaned}/user`;
   })();
 
   const filesBase = (import.meta.env.VITE_FILES_BASE || (() => {
     try {
-      const u = new URL(apiUserBase);
+      const u = new URL(typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001');
       return `${u.protocol}//${u.host}`;
     } catch {
-      return 'http://localhost:3001';
+      return typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001';
     }
   })());
 

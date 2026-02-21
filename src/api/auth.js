@@ -1,4 +1,4 @@
-const API_BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:3001/api/user/auth').replace(/\/+$/, '');
+const API_BASE = (import.meta.env.VITE_API_BASE || '/api/user/auth').replace(/\/+$/, '');
 
 // Helper: handle JSON responses and errors
 async function request(path, options = {}) {

@@ -65,14 +65,14 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
     return () => window.removeEventListener('resize', updateItemsPerView);
   }, []);
 
-  const apiVendorPublicBase = (import.meta.env.VITE_VENDOR_PUBLIC_BASE || 'http://localhost:3001/api/vendor/public').replace(/\/+$/, '');
-  const apiUserBase = ((import.meta.env.VITE_API_BASE && import.meta.env.VITE_API_BASE.replace('/auth', '')) || 'http://localhost:3001/api/user').replace(/\/+$/, '');
+  const apiVendorPublicBase = (import.meta.env.VITE_VENDOR_PUBLIC_BASE || '/api/vendor/public').replace(/\/+$/, '');
+  const apiUserBase = ((import.meta.env.VITE_API_BASE && import.meta.env.VITE_API_BASE.replace('/auth', '')) || '/api/user').replace(/\/+$/, '');
   const filesBase = (import.meta.env.VITE_FILES_BASE || (() => {
     try {
-      const u = new URL(apiVendorPublicBase);
+      const u = new URL(typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001');
       return `${u.protocol}//${u.host}`;
     } catch {
-      return 'http://localhost:3001';
+      return typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001';
     }
   })());
 

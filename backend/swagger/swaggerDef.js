@@ -11,8 +11,12 @@ const options = {
     },
     servers: [
       {
+        url: '/',
+        description: 'Current host',
+      },
+      {
         url: 'http://localhost:3001',
-        description: 'Development server',
+        description: 'Local development',
       },
     ],
     components: {

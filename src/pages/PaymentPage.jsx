@@ -16,7 +16,7 @@ export default function PaymentPage() {
   const [userProfile, setUserProfile] = useState(null);
   const [timeLeft, setTimeLeft] = useState(null);
 
-  const apiUserBase = ((import.meta.env.VITE_API_BASE && import.meta.env.VITE_API_BASE.replace('/auth', '')) || 'http://localhost:3001/api/user');
+  const apiUserBase = ((import.meta.env.VITE_API_BASE && import.meta.env.VITE_API_BASE.replace('/auth', '')) || '/api/user');
 
   // Timer Logic
   useEffect(() => {

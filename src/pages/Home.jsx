@@ -13,13 +13,13 @@ const Home = ({ state, actions }) => {
   const searchRef = useRef(null);
 
   // API Configuration
-  const apiVendorPublicBase = (import.meta.env.VITE_VENDOR_PUBLIC_BASE || 'http://localhost:3001/api/vendor/public').replace(/\/+$/, '');
+  const apiVendorPublicBase = (import.meta.env.VITE_VENDOR_PUBLIC_BASE || '/api/vendor/public').replace(/\/+$/, '');
   const filesBase = (import.meta.env.VITE_FILES_BASE || (() => {
     try {
-      const u = new URL(apiVendorPublicBase);
+      const u = new URL(typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001');
       return `${u.protocol}//${u.host}`;
     } catch {
-      return 'http://localhost:3001';
+      return typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001';
     }
   })());
 
@@ -61,7 +61,7 @@ const Home = ({ state, actions }) => {
         // Construct API URL: replace /vendor/public with /public/coupons
         const baseUrl = apiVendorPublicBase.includes('/vendor/public') 
           ? apiVendorPublicBase.replace('/vendor/public', '/public/coupons')
-          : 'http://localhost:3001/api/public/coupons';
+          : '/api/public/coupons';
 
         const res = await fetch(baseUrl, {
           headers: { Accept: 'application/json' }
