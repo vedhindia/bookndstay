@@ -4,10 +4,13 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
-  deploy:
+  build-and-package:
     runs-on: ubuntu-latest
 
     steps:
@@ -17,38 +20,46 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
+          cache: npm
 
-      - name: Build frontends into backend/public
-        run: node build_and_deploy.cjs
+      - name: Install admin dependencies
+        working-directory: admin
+        run: npm ci
 
-      - name: Copy backend bundle to VPS
-        uses: appleboy/scp-action@v1
+      - name: Install vendor dependencies
+        working-directory: vendor
+        run: npm ci
+
+      - name: Install root dependencies and build frontends
+        run: |
+          npm install
+          npm run deploy
+
+      - name: Upload backend bundle with built frontends
+        uses: actions/upload-artifact@v4
         with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.VPS_PORT }}
-          source: "backend/*"
+          name: backend-with-built-frontends
+          path: |
+            backend/**
+            !backend/node_modules/**
+            !backend/**/*.log
+
+      - name: Deploy backend to VPS server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          source: "backend/**"
           target: "/var/www/bookndstay"
-          rm: true
-          timeout: 60s
 
-      - name: Install dependencies and restart app on VPS
-        uses: appleboy/ssh-action@v1
+      - name: Install backend dependencies on VPS
+        uses: appleboy/ssh-action@v1.0.0
         with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.VPS_PORT }}
-          timeout: 60s
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
           script: |
-            cd /var/www/bookndstay
-            npm install --production
-            npm install -g pm2 || true
-            if pm2 describe bookndstay >/dev/null 2>&1; then
-              pm2 restart bookndstay
-            else
-              pm2 start server.js --name bookndstay
-            fi
-            pm2 save
+            cd /var/www/bookndstay/backend
+            npm install --omit=dev
