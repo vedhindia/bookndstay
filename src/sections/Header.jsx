@@ -25,7 +25,7 @@ export default function Header({ navigate, state, actions }) {
   // Navigation helper function
   const handleNavigation = (page) => {
     if (page === 'vendorLogin') {
-      window.location.href = 'http://localhost:3001/vendor';
+      window.location.href = 'https://bookndstay.com/vendor';
     } else {
       navigate(page);
     }

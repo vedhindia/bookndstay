@@ -46,7 +46,7 @@ createHotel: asyncHandler(async (req, res) => {
       total_rooms, available_rooms, base_price, featured,
       ac_room_price, non_ac_room_price, ac_rooms, non_ac_rooms,
       check_in_time, check_out_time, cancellation_policy, gst_number,
-      map_url
+      map_url, rating, booked_room
     } = req.body;
 
     const vendor = await Vendor.findByPk(req.user.id);
@@ -81,7 +81,6 @@ createHotel: asyncHandler(async (req, res) => {
 
     const lat = latitude === '' || latitude === null || typeof latitude === 'undefined' ? null : parseFloat(latitude);
     const lng = longitude === '' || longitude === null || typeof longitude === 'undefined' ? null : parseFloat(longitude);
-    const parsedRating = rating === '' || rating === null || typeof rating === 'undefined' ? 0.0 : Math.max(0, Math.min(5, parseFloat(rating)));
     const parsedTotal = total_rooms === '' || total_rooms === null || typeof total_rooms === 'undefined' ? 0 : parseInt(total_rooms);
     let parsedAvail = available_rooms === '' || available_rooms === null || typeof available_rooms === 'undefined' ? parsedTotal : parseInt(available_rooms);
     parsedAvail = Math.max(0, Math.min(parsedAvail, parsedTotal));

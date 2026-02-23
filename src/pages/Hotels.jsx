@@ -38,14 +38,23 @@ const Hotels = ({ state, actions }) => {
 
   const apiVendorPublicBase = (import.meta.env.VITE_VENDOR_PUBLIC_BASE || '/api/vendor/public').replace(/\/+$/, '');
   const apiUserBase = ((import.meta.env.VITE_API_BASE && import.meta.env.VITE_API_BASE.replace('/auth', '')) || '/api/user').replace(/\/+$/, '');
-  const filesBase = (import.meta.env.VITE_FILES_BASE || (() => {
+  const filesBase = (() => {
+    const raw = import.meta.env.VITE_FILES_BASE;
+    if (raw && typeof raw === 'string') {
+      return raw.replace(/\/+$/, '');
+    }
     try {
-      const u = new URL(typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001');
+      const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001';
+      const u = new URL(origin);
+      if (u.hostname === 'localhost' && u.port && u.port !== '3001') {
+        return 'http://localhost:3001';
+      }
       return `${u.protocol}//${u.host}`;
     } catch {
-      return typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001';
+      if (typeof window !== 'undefined') return window.location.origin;
+      return 'http://localhost:3001';
     }
-  })());
+  })();
 
   const resolveImageUrl = (val) => {
     if (!val) return null;
