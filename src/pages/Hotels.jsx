@@ -43,12 +43,18 @@ const Hotels = ({ state, actions }) => {
     if (raw && typeof raw === 'string') {
       return raw.replace(/\/+$/, '');
     }
+    const apiBaseRaw = import.meta.env.VITE_API_BASE;
+    if (apiBaseRaw && /^https?:\/\//i.test(apiBaseRaw)) {
+      try {
+        const apiUrl = new URL(apiBaseRaw);
+        return `${apiUrl.protocol}//${apiUrl.host}`;
+      } catch {
+        // fall through to origin
+      }
+    }
     try {
       const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001';
       const u = new URL(origin);
-      if (u.hostname === 'localhost' && u.port && u.port !== '3001') {
-        return 'http://localhost:3001';
-      }
       return `${u.protocol}//${u.host}`;
     } catch {
       if (typeof window !== 'undefined') return window.location.origin;
