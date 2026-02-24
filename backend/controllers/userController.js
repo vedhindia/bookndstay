@@ -720,7 +720,7 @@ module.exports = {
       throw createError('Invalid booking amount', 400);
     }
 
-    const { payment_method } = req.body;
+    const { payment_method } = req.body || {};
 
     // If Pay at Hotel, skip Razorpay order creation
     if (payment_method === 'PAY_AT_HOTEL') {
