@@ -205,6 +205,67 @@ module.exports = {
     }, 'Bookings retrieved successfully');
   }),
 
+  /** GET USER BOOKINGS (VENDOR SCOPED) */
+  getUserBookings: asyncHandler(async (req, res) => {
+    const { userId } = req.params;
+    const { page, limit } = validatePagination(req.query.page, req.query.limit);
+    const offset = getPaginationOffset(page, limit);
+
+    const bookings = await Booking.findAndCountAll({
+      where: { 
+        vendor_id: req.user.id,
+        user_id: userId
+      },
+      include: getBookingIncludes(),
+      limit,
+      offset,
+      order: [['createdAt', 'DESC']]
+    });
+
+    sendPaginatedResponse(res, bookings.rows, {
+      page,
+      limit,
+      totalItems: bookings.count,
+      totalPages: Math.ceil(bookings.count / limit)
+    }, 'User bookings retrieved successfully');
+  }),
+
+  /** GET BOOKING BY ID */
+  getBookingById: asyncHandler(async (req, res) => {
+    const booking = await Booking.findOne({
+      where: { 
+        id: req.params.bookingId,
+        vendor_id: req.user.id
+      },
+      include: getBookingIncludes()
+    });
+
+    if (!booking) throw createError('Booking not found', 404);
+
+    sendSuccess(res, booking, 'Booking details retrieved');
+  }),
+
+  /** UPDATE BOOKING STATUS */
+  updateBookingStatus: asyncHandler(async (req, res) => {
+    const { status } = req.body;
+    if (!status || !['pending', 'confirmed', 'cancelled', 'completed'].includes(status.toLowerCase())) {
+        throw createError('Invalid status value. Allowed: pending, confirmed, cancelled, completed');
+    }
+
+    const booking = await Booking.findOne({
+      where: { 
+        id: req.params.bookingId,
+        vendor_id: req.user.id
+      }
+    });
+
+    if (!booking) throw createError('Booking not found', 404);
+    
+    await booking.update({ status: status.toUpperCase() });
+
+    sendSuccess(res, booking, 'Booking status updated');
+  }),
+
   /* ===================== DASHBOARD ===================== */
 
   getDashboardStats: asyncHandler(async (req, res) => {
@@ -237,6 +298,96 @@ module.exports = {
         totalRevenue: parseFloat(revenueResult[0]?.dataValues?.totalRevenue || 0)
       }
     }, 'Dashboard statistics retrieved');
+  }),
+
+  /** GET REVENUE REPORT */
+  getRevenueReport: asyncHandler(async (req, res) => {
+    const { start_date, end_date } = req.query;
+    const dateFilter = buildDateRangeFilter(start_date, end_date);
+    
+    // Add vendor filter
+    dateFilter.vendor_id = req.user.id;
+    dateFilter.status = 'CONFIRMED'; // Only count confirmed bookings
+
+    const revenue = await Booking.sum('amount', {
+      where: dateFilter
+    }) || 0;
+
+    const bookingCount = await Booking.count({
+      where: dateFilter
+    });
+
+    sendSuccess(res, { 
+      revenue, 
+      booking_count: bookingCount,
+      period: { start: start_date, end: end_date }
+    }, 'Revenue report generated');
+  }),
+
+  /* ===================== IMAGE MANAGEMENT ===================== */
+
+  /** GET HOTEL IMAGES */
+  getHotelImages: asyncHandler(async (req, res) => {
+    const hotel = await Hotel.findOne({
+      where: { id: req.params.hotelId, vendor_id: req.user.id }
+    });
+
+    if (!hotel) throw createError('Hotel not found', 404);
+
+    const images = await HotelImage.findAll({
+      where: { hotel_id: hotel.id }
+    });
+
+    const formattedImages = images.map(img => {
+        // Ensure URL is properly formatted if needed
+        return img;
+    });
+
+    sendSuccess(res, { images: formattedImages }, 'Hotel images retrieved');
+  }),
+
+  /** UPLOAD HOTEL IMAGES */
+  uploadHotelImages: asyncHandler(async (req, res) => {
+    const hotel = await Hotel.findOne({
+      where: { id: req.params.hotelId, vendor_id: req.user.id }
+    });
+
+    if (!hotel) throw createError('Hotel not found', 404);
+
+    if (!req.files || req.files.length === 0) {
+      throw createError('No images uploaded');
+    }
+
+    const imagePromises = req.files.map(file => {
+      const imageUrl = `/uploads/${file.filename}`;
+      
+      return HotelImage.create({
+        hotel_id: hotel.id,
+        url: imageUrl
+      });
+    });
+
+    const newImages = await Promise.all(imagePromises);
+
+    sendSuccess(res, { images: newImages }, 'Images uploaded successfully');
+  }),
+
+  /** DELETE HOTEL IMAGE */
+  deleteHotelImage: asyncHandler(async (req, res) => {
+    const image = await HotelImage.findByPk(req.params.imageId);
+
+    if (!image) throw createError('Image not found', 404);
+
+    // Verify ownership through hotel
+    const hotel = await Hotel.findOne({
+      where: { id: image.hotel_id, vendor_id: req.user.id }
+    });
+
+    if (!hotel) throw createError('Unauthorized access to this image', 403);
+
+    await image.destroy();
+
+    sendSuccess(res, null, 'Image deleted successfully');
   }),
 
   /* ===================== PROFILE ===================== */
