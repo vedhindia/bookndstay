@@ -660,24 +660,35 @@ module.exports = {
     if (!key_id) status = 'Missing Key ID';
     else if (!key_secret) status = 'Missing Key Secret';
     
-    // Check connectivity by fetching a dummy payment
+    // Check connectivity by attempting to create a test order
     try {
       if (razorpay) {
-        // Fetching a non-existent payment should return 400/404 with specific error code
-        await razorpay.payments.fetch('pay_dummy_123');
+        // Try creating a dummy order (1 INR)
+        await razorpay.orders.create({
+          amount: 100, // 1 INR
+          currency: 'INR',
+          receipt: 'debug_test_1',
+          notes: { purpose: 'connectivity_check' }
+        });
+        connectivity = 'Connected & Authorized (Order Created)';
       }
     } catch (e) {
-      if (e.statusCode === 404 || (e.error && e.error.code === 'BAD_REQUEST_ERROR')) {
-        connectivity = 'Connected (Verified)';
-      } else {
-        connectivity = 'Connection Failed';
-        error = e.error ? e.error.description : (e.message || e);
+      connectivity = 'Connection Failed';
+      // Extract detailed error
+      error = e.error ? `${e.error.code}: ${e.error.description}` : (e.message || JSON.stringify(e));
+      
+      // If order creation fails, try fetch as fallback to see if it's just an order issue
+      try {
+        await razorpay.payments.fetch('pay_dummy_123');
+        connectivity += ' (But Read Access OK)';
+      } catch (readErr) {
+        // Ignore read error
       }
     }
     
     sendSuccess(res, { 
       key_id_preview: key_id ? key_id.substring(0, 10) + '...' : 'MISSING',
-      key_secret_exists: !!key_secret,
+      key_secret_preview: key_secret ? key_secret.substring(0, 2) + '...' : 'MISSING',
       keyValidation,
       status,
       connectivity,
