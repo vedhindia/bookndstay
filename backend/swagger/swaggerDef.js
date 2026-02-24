@@ -12,7 +12,11 @@ const options = {
     servers: [
       {
         url: process.env.SWAGGER_BASE_URL || '/',
-        description: 'Current host (uses this domain)',
+        description: 'Live / current host server',
+      },
+      {
+        url: process.env.SWAGGER_DEV_BASE_URL || 'http://localhost:3001',
+        description: 'Development server',
       }
     ],
     components: {
