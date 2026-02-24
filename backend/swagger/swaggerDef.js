@@ -12,12 +12,8 @@ const options = {
     servers: [
       {
         url: process.env.SWAGGER_BASE_URL || '/',
-        description: 'Current host (production or development)',
-      },
-      {
-        url: 'http://localhost:3001',
-        description: 'Local development',
-      },
+        description: 'Current host (uses this domain)',
+      }
     ],
     components: {
       securitySchemes: {
