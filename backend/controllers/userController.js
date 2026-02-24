@@ -737,6 +737,13 @@ module.exports = {
       console.error('Razorpay credentials missing or invalid.');
       throw createError('Online payment service is temporarily unavailable. Please try Pay at Hotel.', 503);
     }
+    
+    // Validate secret length for sanity check
+    const { key_secret } = getRazorpayCredentials();
+    if (!key_secret || key_secret.length < 10) {
+      console.error('Razorpay secret is suspiciously short or missing');
+      throw createError('Payment configuration error. Please contact support.', 500);
+    }
 
     console.log(`[Payment] Initiating Razorpay with KeyID: ${key_id.substring(0, 10)}...`);
 
@@ -756,7 +763,8 @@ module.exports = {
         : (rzpError.message || JSON.stringify(rzpError));
         
       const amountInRupees = parseFloat(booking.amount).toFixed(2);
-      throw createError(`Payment initiation failed: ${errorDetails} (Amount: ₹${amountInRupees})`, 502);
+      const keyPrefix = key_id ? key_id.substring(0, 9) : 'unknown';
+      throw createError(`Payment initiation failed: ${errorDetails} (Amount: ₹${amountInRupees}, Key: ${keyPrefix}...)`, 502);
     }
     
     // Check if payment already exists
