@@ -56,7 +56,13 @@ const upload = require('../middlewares/upload');
  *                       items:
  *                         $ref: '#/components/schemas/Hotel'
  */
-router.get('/public/hotels', userCtrl.searchHotels);
+router.get('/public/hotels', (req, res, next) => {
+  if (typeof userCtrl.searchHotels === 'function') {
+    return userCtrl.searchHotels(req, res, next);
+  }
+  console.error('userCtrl.searchHotels is not a function:', userCtrl);
+  return res.status(500).json({ message: 'Internal Server Error: Search function not available' });
+});
 
 
 
@@ -87,7 +93,13 @@ router.get('/public/hotels', userCtrl.searchHotels);
  *                     hotel:
  *                       $ref: '#/components/schemas/Hotel'
  */
-router.get('/public/hotels/:hotelId', userCtrl.getHotelById);
+router.get('/public/hotels/:hotelId', (req, res, next) => {
+  if (typeof userCtrl.getHotelById === 'function') {
+    return userCtrl.getHotelById(req, res, next);
+  }
+  console.error('userCtrl.getHotelById is not a function:', userCtrl);
+  return res.status(500).json({ message: 'Internal Server Error: Get Hotel function not available' });
+});
 
 
 // ============ VENDOR AUTHENTICATION API ============
