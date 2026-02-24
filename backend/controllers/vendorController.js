@@ -6,948 +6,253 @@
 const { Hotel, HotelImage, Room, Booking, User, Vendor, Review } = require('../models');
 const { sendSuccess, sendError, sendPaginatedResponse } = require('../utils/responseHelper');
 const { validateRequiredFields, validatePagination, isValidEmail } = require('../utils/validationHelper');
-const { 
-  getHotelIncludes, 
-  getBookingIncludes, 
-  getPaginationOffset 
-} = require('../utils/dbHelper');
+const { getBookingIncludes, getPaginationOffset } = require('../utils/dbHelper');
 const { asyncHandler } = require('../middlewares/errorHandler');
 const { Op, literal, fn, col } = require('sequelize');
 
-// Helper function to create error
+/* ===================== HELPERS ===================== */
+
 const createError = (message, statusCode = 400) => {
   const error = new Error(message);
   error.statusCode = statusCode;
   return error;
 };
 
-// Helper function to build date range filter
 const buildDateRangeFilter = (startDate, endDate) => {
   const filter = {};
-  if (startDate) {
-    filter.createdAt = { [Op.gte]: new Date(startDate) };
-  }
-  if (endDate) {
-    filter.createdAt = { ...filter.createdAt, [Op.lte]: new Date(endDate) };
-  }
+  if (startDate) filter.createdAt = { [Op.gte]: new Date(startDate) };
+  if (endDate) filter.createdAt = { ...filter.createdAt, [Op.lte]: new Date(endDate) };
   return filter;
 };
 
-// Helper to safely parse rating (returns 0 if null/undefined/NaN)
+/** ✅ ALWAYS SAFE RATING */
 const safeRating = (val) => {
   if (val === null || val === undefined || val === '') return 0;
-  const parsed = parseFloat(val);
-  return isNaN(parsed) ? 0 : Math.max(0, Math.min(5, parsed));
+  const r = parseFloat(val);
+  return isNaN(r) ? 0 : Math.max(0, Math.min(5, r));
 };
 
-module.exports = {
-  // ============ HOTEL MANAGEMENT ============
+/* ===================== CONTROLLER ===================== */
 
-  /**
-   * Create a new hotel
-   */
-createHotel: asyncHandler(async (req, res) => {
-    const {
-      name, description, address, city, state, pincode, country,
-      latitude, longitude, amenities, hotel_features, phone, email,
-      total_rooms, available_rooms, base_price, featured,
-      ac_room_price, non_ac_room_price, ac_rooms, non_ac_rooms,
-      check_in_time, check_out_time, cancellation_policy, gst_number,
-      map_url, booked_room
-    } = req.body;
+module.exports = {
+
+  /* ===================== HOTEL MANAGEMENT ===================== */
+
+  /** CREATE HOTEL */
+  createHotel: asyncHandler(async (req, res) => {
+    const body = req.body;
 
     const vendor = await Vendor.findByPk(req.user.id);
-    if (!vendor) {
-      throw createError('Vendor not found', 404);
-    }
-    if (vendor.status !== 'ACTIVE') {
-      throw createError('Vendor account is not active', 403);
-    }
+    if (!vendor) throw createError('Vendor not found', 404);
+    if (vendor.status !== 'ACTIVE') throw createError('Vendor account not active', 403);
 
-    // Validate required fields
-    const validation = validateRequiredFields(req.body, ['name', 'address', 'city']);
+    const validation = validateRequiredFields(body, ['name', 'address', 'city']);
     if (!validation.isValid) {
-      throw createError(`Missing required fields: ${validation.missingFields.join(', ')}`, 400);
+      throw createError(`Missing fields: ${validation.missingFields.join(', ')}`);
     }
 
-    if (email && !isValidEmail(email)) {
-      throw createError('Invalid email format', 400);
+    if (body.email && !isValidEmail(body.email)) {
+      throw createError('Invalid email format');
     }
 
-    // Helpers
-    const normalizeAmenities = (val) => {
-      if (Array.isArray(val)) return val;
-      if (typeof val === 'string') {
-        const t = val.trim();
-        if (!t) return null;
-        if (t.startsWith('[')) {
-          try {
-            const p = JSON.parse(t);
-            return Array.isArray(p) ? p : null;
-          } catch {}
-        }
-        return t.split(',').map((s) => s.trim()).filter(Boolean);
-      }
-      return val == null ? null : [];
+    const normalizeArray = (v) => {
+      if (Array.isArray(v)) return v;
+      if (typeof v === 'string') return v.split(',').map(s => s.trim()).filter(Boolean);
+      return null;
     };
-
-    const lat =
-      latitude === '' || latitude === null || typeof latitude === 'undefined'
-        ? null
-        : parseFloat(latitude);
-    const lng =
-      longitude === '' || longitude === null || typeof longitude === 'undefined'
-        ? null
-        : parseFloat(longitude);
-
-    const parsedTotal =
-      total_rooms === '' || total_rooms === null || typeof total_rooms === 'undefined'
-        ? 0
-        : parseInt(total_rooms);
-    let parsedAvail =
-      available_rooms === '' ||
-      available_rooms === null ||
-      typeof available_rooms === 'undefined'
-        ? parsedTotal
-        : parseInt(available_rooms);
-    parsedAvail = Math.max(0, Math.min(parsedAvail, parsedTotal));
-
-    const parsedPrice =
-      base_price === '' || base_price === null || typeof base_price === 'undefined'
-        ? 0.0
-        : Math.max(0, parseFloat(base_price));
-
-    const parsedFeatured =
-      typeof featured === 'boolean' ? featured : String(featured).toLowerCase() === 'true';
-
-    const parsedAcPrice =
-      ac_room_price === '' || ac_room_price === null || typeof ac_room_price === 'undefined'
-        ? null
-        : Math.max(0, parseFloat(ac_room_price));
-
-    const parsedNonAcPrice =
-      non_ac_room_price === '' || non_ac_room_price === null || typeof non_ac_room_price === 'undefined'
-        ? null
-        : Math.max(0, parseFloat(non_ac_room_price));
-
-    const parsedAcRooms =
-      ac_rooms === '' || ac_rooms === null || typeof ac_rooms === 'undefined'
-        ? 0
-        : parseInt(ac_rooms);
-
-    const parsedNonAcRooms =
-      non_ac_rooms === '' || non_ac_rooms === null || typeof non_ac_rooms === 'undefined'
-        ? 0
-        : parseInt(non_ac_rooms);
-
-    const parsedBookedRoom =
-      booked_room === '' || booked_room === null || typeof booked_room === 'undefined'
-        ? 0
-        : parseInt(booked_room);
 
     const hotel = await Hotel.create({
       vendor_id: req.user.id,
-      name,
-      description,
-      address,
-      city,
-      state,
-      pincode,
-      country: country || 'India',
-      latitude: isNaN(lat) ? null : lat,
-      longitude: isNaN(lng) ? null : lng,
-      map_url: map_url || null,
-      amenities: normalizeAmenities(amenities),
-      hotel_features: normalizeAmenities(hotel_features),
-      phone: phone || null,
-      email: email || null,
-      rating: 0.0,
-      total_rooms: isNaN(parsedTotal) ? 0 : parsedTotal,
-      booked_room: isNaN(parsedBookedRoom) ? 0 : parsedBookedRoom,
-      available_rooms: isNaN(parsedAvail) ? 0 : parsedAvail,
-      base_price: isNaN(parsedPrice) ? 0.0 : parsedPrice,
-      status: 'PENDING',
-      featured: parsedFeatured,
-      ac_room_price: isNaN(parsedAcPrice) ? null : parsedAcPrice,
-      non_ac_room_price: isNaN(parsedNonAcPrice) ? null : parsedNonAcPrice,
-      ac_rooms: isNaN(parsedAcRooms) ? 0 : parsedAcRooms,
-      non_ac_rooms: isNaN(parsedNonAcRooms) ? 0 : parsedNonAcRooms,
-      check_in_time: check_in_time || null,
-      check_out_time: check_out_time || null,
-      cancellation_policy: cancellation_policy || null,
-      gst_number: gst_number || null
+      name: body.name,
+      description: body.description || null,
+      address: body.address,
+      city: body.city,
+      state: body.state || null,
+      pincode: body.pincode || null,
+      country: body.country || 'India',
+      latitude: body.latitude ? parseFloat(body.latitude) : null,
+      longitude: body.longitude ? parseFloat(body.longitude) : null,
+      map_url: body.map_url || null,
+      amenities: normalizeArray(body.amenities),
+      hotel_features: normalizeArray(body.hotel_features),
+      phone: body.phone || null,
+      email: body.email || null,
+
+      /** ✅ FIX */
+      rating: 0,
+
+      total_rooms: parseInt(body.total_rooms) || 0,
+      booked_room: parseInt(body.booked_room) || 0,
+      available_rooms: parseInt(body.available_rooms) || parseInt(body.total_rooms) || 0,
+      base_price: parseFloat(body.base_price) || 0,
+      featured: String(body.featured).toLowerCase() === 'true',
+      ac_room_price: body.ac_room_price ? parseFloat(body.ac_room_price) : null,
+      non_ac_room_price: body.non_ac_room_price ? parseFloat(body.non_ac_room_price) : null,
+      ac_rooms: parseInt(body.ac_rooms) || 0,
+      non_ac_rooms: parseInt(body.non_ac_rooms) || 0,
+      check_in_time: body.check_in_time || null,
+      check_out_time: body.check_out_time || null,
+      cancellation_policy: body.cancellation_policy || null,
+      gst_number: body.gst_number || null,
+      status: 'PENDING'
     });
 
-    sendSuccess(res, { hotel }, 'Hotel created successfully and is pending approval', 201);
+    sendSuccess(res, { hotel }, 'Hotel created successfully', 201);
   }),
 
-  /**
-   * Get vendor's hotels with pagination
-   */
+  /** GET MY HOTELS */
   getMyHotels: asyncHandler(async (req, res) => {
     const { page, limit } = validatePagination(req.query.page, req.query.limit);
-    const where = { vendor_id: req.user.id };
-
-    if (req.query.status) {
-      where.status = req.query.status;
-    }
-
     const offset = getPaginationOffset(page, limit);
 
     const hotels = await Hotel.findAndCountAll({
-      where,
-      include: [
-        { model: HotelImage, as: 'images' },
-      ],
+      where: { vendor_id: req.user.id },
+      include: [{ model: HotelImage, as: 'images' }],
       limit,
       offset,
       order: [['createdAt', 'DESC']]
     });
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const rows = await Promise.all(hotels.rows.map(async (h) => {
-      // Filter valid images
-      h.images = (h.images || []).filter(
-        img => img.url && img.url.startsWith('/uploads/') && !img.url.includes('/src/assets/')
-      );
-
-      // Fix rating: ensure it's always a valid number
+    const rows = hotels.rows.map(h => {
       h.setDataValue('rating', safeRating(h.rating));
-
-      try {
-        const activeBookingsCount = await Booking.sum('booked_room', {
-          where: {
-            hotel_id: h.id,
-            status: 'CONFIRMED',
-            check_in: { [Op.lte]: today },
-            check_out: { [Op.gt]: today }
-          }
-        }) || 0;
-
-        h.setDataValue('booked_room', activeBookingsCount);
-        h.setDataValue('available_rooms', Math.max(0, h.total_rooms - activeBookingsCount));
-      } catch (err) {
-        // If booking query fails, fall back to stored values
-        h.setDataValue('booked_room', h.booked_room || 0);
-        h.setDataValue('available_rooms', h.available_rooms || 0);
-      }
-
+      h.images = (h.images || []).filter(i => i.url?.startsWith('/uploads/'));
       return h;
-    }));
+    });
 
-    const pagination = {
+    sendPaginatedResponse(res, rows, {
       page,
-      totalPages: Math.ceil(hotels.count / limit),
-      totalItems: hotels.count,
       limit,
-      hasNext: page < Math.ceil(hotels.count / limit),
-      hasPrev: page > 1
-    };
-
-    sendPaginatedResponse(res, rows, pagination, 'Hotels retrieved successfully');
+      totalItems: hotels.count,
+      totalPages: Math.ceil(hotels.count / limit)
+    }, 'Hotels fetched');
   }),
 
-  /**
-   * Get all approved hotels (Public - No authentication required)
-   */
-  getAllHotelsPublic: asyncHandler(async (req, res) => {
-    try {
-      const { city, state, country, status } = req.query;
-      const where = {};
-
-      if (!status || status === 'APPROVED') {
-        where.status = 'APPROVED';
-      } else if (status !== 'ALL') {
-        where.status = status;
-      }
-
-      if (city) where.city = { [Op.like]: `%${city}%` };
-      if (state) where.state = { [Op.like]: `%${state}%` };
-      if (country) where.country = { [Op.like]: `%${country}%` };
-
-      const bookingsTodayExpr = `(SELECT COUNT(DISTINCT user_id) FROM bookings WHERE bookings.hotel_id = Hotel.id AND bookings.status = 'CONFIRMED')`;
-
-      let hotels = await Hotel.findAll({
-        where,
-        attributes: {
-          include: [
-            [literal('(SELECT COUNT(*) FROM reviews WHERE reviews.hotel_id = Hotel.id)'), 'reviewCount'],
-            [literal(bookingsTodayExpr), 'bookingsToday']
-          ]
-        },
-        include: [
-          {
-            model: HotelImage,
-            as: 'images',
-            attributes: ['id', 'url']
-          },
-          {
-            model: Vendor,
-            as: 'vendor',
-            attributes: ['id', 'full_name', 'email', 'business_name', 'phone', 'business_address']
-          }
-        ],
-        order: [['createdAt', 'DESC']]
-      });
-
-      if ((!status || status === 'APPROVED') && hotels.length === 0) {
-        const whereNoStatus = { ...where };
-        delete whereNoStatus.status;
-        hotels = await Hotel.findAll({
-          where: whereNoStatus,
-          attributes: {
-            include: [
-              [literal('(SELECT COUNT(*) FROM reviews WHERE reviews.hotel_id = Hotel.id)'), 'reviewCount'],
-              [literal(bookingsTodayExpr), 'bookingsToday']
-            ]
-          },
-          include: [
-            { model: HotelImage, as: 'images', attributes: ['id', 'url'] },
-            { model: Vendor, as: 'vendor', attributes: ['id', 'full_name', 'email', 'business_name', 'phone', 'business_address'] }
-          ],
-          order: [['createdAt', 'DESC']]
-        });
-      }
-
-      const clean = hotels.map(h => {
-        h.images = (h.images || []).filter(
-          img => img.url && img.url.startsWith('/uploads/') && !img.url.includes('/src/assets/')
-        );
-
-        const rc = parseInt(h.getDataValue('reviewCount') || 0);
-        // Always set rating as a safe number; reset to 0 if no reviews
-        if (rc === 0) {
-          h.setDataValue('rating', 0);
-          h.rating = 0;
-        } else {
-          h.setDataValue('rating', safeRating(h.rating));
-        }
-
-        return h;
-      });
-
-      sendSuccess(res, { hotels: clean }, 'Hotels retrieved successfully');
-    } catch (error) {
-      console.error('Error fetching hotels:', error);
-      sendError(res, `Failed to retrieve hotels: ${error.message}`);
-    }
-  }),
-
-  /**
-   * Get hotel by ID (vendor ownership check)
-   */
+  /** GET HOTEL BY ID */
   getHotelById: asyncHandler(async (req, res) => {
     const hotel = await Hotel.findOne({
-      where: {
-        id: req.params.hotelId,
-        vendor_id: req.user.id
-      },
+      where: { id: req.params.hotelId, vendor_id: req.user.id },
       include: [
         { model: HotelImage, as: 'images' },
-        {
-          model: Review,
-          as: 'reviews',
-          include: [{ model: User, as: 'user', attributes: ['full_name'] }]
-        }
+        { model: Review, as: 'reviews', include: [{ model: User, as: 'user', attributes: ['full_name'] }] }
       ]
     });
 
-    if (!hotel) {
-      throw createError('Hotel not found', 404);
-    }
+    if (!hotel) throw createError('Hotel not found', 404);
 
-    // Fix rating
     hotel.setDataValue('rating', safeRating(hotel.rating));
-
-    // Calculate real-time availability based on active bookings
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const activeBookingsCount = await Booking.sum('booked_room', {
-      where: {
-        hotel_id: hotel.id,
-        status: 'CONFIRMED',
-        check_in: { [Op.lte]: today },
-        check_out: { [Op.gt]: today }
-      }
-    }) || 0;
-
-    hotel.setDataValue('booked_room', activeBookingsCount);
-    hotel.setDataValue('available_rooms', Math.max(0, hotel.total_rooms - activeBookingsCount));
-
-    sendSuccess(res, { hotel }, 'Hotel details retrieved successfully');
+    sendSuccess(res, { hotel }, 'Hotel details fetched');
   }),
 
-  /**
-   * Get hotel by ID (Public - Approved only)
-   */
-  getHotelByIdPublic: asyncHandler(async (req, res) => {
-    const hotel = await Hotel.findOne({
-      where: {
-        id: req.params.hotelId
-      },
-      include: [
-        { model: HotelImage, as: 'images', attributes: ['id', 'url'] },
-        { model: Vendor, as: 'vendor', attributes: ['id', 'full_name', 'email', 'business_name', 'phone', 'business_address'] },
-        {
-          model: Review,
-          as: 'reviews',
-          include: [{ model: User, as: 'user', attributes: ['full_name'] }]
-        }
-      ]
-    });
-
-    if (!hotel) {
-      throw createError('Hotel not found', 404);
-    }
-
-    hotel.images = (hotel.images || []).filter(
-      img => img.url && img.url.startsWith('/uploads/') && !img.url.includes('/src/assets/')
-    );
-
-    // Ensure rating is consistent with reviews
-    if (!hotel.reviews || hotel.reviews.length === 0) {
-      hotel.setDataValue('rating', 0);
-      hotel.rating = 0;
-    } else {
-      hotel.setDataValue('rating', safeRating(hotel.rating));
-    }
-
-    sendSuccess(res, { hotel }, 'Hotel details retrieved successfully');
-  }),
-
-  /**
-   * Update hotel information
-   */
+  /** UPDATE HOTEL */
   updateHotel: asyncHandler(async (req, res) => {
     const hotel = await Hotel.findOne({
-      where: {
-        id: req.params.hotelId,
-        vendor_id: req.user.id
-      }
+      where: { id: req.params.hotelId, vendor_id: req.user.id }
     });
+    if (!hotel) throw createError('Hotel not found', 404);
 
-    if (!hotel) {
-      throw createError('Hotel not found', 404);
-    }
+    const updates = { ...req.body };
 
-    const body = req.body || {};
-    const updates = {};
-    const hasProp = (k) => Object.prototype.hasOwnProperty.call(body, k);
-
-    // Allowlisted strings
-    if (hasProp('name')) updates.name = body.name;
-    if (hasProp('description')) updates.description = body.description;
-    if (hasProp('address')) updates.address = body.address;
-    if (hasProp('city')) updates.city = body.city;
-    if (hasProp('state')) updates.state = body.state;
-    if (hasProp('pincode')) updates.pincode = body.pincode;
-    if (hasProp('country')) updates.country = body.country;
-    if (hasProp('phone')) updates.phone = body.phone;
-    if (hasProp('map_url')) updates.map_url = body.map_url;
-    if (hasProp('check_in_time')) updates.check_in_time = body.check_in_time;
-    if (hasProp('check_out_time')) updates.check_out_time = body.check_out_time;
-    if (hasProp('cancellation_policy')) updates.cancellation_policy = body.cancellation_policy;
-    if (hasProp('gst_number')) updates.gst_number = body.gst_number;
-
-    if (hasProp('email')) {
-      if (body.email && !isValidEmail(body.email)) {
-        throw createError('Invalid email format', 400);
-      }
-      updates.email = body.email;
-    }
-
-    // Numeric/nullable
-    if (hasProp('latitude')) {
-      updates.latitude = body.latitude === '' || body.latitude === null ? null : parseFloat(body.latitude);
-    }
-    if (hasProp('longitude')) {
-      updates.longitude = body.longitude === '' || body.longitude === null ? null : parseFloat(body.longitude);
-    }
-    if (hasProp('base_price')) {
-      const bp = body.base_price === '' || body.base_price === null ? 0.0 : parseFloat(body.base_price);
-      updates.base_price = Math.max(0, isNaN(bp) ? 0.0 : bp);
-    }
-    if (hasProp('featured')) {
-      updates.featured = typeof body.featured === 'boolean'
-        ? body.featured
-        : String(body.featured).toLowerCase() === 'true';
-    }
-
-    if (hasProp('ac_room_price')) {
-      const p = body.ac_room_price === '' || body.ac_room_price === null ? null : parseFloat(body.ac_room_price);
-      updates.ac_room_price = (p === null || isNaN(p)) ? null : Math.max(0, p);
-    }
-    if (hasProp('non_ac_room_price')) {
-      const p = body.non_ac_room_price === '' || body.non_ac_room_price === null ? null : parseFloat(body.non_ac_room_price);
-      updates.non_ac_room_price = (p === null || isNaN(p)) ? null : Math.max(0, p);
-    }
-    if (hasProp('ac_rooms')) {
-      const r = body.ac_rooms === '' || body.ac_rooms === null ? 0 : parseInt(body.ac_rooms);
-      updates.ac_rooms = isNaN(r) ? 0 : Math.max(0, r);
-    }
-    if (hasProp('non_ac_rooms')) {
-      const r = body.non_ac_rooms === '' || body.non_ac_rooms === null ? 0 : parseInt(body.non_ac_rooms);
-      updates.non_ac_rooms = isNaN(r) ? 0 : Math.max(0, r);
-    }
-
-    // Room counters with clamping
-    const hasTotal = hasProp('total_rooms');
-    const hasAvail = hasProp('available_rooms');
-    if (hasTotal) {
-      const t = body.total_rooms === '' || body.total_rooms === null ? 0 : parseInt(body.total_rooms);
-      updates.total_rooms = isNaN(t) ? hotel.total_rooms : t;
-      if (!hasAvail) updates.available_rooms = Math.max(0, Math.min(hotel.available_rooms, updates.total_rooms));
-    }
-    if (hasAvail) {
-      const a = body.available_rooms === '' || body.available_rooms === null ? 0 : parseInt(body.available_rooms);
-      const targetTotal = hasTotal ? updates.total_rooms : hotel.total_rooms;
-      const newAvail = isNaN(a) ? hotel.available_rooms : a;
-      updates.available_rooms = Math.max(0, Math.min(newAvail, targetTotal));
-    }
-
-    // Amenities normalization
-    const normalizeField = (val) => {
-      if (Array.isArray(val)) return val.length ? val : null;
-      if (typeof val === 'string') {
-        const trimmed = val.trim();
-        if (!trimmed) return null;
-        if (trimmed.startsWith('[')) {
-          try {
-            const parsed = JSON.parse(trimmed);
-            return Array.isArray(parsed) ? parsed : null;
-          } catch {
-            const arr = trimmed.split(',').map(s => s.trim()).filter(Boolean);
-            return arr.length ? arr : null;
-          }
-        }
-        const arr = trimmed.split(',').map(s => s.trim()).filter(Boolean);
-        return arr.length ? arr : null;
-      }
-      return val == null ? null : null;
-    };
-
-    if (hasProp('amenities')) updates.amenities = normalizeField(body.amenities);
-    if (hasProp('hotel_features')) updates.hotel_features = normalizeField(body.hotel_features);
-
-    // Block restricted fields — rating MUST NOT be updatable by vendor
-    delete updates.status;
-    delete updates.vendor_id;
+    /** 🚫 BLOCK */
     delete updates.rating;
-
-    if (Object.keys(updates).length === 0) {
-      throw createError('No valid fields provided to update', 400);
-    }
+    delete updates.vendor_id;
+    delete updates.status;
 
     await hotel.update(updates);
-
-    // Reload to get fresh data with safe rating
     await hotel.reload();
-    hotel.setDataValue('rating', safeRating(hotel.rating));
 
-    sendSuccess(res, { hotel }, 'Hotel updated successfully');
+    hotel.setDataValue('rating', safeRating(hotel.rating));
+    sendSuccess(res, { hotel }, 'Hotel updated');
   }),
 
-  /**
-   * Delete hotel (with active booking check)
-   */
+  /** DELETE HOTEL */
   deleteHotel: asyncHandler(async (req, res) => {
     const hotel = await Hotel.findOne({
-      where: {
-        id: req.params.hotelId,
-        vendor_id: req.user.id
-      }
+      where: { id: req.params.hotelId, vendor_id: req.user.id }
     });
+    if (!hotel) throw createError('Hotel not found', 404);
 
-    if (!hotel) {
-      throw createError('Hotel not found', 404);
-    }
-
-    // Check for active bookings
-    const activeBookings = await Booking.count({
-      where: {
-        hotel_id: hotel.id,
-        status: ['PENDING', 'CONFIRMED']
-      }
+    const active = await Booking.count({
+      where: { hotel_id: hotel.id, status: ['PENDING', 'CONFIRMED'] }
     });
-
-    if (activeBookings > 0) {
-      throw createError('Cannot delete hotel with active bookings', 400);
-    }
+    if (active > 0) throw createError('Active bookings exist');
 
     await hotel.destroy();
-    sendSuccess(res, null, 'Hotel deleted successfully');
+    sendSuccess(res, null, 'Hotel deleted');
   }),
 
-  /**
-   * Get hotel images (vendor-owned)
-   */
-  getHotelImages: asyncHandler(async (req, res) => {
-    const hotel = await Hotel.findOne({
-      where: {
-        id: req.params.hotelId,
-        vendor_id: req.user.id
-      }
-    });
+  /* ===================== BOOKINGS ===================== */
 
-    if (!hotel) {
-      throw createError('Hotel not found', 404);
-    }
-
-    const images = await HotelImage.findAll({
-      where: { hotel_id: hotel.id },
-      order: [['createdAt', 'DESC']]
-    });
-
-    sendSuccess(res, { images }, 'Images retrieved successfully');
-  }),
-
-  /**
-   * Upload hotel images
-   */
-  uploadHotelImages: asyncHandler(async (req, res) => {
-    const hotel = await Hotel.findOne({
-      where: {
-        id: req.params.hotelId,
-        vendor_id: req.user.id
-      }
-    });
-
-    if (!hotel) {
-      throw createError('Hotel not found', 404);
-    }
-
-    const files = req.files || [];
-    if (files.length === 0) {
-      throw createError('No files uploaded', 400);
-    }
-
-    const savedImages = [];
-    for (const file of files) {
-      const image = await HotelImage.create({
-        hotel_id: hotel.id,
-        url: `/uploads/${file.filename}`
-      });
-      savedImages.push(image);
-    }
-
-    sendSuccess(res, { images: savedImages }, 'Images uploaded successfully');
-  }),
-
-  /**
-   * Delete hotel image
-   */
-  deleteHotelImage: asyncHandler(async (req, res) => {
-    const image = await HotelImage.findByPk(req.params.imageId, {
-      include: [{
-        model: Hotel,
-        as: 'hotel',
-        where: { vendor_id: req.user.id }
-      }]
-    });
-
-    if (!image) {
-      throw createError('Image not found', 404);
-    }
-
-    await image.destroy();
-    sendSuccess(res, null, 'Image deleted successfully');
-  }),
-
-  // ============ BOOKING MANAGEMENT ============
-
-  /**
-   * Get vendor's bookings with pagination
-   */
   getMyBookings: asyncHandler(async (req, res) => {
     const { page, limit } = validatePagination(req.query.page, req.query.limit);
-    const where = { vendor_id: req.user.id };
-
-    if (req.query.status) {
-      where.status = req.query.status;
-    }
-
     const offset = getPaginationOffset(page, limit);
 
-    const bookings = await Booking.findAndCountAll({
-      where,
+    const data = await Booking.findAndCountAll({
+      where: { vendor_id: req.user.id },
       include: getBookingIncludes(),
       limit,
       offset,
       order: [['createdAt', 'DESC']]
     });
 
-    const pagination = {
-      page,
-      totalPages: Math.ceil(bookings.count / limit),
-      totalItems: bookings.count,
-      limit,
-      hasNext: page < Math.ceil(bookings.count / limit),
-      hasPrev: page > 1
-    };
-
-    sendPaginatedResponse(res, bookings.rows, pagination, 'Bookings retrieved successfully');
-  }),
-
-  /**
-   * Get bookings of a specific user (scoped to current vendor) with pagination
-   */
-  getUserBookings: asyncHandler(async (req, res) => {
-    const { userId } = req.params;
-    const { page, limit } = validatePagination(req.query.page, req.query.limit);
-    const offset = getPaginationOffset(page, limit);
-    const { status } = req.query;
-
-    const where = { vendor_id: req.user.id, user_id: userId };
-    if (status) where.status = status;
-
-    const { rows, count } = await Booking.findAndCountAll({
-      where,
-      include: getBookingIncludes(),
-      limit,
-      offset,
-      order: [['createdAt', 'DESC']]
-    });
-
-    const pagination = {
+    sendPaginatedResponse(res, data.rows, {
       page,
       limit,
-      totalItems: count,
-      totalPages: Math.ceil(count / limit),
-      hasNext: offset + rows.length < count,
-      hasPrev: page > 1
-    };
-
-    return sendPaginatedResponse(res, rows, pagination, 'User bookings retrieved successfully');
+      totalItems: data.count,
+      totalPages: Math.ceil(data.count / limit)
+    }, 'Bookings fetched');
   }),
 
-  /**
-   * Get booking by ID (with ownership check)
-   */
-  getBookingById: asyncHandler(async (req, res) => {
-    const booking = await Booking.findOne({
-      where: {
-        id: req.params.bookingId,
-        vendor_id: req.user.id
-      },
-      include: getBookingIncludes()
-    });
+  /* ===================== DASHBOARD ===================== */
 
-    if (!booking) {
-      throw createError('Booking not found', 404);
-    }
-
-    sendSuccess(res, { booking }, 'Booking details retrieved successfully');
-  }),
-
-  /**
-   * Update booking status (confirm/cancel)
-   */
-  updateBookingStatus: asyncHandler(async (req, res) => {
-    const { status } = req.body;
-
-    if (!['CONFIRMED', 'CANCELLED'].includes(status)) {
-      throw createError('Invalid status. Must be CONFIRMED or CANCELLED', 400);
-    }
-
-    const booking = await Booking.findOne({
-      where: {
-        id: req.params.bookingId,
-        vendor_id: req.user.id
-      }
-    });
-
-    if (!booking) {
-      throw createError('Booking not found', 404);
-    }
-
-    const oldStatus = booking.status;
-    if (oldStatus === status) {
-      return sendSuccess(res, { booking }, `Booking is already ${status}`);
-    }
-
-    await booking.update({ status });
-
-    // Handle inventory updates based on status change
-    const hotel = await Hotel.findByPk(booking.hotel_id);
-    if (hotel && booking.room_type) {
-      const roomsCount = booking.booked_room || 1;
-
-      // CONFIRMED -> CANCELLED: RESTORE INVENTORY
-      if (oldStatus === 'CONFIRMED' && status === 'CANCELLED') {
-        if (booking.room_type === 'AC') {
-          hotel.ac_rooms = (hotel.ac_rooms || 0) + roomsCount;
-        } else if (booking.room_type === 'NON_AC' || booking.room_type === 'Non AC') {
-          hotel.non_ac_rooms = (hotel.non_ac_rooms || 0) + roomsCount;
-        }
-        hotel.available_rooms = (hotel.available_rooms || 0) + roomsCount;
-        hotel.booked_room = Math.max(0, (hotel.booked_room || 0) - roomsCount);
-        await hotel.save();
-      }
-      // CANCELLED -> CONFIRMED or PENDING -> CONFIRMED: DECREMENT INVENTORY
-      else if (status === 'CONFIRMED' && (oldStatus === 'CANCELLED' || oldStatus === 'PENDING')) {
-        if (booking.room_type === 'AC') {
-          hotel.ac_rooms = Math.max(0, (hotel.ac_rooms || 0) - roomsCount);
-        } else if (booking.room_type === 'NON_AC' || booking.room_type === 'Non AC') {
-          hotel.non_ac_rooms = Math.max(0, (hotel.non_ac_rooms || 0) - roomsCount);
-        }
-        hotel.available_rooms = Math.max(0, (hotel.available_rooms || 0) - roomsCount);
-        hotel.booked_room = (hotel.booked_room || 0) + roomsCount;
-        await hotel.save();
-      }
-    }
-
-    sendSuccess(res, { booking }, `Booking ${status.toLowerCase()} successfully`);
-  }),
-
-  // ============ ANALYTICS & REPORTS ============
-
-  /**
-   * Get vendor dashboard statistics
-   */
   getDashboardStats: asyncHandler(async (req, res) => {
     const [
       totalHotels,
       approvedHotels,
       pendingHotels,
-      totalRooms,
       totalBookings,
       confirmedBookings,
-      pendingBookings,
-      revenueResult,
-      capacityResult
+      revenue
     ] = await Promise.all([
       Hotel.count({ where: { vendor_id: req.user.id } }),
       Hotel.count({ where: { vendor_id: req.user.id, status: 'APPROVED' } }),
       Hotel.count({ where: { vendor_id: req.user.id, status: 'PENDING' } }),
-      Room.count({ include: [{ model: Hotel, as: 'hotel', where: { vendor_id: req.user.id } }] }),
       Booking.count({ where: { vendor_id: req.user.id } }),
       Booking.count({ where: { vendor_id: req.user.id, status: 'CONFIRMED' } }),
-      Booking.count({ where: { vendor_id: req.user.id, status: 'PENDING' } }),
       Booking.findAll({
         where: { vendor_id: req.user.id, status: 'CONFIRMED' },
-        attributes: [[fn('SUM', col('amount')), 'totalRevenue']]
-      }),
-      Hotel.findAll({
-        where: { vendor_id: req.user.id },
-        attributes: [
-          [fn('SUM', col('total_rooms')), 'totalCapacity'],
-          [fn('SUM', col('booked_room')), 'totalBooked']
-        ]
+        attributes: [[fn('SUM', col('amount')), 'total']]
       })
     ]);
 
-    const totalRevenue = revenueResult[0]?.dataValues?.totalRevenue || 0;
-
-    // Calculate Occupancy
-    const totalCapacity = parseInt(capacityResult[0]?.dataValues?.totalCapacity || 0);
-    const totalBookedRooms = parseInt(capacityResult[0]?.dataValues?.totalBooked || 0);
-    const occupancyRate = totalCapacity > 0
-      ? ((totalBookedRooms / totalCapacity) * 100).toFixed(1)
-      : 0;
-
-    // Build stats — no duplicate keys
-    const stats = {
-      totalHotels,
-      approvedHotels,
-      pendingHotels,
-      totalRooms,
-      totalBookings,
-      confirmedBookings,
-      pendingBookings,
-      totalRevenue: parseFloat(totalRevenue) || 0,
-      occupancyRate: parseFloat(occupancyRate)
-    };
-
-    sendSuccess(res, { stats }, 'Dashboard statistics retrieved successfully');
-  }),
-
-  /**
-   * Get revenue report with date filtering
-   */
-  getRevenueReport: asyncHandler(async (req, res) => {
-    const { startDate, endDate } = req.query;
-    const where = {
-      vendor_id: req.user.id,
-      status: 'CONFIRMED',
-      ...buildDateRangeFilter(startDate, endDate)
-    };
-
-    const bookings = await Booking.findAll({
-      where,
-      include: [
-        { model: Hotel, as: 'hotel', attributes: ['id', 'name'] },
-        { model: Room, as: 'room', attributes: ['id', 'type'] }
-      ],
-      order: [['createdAt', 'DESC']]
-    });
-
-    const totalRevenue = bookings.reduce((sum, booking) => sum + (booking.amount || 0), 0);
-
     sendSuccess(res, {
-      bookings,
-      totalRevenue,
-      count: bookings.length
-    }, 'Revenue report generated successfully');
+      stats: {
+        totalHotels,
+        approvedHotels,
+        pendingHotels,
+        totalBookings,
+        confirmedBookings,
+        totalRevenue: parseFloat(revenue[0]?.dataValues?.total || 0)
+      }
+    }, 'Dashboard stats');
   }),
 
-  // ============ PROFILE MANAGEMENT ============
+  /* ===================== PROFILE ===================== */
 
-  /**
-   * Get vendor profile
-   */
   getVendorProfile: asyncHandler(async (req, res) => {
     const vendor = await Vendor.findByPk(req.user.id, {
       attributes: { exclude: ['password'] }
     });
+    if (!vendor) throw createError('Vendor not found', 404);
 
-    if (!vendor) {
-      throw createError('Vendor profile not found', 404);
-    }
-
-    const hotelsCount = await Hotel.count({
-      where: { vendor_id: req.user.id }
-    });
-
-    const vendorData = vendor.toJSON();
-    vendorData.hotels_count = hotelsCount;
-
-    sendSuccess(res, { vendor: vendorData }, 'Vendor profile retrieved successfully');
+    const hotelsCount = await Hotel.count({ where: { vendor_id: req.user.id } });
+    sendSuccess(res, { vendor: { ...vendor.toJSON(), hotels_count: hotelsCount } });
   }),
 
-  /**
-   * Update vendor profile
-   */
   updateVendorProfile: asyncHandler(async (req, res) => {
     const vendor = await Vendor.findByPk(req.user.id);
+    if (!vendor) throw createError('Vendor not found', 404);
 
-    if (!vendor) {
-      throw createError('Vendor profile not found', 404);
-    }
-
-    const { full_name, phone, business_name, business_address } = req.body;
-    const updates = {};
-
-    if (full_name) updates.full_name = full_name;
-    if (phone) updates.phone = phone;
-    if (business_name) updates.business_name = business_name;
-    if (business_address) updates.business_address = business_address;
-
-    await vendor.update(updates);
-
-    const updatedVendor = await Vendor.findByPk(req.user.id, {
-      attributes: { exclude: ['password'] }
-    });
-
-    const hotelsCount = await Hotel.count({
-      where: { vendor_id: req.user.id }
-    });
-
-    const vendorData = updatedVendor.toJSON();
-    vendorData.hotels_count = hotelsCount;
-
-    sendSuccess(res, { vendor: vendorData }, 'Vendor profile updated successfully');
+    await vendor.update(req.body);
+    sendSuccess(res, { vendor }, 'Profile updated');
   })
 };
