@@ -7,10 +7,21 @@ const { Hotel, HotelImage, Room, Booking, Review, User, Vendor, Payment } = requ
 const { Op, literal } = require('sequelize');
 const Razorpay = require('razorpay');
 require('dotenv').config();
-const razorpay = new Razorpay({
-  key_id: process.env.RZP_KEY || '',
-  key_secret: process.env.RZP_SECRET || ''
-});
+
+// Helper to get Razorpay credentials
+const getRazorpayCredentials = () => {
+  const key_id = (process.env.RAZORPAY_KEY_ID || process.env.RZP_KEY || '').trim();
+  const key_secret = (process.env.RAZORPAY_KEY_SECRET || process.env.RZP_SECRET || '').trim();
+  return { key_id, key_secret };
+};
+
+// Helper to get Razorpay instance
+const getRazorpay = () => {
+  const { key_id, key_secret } = getRazorpayCredentials();
+  if (!key_id || !key_secret) return null;
+  return new Razorpay({ key_id, key_secret });
+};
+
 const { sendSuccess, sendError, sendPaginatedResponse } = require('../utils/responseHelper');
 const { validateRequiredFields, validateDateRange, isValidRating, validatePagination } = require('../utils/validationHelper');
 const { 
@@ -624,7 +635,8 @@ module.exports = {
    * Get payment key
    */
   getPaymentKey: asyncHandler(async (req, res) => {
-    sendSuccess(res, { key_id: process.env.RZP_KEY }, 'Payment key retrieved');
+    const { key_id } = getRazorpayCredentials();
+    sendSuccess(res, { key_id }, 'Payment key retrieved');
   }),
 
   /**
@@ -672,12 +684,15 @@ module.exports = {
     }
 
     // Verify Razorpay credentials
-    if (!process.env.RZP_KEY || !process.env.RZP_SECRET) {
-      console.error('Razorpay credentials missing. RZP_KEY:', !!process.env.RZP_KEY, 'RZP_SECRET:', !!process.env.RZP_SECRET);
+    const razorpay = getRazorpay();
+    const { key_id } = getRazorpayCredentials();
+
+    if (!razorpay || !key_id) {
+      console.error('Razorpay credentials missing or invalid.');
       throw createError('Online payment service is temporarily unavailable. Please try Pay at Hotel.', 503);
     }
 
-    console.log(`[Payment] Initiating Razorpay with KeyID: ${process.env.RZP_KEY.substring(0, 10)}...`);
+    console.log(`[Payment] Initiating Razorpay with KeyID: ${key_id.substring(0, 10)}...`);
 
     let order;
     try {
@@ -712,7 +727,7 @@ module.exports = {
       });
     }
 
-    sendSuccess(res, { order, payment, key_id: process.env.RZP_KEY }, 'Payment initiated');
+    sendSuccess(res, { order, payment, key_id }, 'Payment initiated');
   }),
 
   /**
