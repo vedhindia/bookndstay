@@ -121,49 +121,56 @@ module.exports = {
        targetCheckOut = d.toISOString().split('T')[0];
     }
 
-    // 1. Calculate PENDING Bookings to subtract from available inventory
-    // We ONLY count PENDING bookings because CONFIRMED bookings have already decremented the inventory in the Hotel table.
-    // We exclude current user's PENDING bookings so they don't see reduced availability from their own unconfirmed attempts.
-    const pendingBookingCondition = { 
-      status: 'PENDING'
+    // 1. Calculate Bookings (PENDING + CONFIRMED) to subtract from available inventory
+    // We count both PENDING and CONFIRMED bookings because we treat the Hotel table's inventory as TOTAL CAPACITY.
+    const bookingCondition = { 
+      status: { [Op.in]: ['PENDING', 'CONFIRMED'] }
     };
     
-    // Only exclude current user if authenticated
+    // Only exclude current user's PENDING bookings if authenticated (so they don't block themselves?)
+    // Actually, if a user has a PENDING booking, they ARE blocking the room.
+    // But if they are viewing the hotel again, maybe they want to book another room?
+    // The original logic excluded current user's PENDING bookings. Let's keep that for PENDING only.
     if (req.user && req.user.id) {
-      pendingBookingCondition.user_id = { [Op.ne]: req.user.id };
+        // This is tricky with Op.or. Let's simplify:
+        // We want: (Status=CONFIRMED) OR (Status=PENDING AND User!=Me)
+        // But for simplicity, let's just count ALL bookings.
+        // If I have a pending booking, I am using a room.
+        // If I want to book ANOTHER room, I need to know if there are OTHERS available.
+        // So I should count my own pending booking as "used".
     }
 
-    const pendingBookedCount = await Booking.sum('booked_room', {
+    const bookedCount = await Booking.sum('booked_room', {
       where: {
         hotel_id: hotel.id,
+        status: { [Op.in]: ['PENDING', 'CONFIRMED'] },
         [Op.and]: [
-          pendingBookingCondition,
           { check_in: { [Op.lt]: targetCheckOut } },
           { check_out: { [Op.gt]: targetCheckIn } }
         ]
       }
     }) || 0;
 
-    // 2. Calculate AC PENDING Bookings
-    const acPendingBookings = await Booking.sum('booked_room', {
+    // 2. Calculate AC Bookings
+    const acBookedCount = await Booking.sum('booked_room', {
       where: {
         hotel_id: hotel.id,
         room_type: 'AC',
+        status: { [Op.in]: ['PENDING', 'CONFIRMED'] },
         [Op.and]: [
-          pendingBookingCondition,
           { check_in: { [Op.lt]: targetCheckOut } },
           { check_out: { [Op.gt]: targetCheckIn } }
         ]
       }
     }) || 0;
 
-    // 3. Calculate Non-AC PENDING Bookings
-    const nonAcPendingBookings = await Booking.sum('booked_room', {
+    // 3. Calculate Non-AC Bookings
+    const nonAcBookedCount = await Booking.sum('booked_room', {
       where: {
         hotel_id: hotel.id,
         room_type: 'Non AC', // Matches DB value
+        status: { [Op.in]: ['PENDING', 'CONFIRMED'] },
         [Op.and]: [
-          pendingBookingCondition,
           { check_in: { [Op.lt]: targetCheckOut } },
           { check_out: { [Op.gt]: targetCheckIn } }
         ]
@@ -171,17 +178,16 @@ module.exports = {
     }) || 0;
 
     // Overwrite the fields with AVAILABLE count
-    // The DB values (ac_rooms, non_ac_rooms, available_rooms) represent "Current Inventory" (Capacity - Confirmed).
-    // So we only need to subtract PENDING bookings.
-    const acCurrentInventory = parseInt(hotel.ac_rooms || 0);
-    const nonAcCurrentInventory = parseInt(hotel.non_ac_rooms || 0);
-    const totalCurrentInventory = parseInt(hotel.available_rooms || 0);
+    // The DB values (ac_rooms, non_ac_rooms, available_rooms) represent "Total Capacity".
+    const acTotalCapacity = parseInt(hotel.ac_rooms || 0);
+    const nonAcTotalCapacity = parseInt(hotel.non_ac_rooms || 0);
+    const totalCapacity = parseInt(hotel.available_rooms || 0);
     
-    hotel.setDataValue('ac_rooms', Math.max(0, acCurrentInventory - acPendingBookings));
-    hotel.setDataValue('non_ac_rooms', Math.max(0, nonAcCurrentInventory - nonAcPendingBookings));
+    hotel.setDataValue('ac_rooms', Math.max(0, acTotalCapacity - acBookedCount));
+    hotel.setDataValue('non_ac_rooms', Math.max(0, nonAcTotalCapacity - nonAcBookedCount));
     
-    // Set total available rooms based on TotalInventory - PendingBooked
-    hotel.setDataValue('available_rooms', Math.max(0, totalCurrentInventory - pendingBookedCount));
+    // Set total available rooms based on TotalInventory - Booked
+    hotel.setDataValue('available_rooms', Math.max(0, totalCapacity - bookedCount));
 
     hotel.images = (hotel.images || []).filter(img => img.url && img.url.startsWith('/uploads/') && !img.url.includes('/src/assets/'));
     sendSuccess(res, { hotel }, 'Hotel details retrieved successfully');
@@ -644,18 +650,54 @@ module.exports = {
     if (!booking.amount || booking.amount <= 0) {
       throw createError('Invalid booking amount', 400);
     }
+
+    const { payment_method } = req.body;
+
+    // If Pay at Hotel, skip Razorpay order creation
+    if (payment_method === 'PAY_AT_HOTEL') {
+      // Check if payment already exists
+      let payment = await Payment.findOne({ where: { booking_id: booking.id } });
+      
+      if (!payment) {
+        payment = await Payment.create({
+          booking_id: booking.id,
+          gateway: 'PAY_AT_HOTEL',
+          gateway_payment_id: `PAH_${booking.id}_${Date.now()}`,
+          amount: booking.amount,
+          status: 'INITIATED'
+        });
+      }
+      
+      return sendSuccess(res, { payment }, 'Payment initiated (Pay at Hotel)');
+    }
+
     const order = await razorpay.orders.create({
       amount: Math.round(parseFloat(booking.amount) * 100),
       currency: 'INR',
       receipt: `rcpt_${booking.id}`
     });
-    const payment = await Payment.create({
-      booking_id: booking.id,
-      gateway: 'RAZORPAY',
-      gateway_payment_id: order.id,
-      amount: booking.amount,
-      status: 'INITIATED'
-    });
+    
+    // Check if payment already exists
+    let payment = await Payment.findOne({ where: { booking_id: booking.id } });
+    
+    if (payment) {
+      // Update existing payment record
+      payment.gateway = 'RAZORPAY';
+      payment.gateway_payment_id = order.id;
+      payment.amount = booking.amount;
+      payment.status = 'INITIATED';
+      await payment.save();
+    } else {
+      // Create new payment record
+      payment = await Payment.create({
+        booking_id: booking.id,
+        gateway: 'RAZORPAY',
+        gateway_payment_id: order.id,
+        amount: booking.amount,
+        status: 'INITIATED'
+      });
+    }
+
     sendSuccess(res, { order, payment, key_id: process.env.RZP_KEY }, 'Payment initiated');
   }),
 
@@ -730,22 +772,20 @@ module.exports = {
       }
       await booking.save();
 
-      // UPDATE HOTEL INVENTORY: Deduct rooms only on successful payment
+      // UPDATE HOTEL INVENTORY: 
+      // We do NOT deduct rooms from the Hotel table anymore.
+      // The Hotel table fields (ac_rooms, non_ac_rooms, available_rooms) represent TOTAL CAPACITY.
+      // Availability is calculated dynamically in getHotelById and createBooking based on overlapping bookings.
+      /*
       if (booking.hotel) {
         const hotel = booking.hotel;
         const roomsToBook = Number(booking.booked_room) || 1;
-        const rType = (booking.room_type || '').toUpperCase();
-
-        if (rType === 'AC') {
-          hotel.ac_rooms = Math.max(0, (Number(hotel.ac_rooms) || 0) - roomsToBook);
-        } else if (rType === 'NON_AC' || rType === 'NON AC') {
-          hotel.non_ac_rooms = Math.max(0, (Number(hotel.non_ac_rooms) || 0) - roomsToBook);
-        }
         
-        hotel.booked_room = (Number(hotel.booked_room) || 0) + roomsToBook;
-        hotel.available_rooms = Math.max(0, (Number(hotel.available_rooms) || 0) - roomsToBook);
-        await hotel.save();
+        // We might want to track total bookings count for analytics, but not for availability.
+        // hotel.booked_room = (Number(hotel.booked_room) || 0) + roomsToBook;
+        // await hotel.save();
       }
+      */
 
       // Send confirmation email
       console.log('Attempting to send confirmation email for booking:', booking.id);
@@ -848,28 +888,16 @@ module.exports = {
     await booking.save();
     
     // Restore counts on Hotel model ONLY IF original status was CONFIRMED
-    // PENDING bookings did not decrement the Hotel table inventory, so we don't restore.
+    // However, since we now treat Hotel fields as TOTAL CAPACITY, we do NOT restore them.
+    /*
     if (originalStatus === 'CONFIRMED') {
       const hotel = await Hotel.findByPk(booking.hotel_id);
       if (hotel) {
-        const roomsToRestore = booking.booked_room || 1;
-        
-        // Restore specific room type count
-        if (booking.room_type === 'AC') {
-          hotel.ac_rooms = (hotel.ac_rooms || 0) + roomsToRestore;
-        } else if (booking.room_type === 'NON_AC') {
-          hotel.non_ac_rooms = (hotel.non_ac_rooms || 0) + roomsToRestore;
-        }
-        
-        // Restore total available rooms
-        hotel.available_rooms = (hotel.available_rooms || 0) + roomsToRestore;
-        
-        // Decrement booked rooms count
-        hotel.booked_room = Math.max(0, (hotel.booked_room || 0) - roomsToRestore);
-        
-        await hotel.save();
+        // ... restore logic ...
+        // await hotel.save();
       }
     }
+    */
 
     // Restore legacy Room model (deprecated but kept for backward compatibility if needed)
     const room = await Room.findByPk(booking.room_id);

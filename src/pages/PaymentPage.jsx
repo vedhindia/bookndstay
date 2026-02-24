@@ -279,7 +279,7 @@ export default function PaymentPage() {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`
           },
-          body: JSON.stringify({ amount: amount })
+          body: JSON.stringify({ amount: amount, payment_method: 'PAY_AT_HOTEL' })
         });
         if (initRes.status === 401) {
           clearToken();
