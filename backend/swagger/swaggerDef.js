@@ -11,11 +11,11 @@ const options = {
     },
     servers: [
       {
-        url: process.env.SWAGGER_BASE_URL || '/',
-        description: 'Live / current host server',
+        url: 'https://bookndstay.com',
+        description: 'Production server',
       },
       {
-        url: process.env.SWAGGER_DEV_BASE_URL || 'http://localhost:3001',
+        url: 'http://localhost:3001',
         description: 'Development server',
       }
     ],
