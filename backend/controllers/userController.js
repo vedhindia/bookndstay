@@ -692,9 +692,27 @@ module.exports = {
       }
     }
     
+    // Debug helper to get char codes
+    const getCharCodes = (str) => {
+      if (!str) return [];
+      return str.split('').map(c => c.charCodeAt(0));
+    };
+
+    const keyIdCodes = key_id ? getCharCodes(key_id) : [];
+    const secretCodes = key_secret ? getCharCodes(key_secret) : [];
+
     sendSuccess(res, { 
-      key_id_preview: key_id ? key_id.substring(0, 10) + '...' : 'MISSING',
-      key_secret_preview: key_secret ? key_secret.substring(0, 2) + '...' : 'MISSING',
+      key_id_preview: key_id ? `${key_id.substring(0, 4)}...${key_id.substring(key_id.length - 4)}` : 'MISSING',
+      key_id_length: key_id ? key_id.length : 0,
+      key_id_first_char_code: keyIdCodes.length > 0 ? keyIdCodes[0] : null,
+      key_id_last_char_code: keyIdCodes.length > 0 ? keyIdCodes[keyIdCodes.length - 1] : null,
+      
+      key_secret_preview: key_secret ? `${key_secret.substring(0, 4)}...${key_secret.substring(key_secret.length - 4)}` : 'MISSING',
+      key_secret_length: key_secret ? key_secret.length : 0,
+      key_secret_first_char_code: secretCodes.length > 0 ? secretCodes[0] : null,
+      key_secret_last_char_code: secretCodes.length > 0 ? secretCodes[secretCodes.length - 1] : null,
+      
+      server_time: new Date().toISOString(),
       keyValidation,
       status,
       connectivity,
