@@ -751,12 +751,12 @@ module.exports = {
       console.error('Razorpay order creation failed:', rzpError);
       
       // Extract detailed error message
-       const errorDetails = rzpError.error && rzpError.error.description 
-         ? rzpError.error.description 
-         : (rzpError.message || JSON.stringify(rzpError));
-         
-       const amountInPaise = Math.round(parseFloat(booking.amount) * 100);
-       throw createError(`Payment initiation failed: ${errorDetails} (Amount: ${amountInPaise})`, 502);
+      const errorDetails = rzpError.error && rzpError.error.description 
+        ? rzpError.error.description 
+        : (rzpError.message || JSON.stringify(rzpError));
+        
+      const amountInRupees = parseFloat(booking.amount).toFixed(2);
+      throw createError(`Payment initiation failed: ${errorDetails} (Amount: ₹${amountInRupees})`, 502);
     }
     
     // Check if payment already exists
