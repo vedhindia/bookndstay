@@ -8,10 +8,16 @@ const { Op, literal } = require('sequelize');
 const Razorpay = require('razorpay');
 require('dotenv').config();
 
+// Helper to clean environment variables (remove quotes, whitespace)
+const cleanEnv = (val) => {
+  if (!val) return '';
+  return val.toString().trim().replace(/^["']|["']$/g, '');
+};
+
 // Helper to get Razorpay credentials
 const getRazorpayCredentials = () => {
-  const key_id = (process.env.RAZORPAY_KEY_ID || process.env.RZP_KEY || '').trim();
-  const key_secret = (process.env.RAZORPAY_KEY_SECRET || process.env.RZP_SECRET || '').trim();
+  const key_id = cleanEnv(process.env.RAZORPAY_KEY_ID || process.env.RZP_KEY);
+  const key_secret = cleanEnv(process.env.RAZORPAY_KEY_SECRET || process.env.RZP_SECRET);
   return { key_id, key_secret };
 };
 
@@ -775,7 +781,8 @@ module.exports = {
         
       const amountInRupees = parseFloat(booking.amount).toFixed(2);
       const keyPrefix = key_id ? key_id.substring(0, 9) : 'unknown';
-      throw createError(`Payment initiation failed: ${errorDetails} (Amount: ₹${amountInRupees}, Key: ${keyPrefix}...)`, 502);
+      const secretLen = key_secret ? key_secret.length : 0;
+      throw createError(`Payment initiation failed: ${errorDetails} (Amount: ₹${amountInRupees}, Key: ${keyPrefix}..., SecretLen: ${secretLen})`, 502);
     }
     
     // Check if payment already exists
