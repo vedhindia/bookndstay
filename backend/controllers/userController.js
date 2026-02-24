@@ -655,16 +655,25 @@ module.exports = {
     let status = 'Configured';
     let error = null;
     let connectivity = 'Unknown';
+    
+    // Detailed validation
+    const keyIdRegex = /^rzp_(test|live)_[a-zA-Z0-9]{14}$/;
+    const secretRegex = /^[a-zA-Z0-9]{24}$/;
+    
     let keyValidation = {
       idLength: key_id ? key_id.length : 0,
       secretLength: key_secret ? key_secret.length : 0,
       idPrefix: key_id ? key_id.substring(0, 9) : 'none',
       isTestMode: key_id ? key_id.startsWith('rzp_test_') : false,
-      isLiveMode: key_id ? key_id.startsWith('rzp_live_') : false
+      isLiveMode: key_id ? key_id.startsWith('rzp_live_') : false,
+      isValidIdFormat: key_id ? keyIdRegex.test(key_id) : false,
+      isValidSecretFormat: key_secret ? secretRegex.test(key_secret) : false
     };
     
     if (!key_id) status = 'Missing Key ID';
     else if (!key_secret) status = 'Missing Key Secret';
+    else if (!keyValidation.isValidIdFormat) status = 'Invalid Key ID Format';
+    else if (!keyValidation.isValidSecretFormat) status = 'Invalid Secret Format';
     
     // Check connectivity by attempting to create a test order
     try {
@@ -703,14 +712,10 @@ module.exports = {
 
     sendSuccess(res, { 
       key_id_preview: key_id ? `${key_id.substring(0, 4)}...${key_id.substring(key_id.length - 4)}` : 'MISSING',
-      key_id_length: key_id ? key_id.length : 0,
-      key_id_first_char_code: keyIdCodes.length > 0 ? keyIdCodes[0] : null,
-      key_id_last_char_code: keyIdCodes.length > 0 ? keyIdCodes[keyIdCodes.length - 1] : null,
+      key_id_full_codes: keyIdCodes, // EXTREME DEBUGGING
       
       key_secret_preview: key_secret ? `${key_secret.substring(0, 4)}...${key_secret.substring(key_secret.length - 4)}` : 'MISSING',
-      key_secret_length: key_secret ? key_secret.length : 0,
-      key_secret_first_char_code: secretCodes.length > 0 ? secretCodes[0] : null,
-      key_secret_last_char_code: secretCodes.length > 0 ? secretCodes[secretCodes.length - 1] : null,
+      key_secret_full_codes: secretCodes, // EXTREME DEBUGGING
       
       server_time: new Date().toISOString(),
       keyValidation,
