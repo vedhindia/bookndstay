@@ -677,6 +677,8 @@ module.exports = {
       throw createError('Online payment service is temporarily unavailable. Please try Pay at Hotel.', 503);
     }
 
+    console.log(`[Payment] Initiating Razorpay with KeyID: ${process.env.RZP_KEY.substring(0, 10)}...`);
+
     let order;
     try {
       order = await razorpay.orders.create({
