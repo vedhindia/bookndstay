@@ -25,11 +25,17 @@ async function request(path, options = {}) {
 
 // Token helpers
 export function getToken() {
-  return localStorage.getItem('auth_token');
+  const token = localStorage.getItem('auth_token');
+  if (token === 'null' || token === 'undefined') return null;
+  return token;
 }
 
 export function setToken(token) {
-  if (token) localStorage.setItem('auth_token', token);
+  if (token && token !== 'null' && token !== 'undefined') {
+    localStorage.setItem('auth_token', token);
+  } else {
+    localStorage.removeItem('auth_token');
+  }
   window.dispatchEvent(new Event('auth-changed'));
 }
 
