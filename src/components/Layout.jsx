@@ -9,7 +9,7 @@ const Layout = ({ children, state, actions }) => {
   // Navigation function to pass to Header using React Router
   const navigate = (path) => {
     if (path === 'vendorLogin') {
-      window.location.href = 'http://localhost:3001/vendor';
+      window.location.href = 'https://bookndstay.com/vendor';
       return;
     }
     const target = `/${path === 'home' ? '' : path}`;

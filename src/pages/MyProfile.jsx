@@ -7,7 +7,7 @@ import authApi from '../api/auth';
 export default function MyProfile() {
   const navigate = useNavigate();
   const apiBase = (import.meta.env.VITE_API_BASE || '/api/user/auth');
-  const hostBase = (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001');
+  const hostBase = (typeof window !== 'undefined' ? window.location.origin : 'https://bookndstay.com');
   const filesBase = (import.meta.env.VITE_FILES_BASE || hostBase);
   const resolveProfilePhotoUrl = (val) => {
     if (!val || typeof val !== 'string') return null;

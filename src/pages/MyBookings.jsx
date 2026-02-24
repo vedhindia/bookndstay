@@ -19,10 +19,12 @@ export default function MyBookings() {
 
   const filesBase = (import.meta.env.VITE_FILES_BASE || (() => {
     try {
-      const u = new URL(typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001');
+      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://bookndstay.com';
+      const u = new URL(origin);
       return `${u.protocol}//${u.host}`;
     } catch {
-      return typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001';
+      if (typeof window !== 'undefined') return window.location.origin;
+      return 'https://bookndstay.com';
     }
   })());
 

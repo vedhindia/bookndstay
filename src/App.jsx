@@ -44,7 +44,7 @@ const AppContent = () => {
     else if (page === 'bookings') navigate('/bookings');
     else if (page === 'bookingHistory') navigate('/bookingHistory');
     else if (page === 'writeReview') navigate('/writeReview');
-    else if (page === 'vendorLogin') window.location.href = 'http://localhost:3001/vendor';
+    else if (page === 'vendorLogin') window.location.href = 'https://bookndstay.com/vendor';
     
     window.scrollTo(0, 0);
   };

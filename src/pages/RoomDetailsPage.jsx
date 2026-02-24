@@ -69,10 +69,12 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
   const apiUserBase = ((import.meta.env.VITE_API_BASE && import.meta.env.VITE_API_BASE.replace('/auth', '')) || '/api/user').replace(/\/+$/, '');
   const filesBase = (import.meta.env.VITE_FILES_BASE || (() => {
     try {
-      const u = new URL(typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001');
+      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://bookndstay.com';
+      const u = new URL(origin);
       return `${u.protocol}//${u.host}`;
     } catch {
-      return typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001';
+      if (typeof window !== 'undefined') return window.location.origin;
+      return 'https://bookndstay.com';
     }
   })());
 
@@ -476,7 +478,7 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
   useEffect(() => {
     const fetchCoupons = async () => {
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_BASE ? import.meta.env.VITE_API_BASE.replace('/auth', '') : 'http://localhost:3001/api'}/public/coupons`);
+        const res = await fetch(`${import.meta.env.VITE_API_BASE ? import.meta.env.VITE_API_BASE.replace('/auth', '') : 'https://bookndstay.com/api'}/public/coupons`);
         if (res.ok) {
           const data = await res.json();
           // The API response structure is { success: true, data: { coupons: [...] } }

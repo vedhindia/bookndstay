@@ -73,7 +73,7 @@ const getVendorIdFromLocalStorage = () => {
     // If base is empty or relative (e.g. from proxy), and we need absolute URL for images
     // (because proxy might not cover /uploads), fallback to localhost:3001 for dev
     if (!base || base.startsWith('/')) {
-       base = 'http://localhost:3001';
+       base = 'https://bookndstay.com';
     }
 
     // Root-relative

@@ -13,10 +13,6 @@ const options = {
       {
         url: 'https://bookndstay.com',
         description: 'Production server',
-      },
-      {
-        url: 'http://localhost:3001',
-        description: 'Development server',
       }
     ],
     components: {

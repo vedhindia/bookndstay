@@ -12,7 +12,7 @@ export default function InvoicePage() {
   const [error, setError] = useState('');
 
   const apiUserBase = (() => {
-    const base = import.meta.env.VITE_API_BASE || 'http://localhost:3001/api/auth';
+    const base = import.meta.env.VITE_API_BASE || 'https://bookndstay.com/api/auth';
     const cleaned = base.replace(/\/auth\/?$/, '');
     return `${cleaned}/user`;
   })();
