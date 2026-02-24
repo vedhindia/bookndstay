@@ -12,6 +12,8 @@ export default function Header({ navigate, state, actions }) {
   const mobileMenuRef = useRef(null);
   const userDropdownRefDesktop = useRef(null);
   const userDropdownRefMobile = useRef(null);
+
+  const VENDOR_URL = 'https://bookndstay.com/vendor/';
   
   const toggleUserDropdown = () => {
     setShowUserDropdown(!showUserDropdown);
@@ -21,11 +23,10 @@ export default function Header({ navigate, state, actions }) {
     setMobileMenuOpen(!mobileMenuOpen);
   };
 
-
   // Navigation helper function
   const handleNavigation = (page) => {
     if (page === 'vendorLogin') {
-      window.location.href = 'https://bookndstay.com/vendor';
+      window.location.href = VENDOR_URL;
     } else {
       navigate(page);
     }
@@ -108,7 +109,7 @@ export default function Header({ navigate, state, actions }) {
       transition={{ duration: 0.6, type: "spring", stiffness: 100 }}
       className='sticky top-0 z-40 bg-white/80 backdrop-blur-md supports-[backdrop-filter]:bg-white/60 text-gray-800 shadow-lg border-b border-gray-100'
     >
-      {/* Top notification bar - Responsive text sizing */}
+      {/* Top notification bar */}
       <div className='bg-gradient-to-r from-[#ee2e24] to-[#ff5252] text-white text-[10px] xs:text-[11px] sm:text-xs py-1.5 sm:py-2 text-center px-2 sm:px-4 tracking-wide shadow-sm'>
         <motion.span 
           initial={{ opacity: 0, scale: 0.95 }}
@@ -120,10 +121,10 @@ export default function Header({ navigate, state, actions }) {
         </motion.span>
       </div>
       
-      {/* Main header - Improved responsive spacing */}
+      {/* Main header */}
       <div className='container mx-auto px-3 xs:px-4 sm:px-6 md:px-8 py-2 sm:py-3 md:py-3.5 flex items-center justify-between gap-2 xs:gap-3 sm:gap-4'>
         
-        {/* Left: Brand - Responsive sizing */}
+        {/* Left: Brand */}
         <div className='flex items-center gap-2 xs:gap-3 sm:gap-4'>
           <a 
             onClick={() => handleNavigation('home')}
@@ -140,12 +141,14 @@ export default function Header({ navigate, state, actions }) {
           </a>
         </div>
 
-        {/* Desktop & Tablet: Utility items - Show on larger screens */}
+        {/* Desktop & Tablet: Utility items */}
         <div className='hidden lg:flex items-center gap-2 xl:gap-4 text-sm flex-1 justify-center'>
           
-          {/* List your property - Responsive on tablet */}
+          {/* List your property */}
           <a
-            href="http://localhost:3001/vendor/"
+            href={VENDOR_URL}
+            target="_blank"
+            rel="noopener noreferrer"
             className='flex items-center gap-1.5 lg:gap-2 px-2 lg:px-3 xl:px-4 py-1.5 lg:py-2 rounded-full cursor-pointer hover:shadow-md transition-all border border-[#ee2e24]/20 bg-white no-underline'
             style={{ textDecoration: 'none' }}
           >
@@ -158,7 +161,7 @@ export default function Header({ navigate, state, actions }) {
             </div>
           </a>
 
-          {/* Phone - Responsive on tablet */}
+          {/* Phone */}
           <motion.div 
             whileHover={{ scale: 1.05, backgroundColor: '#f9fafb' }}
             whileTap={{ scale: 0.98 }}
@@ -347,7 +350,9 @@ export default function Header({ navigate, state, actions }) {
                   
                   {/* List Your Property - Mobile */}
                   <a
-                    href="http://localhost:3001/vendor/"
+                    href={VENDOR_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="py-2.5 xs:py-3 px-3 xs:px-4 rounded-xl text-gray-800 hover:bg-red-50 active:bg-red-100 hover:text-[#ee2e24] cursor-pointer transition-all font-medium flex items-center gap-3 text-sm xs:text-base no-underline"
                     style={{ textDecoration: 'none' }}
                     onClick={() => setMobileMenuOpen(false)}
