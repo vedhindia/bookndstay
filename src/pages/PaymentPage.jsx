@@ -107,7 +107,19 @@ export default function PaymentPage() {
                 sessionStorage.setItem('redirectUrl', window.location.pathname + window.location.search);
               }
             } catch {}
-            alert('Your session has expired. Please login again.');
+            
+            // Try to parse the error response
+            let errorMessage = 'Your session has expired. Please login again.';
+            try {
+              const errData = await response.clone().json();
+              if (errData && errData.message) {
+                errorMessage = `Session Expired: ${errData.message} ${errData.error ? '(' + errData.error + ')' : ''}`;
+              }
+            } catch (e) {
+              console.warn('Could not parse error response', e);
+            }
+            
+            alert(errorMessage);
             navigate('/login');
             return;
           }
@@ -238,12 +250,13 @@ export default function PaymentPage() {
   const handlePayAtHotel = async () => {
     const token = getToken();
     if (!token) {
+      console.error('PaymentPage: No token found for payment');
       try {
         if (typeof window !== 'undefined') {
           sessionStorage.setItem('redirectUrl', window.location.pathname + window.location.search);
         }
       } catch {}
-      alert('Please login to proceed');
+      alert('Authentication required: Please login to proceed.');
       navigate('/login');
       return;
     }
@@ -373,12 +386,13 @@ export default function PaymentPage() {
 
     const token = getToken();
     if (!token) {
+      console.error('PaymentPage: No token found for Razorpay');
       try {
         if (typeof window !== 'undefined') {
           sessionStorage.setItem('redirectUrl', window.location.pathname + window.location.search);
         }
       } catch {}
-      alert('Please login to proceed');
+      alert('Authentication required: Please login to proceed.');
       navigate('/login');
       return;
     }
