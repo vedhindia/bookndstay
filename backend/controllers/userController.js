@@ -671,11 +671,23 @@ module.exports = {
       return sendSuccess(res, { payment }, 'Payment initiated (Pay at Hotel)');
     }
 
-    const order = await razorpay.orders.create({
-      amount: Math.round(parseFloat(booking.amount) * 100),
-      currency: 'INR',
-      receipt: `rcpt_${booking.id}`
-    });
+    // Verify Razorpay credentials
+    if (!process.env.RZP_KEY || !process.env.RZP_SECRET) {
+      console.error('Razorpay credentials missing. RZP_KEY:', !!process.env.RZP_KEY, 'RZP_SECRET:', !!process.env.RZP_SECRET);
+      throw createError('Online payment service is temporarily unavailable. Please try Pay at Hotel.', 503);
+    }
+
+    let order;
+    try {
+      order = await razorpay.orders.create({
+        amount: Math.round(parseFloat(booking.amount) * 100),
+        currency: 'INR',
+        receipt: `rcpt_${booking.id}`
+      });
+    } catch (rzpError) {
+      console.error('Razorpay order creation failed:', rzpError);
+      throw createError(`Payment initiation failed: ${rzpError.message || 'Gateway Error'}`, 502);
+    }
     
     // Check if payment already exists
     let payment = await Payment.findOne({ where: { booking_id: booking.id } });

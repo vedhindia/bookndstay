@@ -429,6 +429,12 @@ export default function PaymentPage() {
 
       if (!payResponse.ok) {
         const errorData = await payResponse.json().catch(() => ({}));
+        
+        // Handle specific error codes
+        if (payResponse.status === 503 || payResponse.status === 502) {
+          throw new Error(errorData.message || 'Payment gateway temporarily unavailable. Please try "Pay at Hotel" or try again later.');
+        }
+        
         throw new Error(errorData.message || 'Failed to initiate payment');
       }
 
