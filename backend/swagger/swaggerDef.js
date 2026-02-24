@@ -11,8 +11,8 @@ const options = {
     },
     servers: [
       {
-        url: '/',
-        description: 'Current host',
+        url: process.env.SWAGGER_BASE_URL || '/',
+        description: 'Current host (production or development)',
       },
       {
         url: 'http://localhost:3001',
