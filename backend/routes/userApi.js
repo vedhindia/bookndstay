@@ -16,11 +16,11 @@ const upload = require('../middlewares/upload');
 const userAuthRoutes = require('./userAuth');
 router.use('/auth', userAuthRoutes);
 
-// Debug endpoint for Razorpay (remove in production later)
-router.get('/debug-razorpay', userCtrl.debugRazorpay);
-
 // All user routes require authentication
 router.use(authenticate, requireRole(['USER', 'OWNER', 'VENDOR', 'ADMIN']));
+
+// Debug endpoint for Razorpay (authenticated)
+router.get('/debug-razorpay', userCtrl.debugRazorpay);
 
 /**
  * @swagger
