@@ -193,57 +193,33 @@ const Home = ({ state, actions }) => {
         setHomeError('');
         
         let allHotels = [];
-        let page = 1;
-        let hasMore = true;
         
-        // Fetch up to 5 pages (enough for ~250 hotels) to get the latest ones
-        // If we really want the absolute last 4 from the entire DB, we might need more, 
-        // but 5 pages is a good balance for "Popular Hotels" on home page performance.
-        while (hasMore) {
-          const params = new URLSearchParams();
-          params.set('page', String(page));
-          params.set('limit', '50');
-          // do not filter by city here; keep popular list generic
-          
-          const res = await fetch(`${apiVendorPublicBase}/hotels?${params.toString()}`, {
-            method: 'GET',
-            headers: { Accept: 'application/json' }
-          });
-          
-          if (!active) break;
-          
-          if (res.ok) {
-            const data = await res.json();
-            console.log('Home: fetch response', data);
-            const list = Array.isArray(data?.data?.hotels)
-              ? data.data.hotels
-              : Array.isArray(data?.hotels)
-              ? data.hotels
-              : Array.isArray(data?.data)
-              ? data.data
-              : [];
+        // Fetch only the first page to get the latest hotels
+        // The API returns hotels sorted by createdAt DESC (newest first)
+        const params = new URLSearchParams();
+        params.set('page', '1');
+        params.set('limit', '10'); // Fetch enough to have a selection
+        
+        const res = await fetch(`${apiVendorPublicBase}/hotels?${params.toString()}`, {
+          method: 'GET',
+          headers: { Accept: 'application/json' }
+        });
+        
+        if (active && res.ok) {
+          const data = await res.json();
+          console.log('Home: fetch response', data);
+          const list = Array.isArray(data?.data?.hotels)
+            ? data.data.hotels
+            : Array.isArray(data?.hotels)
+            ? data.hotels
+            : Array.isArray(data?.data)
+            ? data.data
+            : [];
             
-            console.log('Home: parsed list length', list.length);
-              
-            if (list.length === 0) {
-              hasMore = false;
-            } else {
-              allHotels = [...allHotels, ...list];
-              const meta = data?.pagination || data?.data?.pagination;
-              if (meta && page < meta.totalPages) {
-                page++;
-              } else {
-                if (!meta && list.length < 50) hasMore = false;
-                else if (meta) hasMore = false;
-                if (!meta && list.length < 50) hasMore = false;
-              }
-            }
-          } else {
+          allHotels = list;
+        } else if (active) {
             console.error('Home: fetch failed', res.status, res.statusText);
             setHomeError(`Fetch failed: ${res.status} ${res.statusText}`);
-            hasMore = false;
-          }
-          if (page > 5) hasMore = false; // Limit to 5 pages (250 items) for home page performance
         }
         
         if (!active) return;
@@ -261,8 +237,8 @@ const Home = ({ state, actions }) => {
              }
         }
 
-        // Take the last 4 from the full unique list
-        const tail = uniqueList.slice(-4).reverse();
+        // Take the first 4 (Newest)
+        const tail = uniqueList.slice(0, 4);
         const mapped = tail.map((item, idx) => {
             const id = item.id ?? item.nid ?? item._id ?? `hotel_${idx + 1}`;
             const name = item.name ?? item.title ?? `Hotel ${idx + 1}`;

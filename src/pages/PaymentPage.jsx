@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FaCreditCard, FaWallet, FaMoneyBillWave, FaLock, FaShieldAlt, FaCheckCircle, FaClock } from 'react-icons/fa';
-import { getToken } from '../api/auth';
+import { getToken, clearToken } from '../api/auth';
 
 export default function PaymentPage() {
   const navigate = useNavigate();
@@ -86,7 +86,14 @@ export default function PaymentPage() {
           }
         });
 
-        if (!response.ok) return;
+        if (!response.ok) {
+          if (response.status === 401) {
+            clearToken();
+            navigate('/login');
+            return;
+          }
+          return;
+        }
 
         const data = await response.json();
         const booking = data?.data?.booking || data?.booking;
@@ -228,7 +235,7 @@ export default function PaymentPage() {
       // Even for Pay at Hotel, we need to initialize the payment record
       // We use the initiate endpoint which creates a pending payment
       try {
-        await fetch(`${apiUserBase}/bookings/${bookingId}/pay`, {
+        const initRes = await fetch(`${apiUserBase}/bookings/${bookingId}/pay`, {
           method: 'POST',
           headers: {
             'Accept': 'application/json',
@@ -237,7 +244,17 @@ export default function PaymentPage() {
           },
           body: JSON.stringify({ amount: amount })
         });
+        if (initRes.status === 401) {
+          clearToken();
+          navigate('/login');
+          return;
+        }
       } catch (e) {
+        if (e.message && e.message.includes('401')) {
+          clearToken();
+          navigate('/login');
+          return;
+        }
         console.warn('Payment initialization warning:', e);
         // Continue anyway, as some backends might auto-create on complete
       }
@@ -256,6 +273,12 @@ export default function PaymentPage() {
           payment_method: 'PAY_AT_HOTEL'
         })
       });
+      
+      if (response.status === 401) {
+        clearToken();
+        navigate('/login');
+        return;
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -332,6 +355,12 @@ export default function PaymentPage() {
         },
         body: JSON.stringify({ amount: amount })
       });
+
+      if (payResponse.status === 401) {
+        clearToken();
+        navigate('/login');
+        return;
+      }
 
       if (!payResponse.ok) {
         const errorData = await payResponse.json().catch(() => ({}));

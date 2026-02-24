@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { FaPrint, FaDownload, FaArrowLeft } from 'react-icons/fa';
-import { getToken } from '../api/auth';
+import { getToken, clearToken } from '../api/auth';
 
 export default function InvoicePage() {
   const location = useLocation();
@@ -53,6 +53,12 @@ export default function InvoicePage() {
               'Authorization': `Bearer ${token}`
             }
           });
+
+          if (response.status === 401) {
+            clearToken();
+            navigate('/login');
+            return;
+          }
 
           if (!response.ok) {
             throw new Error('Failed to fetch booking details');

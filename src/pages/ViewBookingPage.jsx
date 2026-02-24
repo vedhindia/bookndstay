@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { FaCalendarAlt, FaUsers, FaRupeeSign, FaMapMarkerAlt, FaCheckCircle, FaTimesCircle, FaClock, FaCreditCard } from 'react-icons/fa';
-import { getToken } from '../api/auth';
+import { getToken, clearToken } from '../api/auth';
 
 const statusBadge = (status) => {
   const map = {
@@ -104,6 +104,12 @@ export default function ViewBookingPage() {
               'Authorization': `Bearer ${token}`
             }
           });
+
+          if (response.status === 401) {
+            clearToken();
+            navigate('/login');
+            return;
+          }
 
           if (!response.ok) {
             throw new Error('Failed to fetch booking details');

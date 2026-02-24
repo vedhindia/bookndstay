@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { FaCheckCircle, FaShieldAlt, FaTag, FaChevronLeft, FaChevronRight, FaTimes, FaMapMarkerAlt, FaStar, FaPlus, FaMinus, FaTrash } from 'react-icons/fa';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { getToken, getUser } from '../api/auth';
+import { getToken, getUser, clearToken } from '../api/auth';
 
 const RoomDetailsPage = ({ state = {}, actions = {} }) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
@@ -604,6 +604,13 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
         },
         body: JSON.stringify(payload)
       });
+      
+      if (response.status === 401) {
+        clearToken();
+        alert('Your session has expired. Please login again.');
+        navigate('/login');
+        return;
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
