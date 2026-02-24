@@ -17,9 +17,18 @@ export default function PaymentPage() {
   const [timeLeft, setTimeLeft] = useState(null);
 
   const apiUserBase = (() => {
-    const base = import.meta.env.VITE_API_BASE || 'https://bookndstay.com/api/auth';
-    const cleaned = base.replace(/\/auth\/?$/, '');
-    return `${cleaned}/user`;
+    const raw = import.meta.env.VITE_API_BASE || '/api/user/auth';
+    const base = raw.replace(/\/+$/, '');
+    if (base.endsWith('/user/auth')) {
+      return base.slice(0, -'/auth'.length);
+    }
+    if (base.endsWith('/auth')) {
+      return `${base.slice(0, -'/auth'.length)}/user`;
+    }
+    if (base.endsWith('/user')) {
+      return base;
+    }
+    return `${base}/user`;
   })();
 
   // Timer Logic
@@ -93,6 +102,12 @@ export default function PaymentPage() {
         if (!response.ok) {
           if (response.status === 401) {
             clearToken();
+            try {
+              if (typeof window !== 'undefined') {
+                sessionStorage.setItem('redirectUrl', window.location.pathname + window.location.search);
+              }
+            } catch {}
+            alert('Your session has expired. Please login again.');
             navigate('/login');
             return;
           }
@@ -223,7 +238,11 @@ export default function PaymentPage() {
   const handlePayAtHotel = async () => {
     const token = getToken();
     if (!token) {
-      console.error('PaymentPage: No token found for payment');
+      try {
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('redirectUrl', window.location.pathname + window.location.search);
+        }
+      } catch {}
       alert('Please login to proceed');
       navigate('/login');
       return;
@@ -236,8 +255,6 @@ export default function PaymentPage() {
 
     setProcessing(true);
     try {
-      console.log('PaymentPage: Initiating payment for booking', bookingId, 'with token', token ? 'PRESENT' : 'MISSING');
-      
       // Step 1: Create a payment record (required by backend)
       // Even for Pay at Hotel, we need to initialize the payment record
       // We use the initiate endpoint which creates a pending payment
@@ -251,20 +268,25 @@ export default function PaymentPage() {
           },
           body: JSON.stringify({ amount: amount })
         });
-        
-        console.log('PaymentPage: Init response status', initRes.status);
-        
         if (initRes.status === 401) {
-          console.error('PaymentPage: 401 Unauthorized during payment init');
           clearToken();
+          try {
+            if (typeof window !== 'undefined') {
+              sessionStorage.setItem('redirectUrl', window.location.pathname + window.location.search);
+            }
+          } catch {}
           alert('Your session has expired. Please login again.');
           navigate('/login');
           return;
         }
       } catch (e) {
-        console.warn('Payment initialization warning:', e);
         if (e.message && e.message.includes('401')) {
           clearToken();
+          try {
+            if (typeof window !== 'undefined') {
+              sessionStorage.setItem('redirectUrl', window.location.pathname + window.location.search);
+            }
+          } catch {}
           navigate('/login');
           return;
         }
@@ -288,6 +310,12 @@ export default function PaymentPage() {
       
       if (response.status === 401) {
         clearToken();
+        try {
+          if (typeof window !== 'undefined') {
+            sessionStorage.setItem('redirectUrl', window.location.pathname + window.location.search);
+          }
+        } catch {}
+        alert('Your session has expired. Please login again.');
         navigate('/login');
         return;
       }
@@ -345,6 +373,11 @@ export default function PaymentPage() {
 
     const token = getToken();
     if (!token) {
+      try {
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('redirectUrl', window.location.pathname + window.location.search);
+        }
+      } catch {}
       alert('Please login to proceed');
       navigate('/login');
       return;
@@ -370,6 +403,12 @@ export default function PaymentPage() {
 
       if (payResponse.status === 401) {
         clearToken();
+        try {
+          if (typeof window !== 'undefined') {
+            sessionStorage.setItem('redirectUrl', window.location.pathname + window.location.search);
+          }
+        } catch {}
+        alert('Your session has expired. Please login again.');
         navigate('/login');
         return;
       }
