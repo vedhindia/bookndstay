@@ -640,6 +640,44 @@ module.exports = {
   }),
 
   /**
+   * Debug Razorpay configuration
+   */
+  debugRazorpay: asyncHandler(async (req, res) => {
+    const { key_id, key_secret } = getRazorpayCredentials();
+    const razorpay = getRazorpay();
+    
+    let status = 'Configured';
+    let error = null;
+    let connectivity = 'Unknown';
+    
+    if (!key_id) status = 'Missing Key ID';
+    else if (!key_secret) status = 'Missing Key Secret';
+    
+    // Check connectivity by fetching a dummy payment
+    try {
+      if (razorpay) {
+        // Fetching a non-existent payment should return 400/404 with specific error code
+        await razorpay.payments.fetch('pay_dummy_123');
+      }
+    } catch (e) {
+      if (e.statusCode === 404 || (e.error && e.error.code === 'BAD_REQUEST_ERROR')) {
+        connectivity = 'Connected (Verified)';
+      } else {
+        connectivity = 'Connection Failed';
+        error = e.message || e;
+      }
+    }
+    
+    sendSuccess(res, { 
+      key_id_preview: key_id ? key_id.substring(0, 10) + '...' : 'MISSING',
+      key_secret_exists: !!key_secret,
+      status,
+      connectivity,
+      error
+    }, 'Razorpay Debug Info');
+  }),
+
+  /**
    * Initiate payment for a booking (creates Razorpay order and Payment record)
    */
   initiatePayment: asyncHandler(async (req, res) => {
@@ -703,7 +741,14 @@ module.exports = {
       });
     } catch (rzpError) {
       console.error('Razorpay order creation failed:', rzpError);
-      throw createError(`Payment initiation failed: ${rzpError.message || 'Gateway Error'}`, 502);
+      
+      // Extract detailed error message
+       const errorDetails = rzpError.error && rzpError.error.description 
+         ? rzpError.error.description 
+         : (rzpError.message || JSON.stringify(rzpError));
+         
+       const amountInPaise = Math.round(parseFloat(booking.amount) * 100);
+       throw createError(`Payment initiation failed: ${errorDetails} (Amount: ${amountInPaise})`, 502);
     }
     
     // Check if payment already exists

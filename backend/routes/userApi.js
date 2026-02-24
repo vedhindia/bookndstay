@@ -41,6 +41,9 @@ router.get('/hotels', userCtrl.searchHotels);
 router.get('/hotels/search', userCtrl.searchHotels);
 router.get('/hotels/:hotelId', userCtrl.getHotelById);
 
+// Debug endpoint for Razorpay (remove in production later)
+router.get('/debug-razorpay', userCtrl.debugRazorpay);
+
 
 
 
