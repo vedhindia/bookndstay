@@ -46,7 +46,7 @@ module.exports = {
   /**
    * Create a new hotel
    */
-  createHotel: asyncHandler(async (req, res) => {
+createHotel: asyncHandler(async (req, res) => {
     const {
       name, description, address, city, state, pincode, country,
       latitude, longitude, amenities, hotel_features, phone, email,
