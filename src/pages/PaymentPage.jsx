@@ -16,7 +16,11 @@ export default function PaymentPage() {
   const [userProfile, setUserProfile] = useState(null);
   const [timeLeft, setTimeLeft] = useState(null);
 
-  const apiUserBase = ((import.meta.env.VITE_API_BASE && import.meta.env.VITE_API_BASE.replace('/auth', '')) || '/api/user');
+  const apiUserBase = (() => {
+    const base = import.meta.env.VITE_API_BASE || 'https://bookndstay.com/api/auth';
+    const cleaned = base.replace(/\/auth\/?$/, '');
+    return `${cleaned}/user`;
+  })();
 
   // Timer Logic
   useEffect(() => {
@@ -219,6 +223,7 @@ export default function PaymentPage() {
   const handlePayAtHotel = async () => {
     const token = getToken();
     if (!token) {
+      console.error('PaymentPage: No token found for payment');
       alert('Please login to proceed');
       navigate('/login');
       return;
@@ -231,6 +236,8 @@ export default function PaymentPage() {
 
     setProcessing(true);
     try {
+      console.log('PaymentPage: Initiating payment for booking', bookingId, 'with token', token ? 'PRESENT' : 'MISSING');
+      
       // Step 1: Create a payment record (required by backend)
       // Even for Pay at Hotel, we need to initialize the payment record
       // We use the initiate endpoint which creates a pending payment
@@ -244,18 +251,23 @@ export default function PaymentPage() {
           },
           body: JSON.stringify({ amount: amount })
         });
+        
+        console.log('PaymentPage: Init response status', initRes.status);
+        
         if (initRes.status === 401) {
+          console.error('PaymentPage: 401 Unauthorized during payment init');
           clearToken();
+          alert('Your session has expired. Please login again.');
           navigate('/login');
           return;
         }
       } catch (e) {
+        console.warn('Payment initialization warning:', e);
         if (e.message && e.message.includes('401')) {
           clearToken();
           navigate('/login');
           return;
         }
-        console.warn('Payment initialization warning:', e);
         // Continue anyway, as some backends might auto-create on complete
       }
 
