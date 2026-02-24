@@ -8,7 +8,7 @@ const { sendSuccess, sendError, sendPaginatedResponse } = require('../utils/resp
 const { validateRequiredFields, validatePagination, isValidEmail } = require('../utils/validationHelper');
 const { getBookingIncludes, getPaginationOffset } = require('../utils/dbHelper');
 const { asyncHandler } = require('../middlewares/errorHandler');
-const { Op, literal, fn, col } = require('sequelize');
+const { Op, fn, col } = require('sequelize');
 
 /* ===================== HELPERS ===================== */
 
@@ -25,11 +25,12 @@ const buildDateRangeFilter = (startDate, endDate) => {
   return filter;
 };
 
-/** ✅ ALWAYS SAFE RATING */
-const safeRating = (val) => {
-  if (val === null || val === undefined || val === '') return 0;
-  const r = parseFloat(val);
-  return isNaN(r) ? 0 : Math.max(0, Math.min(5, r));
+const normalizeArray = (val) => {
+  if (Array.isArray(val)) return val;
+  if (typeof val === 'string') {
+    return val.split(',').map(v => v.trim()).filter(Boolean);
+  }
+  return null;
 };
 
 /* ===================== CONTROLLER ===================== */
@@ -48,18 +49,14 @@ module.exports = {
 
     const validation = validateRequiredFields(body, ['name', 'address', 'city']);
     if (!validation.isValid) {
-      throw createError(`Missing fields: ${validation.missingFields.join(', ')}`);
+      throw createError(`Missing required fields: ${validation.missingFields.join(', ')}`);
     }
 
     if (body.email && !isValidEmail(body.email)) {
       throw createError('Invalid email format');
     }
 
-    const normalizeArray = (v) => {
-      if (Array.isArray(v)) return v;
-      if (typeof v === 'string') return v.split(',').map(s => s.trim()).filter(Boolean);
-      return null;
-    };
+    const totalRooms = parseInt(body.total_rooms) || 0;
 
     const hotel = await Hotel.create({
       vendor_id: req.user.id,
@@ -78,12 +75,9 @@ module.exports = {
       phone: body.phone || null,
       email: body.email || null,
 
-      /** ✅ FIX */
-      rating: 0,
-
-      total_rooms: parseInt(body.total_rooms) || 0,
-      booked_room: parseInt(body.booked_room) || 0,
-      available_rooms: parseInt(body.available_rooms) || parseInt(body.total_rooms) || 0,
+      total_rooms: totalRooms,
+      booked_room: 0,
+      available_rooms: totalRooms,
       base_price: parseFloat(body.base_price) || 0,
       featured: String(body.featured).toLowerCase() === 'true',
       ac_room_price: body.ac_room_price ? parseFloat(body.ac_room_price) : null,
@@ -114,8 +108,7 @@ module.exports = {
     });
 
     const rows = hotels.rows.map(h => {
-      h.setDataValue('rating', safeRating(h.rating));
-      h.images = (h.images || []).filter(i => i.url?.startsWith('/uploads/'));
+      h.images = (h.images || []).filter(img => img.url?.startsWith('/uploads/'));
       return h;
     });
 
@@ -124,23 +117,26 @@ module.exports = {
       limit,
       totalItems: hotels.count,
       totalPages: Math.ceil(hotels.count / limit)
-    }, 'Hotels fetched');
+    }, 'Hotels retrieved successfully');
   }),
 
-  /** GET HOTEL BY ID */
+  /** GET HOTEL BY ID (VENDOR) */
   getHotelById: asyncHandler(async (req, res) => {
     const hotel = await Hotel.findOne({
       where: { id: req.params.hotelId, vendor_id: req.user.id },
       include: [
         { model: HotelImage, as: 'images' },
-        { model: Review, as: 'reviews', include: [{ model: User, as: 'user', attributes: ['full_name'] }] }
+        {
+          model: Review,
+          as: 'reviews',
+          include: [{ model: User, as: 'user', attributes: ['full_name'] }]
+        }
       ]
     });
 
     if (!hotel) throw createError('Hotel not found', 404);
 
-    hotel.setDataValue('rating', safeRating(hotel.rating));
-    sendSuccess(res, { hotel }, 'Hotel details fetched');
+    sendSuccess(res, { hotel }, 'Hotel details retrieved');
   }),
 
   /** UPDATE HOTEL */
@@ -148,20 +144,20 @@ module.exports = {
     const hotel = await Hotel.findOne({
       where: { id: req.params.hotelId, vendor_id: req.user.id }
     });
+
     if (!hotel) throw createError('Hotel not found', 404);
 
     const updates = { ...req.body };
 
-    /** 🚫 BLOCK */
-    delete updates.rating;
+    // 🚫 Block restricted fields
     delete updates.vendor_id;
     delete updates.status;
+    delete updates.rating;
 
     await hotel.update(updates);
     await hotel.reload();
 
-    hotel.setDataValue('rating', safeRating(hotel.rating));
-    sendSuccess(res, { hotel }, 'Hotel updated');
+    sendSuccess(res, { hotel }, 'Hotel updated successfully');
   }),
 
   /** DELETE HOTEL */
@@ -169,15 +165,22 @@ module.exports = {
     const hotel = await Hotel.findOne({
       where: { id: req.params.hotelId, vendor_id: req.user.id }
     });
+
     if (!hotel) throw createError('Hotel not found', 404);
 
-    const active = await Booking.count({
-      where: { hotel_id: hotel.id, status: ['PENDING', 'CONFIRMED'] }
+    const activeBookings = await Booking.count({
+      where: {
+        hotel_id: hotel.id,
+        status: ['PENDING', 'CONFIRMED']
+      }
     });
-    if (active > 0) throw createError('Active bookings exist');
+
+    if (activeBookings > 0) {
+      throw createError('Cannot delete hotel with active bookings');
+    }
 
     await hotel.destroy();
-    sendSuccess(res, null, 'Hotel deleted');
+    sendSuccess(res, null, 'Hotel deleted successfully');
   }),
 
   /* ===================== BOOKINGS ===================== */
@@ -186,7 +189,7 @@ module.exports = {
     const { page, limit } = validatePagination(req.query.page, req.query.limit);
     const offset = getPaginationOffset(page, limit);
 
-    const data = await Booking.findAndCountAll({
+    const bookings = await Booking.findAndCountAll({
       where: { vendor_id: req.user.id },
       include: getBookingIncludes(),
       limit,
@@ -194,12 +197,12 @@ module.exports = {
       order: [['createdAt', 'DESC']]
     });
 
-    sendPaginatedResponse(res, data.rows, {
+    sendPaginatedResponse(res, bookings.rows, {
       page,
       limit,
-      totalItems: data.count,
-      totalPages: Math.ceil(data.count / limit)
-    }, 'Bookings fetched');
+      totalItems: bookings.count,
+      totalPages: Math.ceil(bookings.count / limit)
+    }, 'Bookings retrieved successfully');
   }),
 
   /* ===================== DASHBOARD ===================== */
@@ -211,7 +214,7 @@ module.exports = {
       pendingHotels,
       totalBookings,
       confirmedBookings,
-      revenue
+      revenueResult
     ] = await Promise.all([
       Hotel.count({ where: { vendor_id: req.user.id } }),
       Hotel.count({ where: { vendor_id: req.user.id, status: 'APPROVED' } }),
@@ -220,7 +223,7 @@ module.exports = {
       Booking.count({ where: { vendor_id: req.user.id, status: 'CONFIRMED' } }),
       Booking.findAll({
         where: { vendor_id: req.user.id, status: 'CONFIRMED' },
-        attributes: [[fn('SUM', col('amount')), 'total']]
+        attributes: [[fn('SUM', col('amount')), 'totalRevenue']]
       })
     ]);
 
@@ -231,9 +234,9 @@ module.exports = {
         pendingHotels,
         totalBookings,
         confirmedBookings,
-        totalRevenue: parseFloat(revenue[0]?.dataValues?.total || 0)
+        totalRevenue: parseFloat(revenueResult[0]?.dataValues?.totalRevenue || 0)
       }
-    }, 'Dashboard stats');
+    }, 'Dashboard statistics retrieved');
   }),
 
   /* ===================== PROFILE ===================== */
@@ -242,10 +245,17 @@ module.exports = {
     const vendor = await Vendor.findByPk(req.user.id, {
       attributes: { exclude: ['password'] }
     });
+
     if (!vendor) throw createError('Vendor not found', 404);
 
     const hotelsCount = await Hotel.count({ where: { vendor_id: req.user.id } });
-    sendSuccess(res, { vendor: { ...vendor.toJSON(), hotels_count: hotelsCount } });
+
+    sendSuccess(res, {
+      vendor: {
+        ...vendor.toJSON(),
+        hotels_count: hotelsCount
+      }
+    }, 'Vendor profile retrieved');
   }),
 
   updateVendorProfile: asyncHandler(async (req, res) => {
@@ -253,6 +263,6 @@ module.exports = {
     if (!vendor) throw createError('Vendor not found', 404);
 
     await vendor.update(req.body);
-    sendSuccess(res, { vendor }, 'Profile updated');
+    sendSuccess(res, { vendor }, 'Vendor profile updated');
   })
 };
