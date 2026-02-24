@@ -649,6 +649,13 @@ module.exports = {
     let status = 'Configured';
     let error = null;
     let connectivity = 'Unknown';
+    let keyValidation = {
+      idLength: key_id ? key_id.length : 0,
+      secretLength: key_secret ? key_secret.length : 0,
+      idPrefix: key_id ? key_id.substring(0, 9) : 'none',
+      isTestMode: key_id ? key_id.startsWith('rzp_test_') : false,
+      isLiveMode: key_id ? key_id.startsWith('rzp_live_') : false
+    };
     
     if (!key_id) status = 'Missing Key ID';
     else if (!key_secret) status = 'Missing Key Secret';
@@ -664,13 +671,14 @@ module.exports = {
         connectivity = 'Connected (Verified)';
       } else {
         connectivity = 'Connection Failed';
-        error = e.message || e;
+        error = e.error ? e.error.description : (e.message || e);
       }
     }
     
     sendSuccess(res, { 
       key_id_preview: key_id ? key_id.substring(0, 10) + '...' : 'MISSING',
       key_secret_exists: !!key_secret,
+      keyValidation,
       status,
       connectivity,
       error
