@@ -1,6 +1,7 @@
 // routes/vendorApi.js - VENDOR/OWNER ONLY API ENDPOINTS
 const router = require('express').Router();
 const vendorCtrl = require('../controllers/vendorController');
+const userCtrl = require('../controllers/userController');
 const { authenticate, requireRole } = require('../middlewares/auth');
 const upload = require('../middlewares/upload');
 
@@ -55,7 +56,7 @@ const upload = require('../middlewares/upload');
  *                       items:
  *                         $ref: '#/components/schemas/Hotel'
  */
-router.get('/public/hotels', vendorCtrl.getAllHotelsPublic);
+router.get('/public/hotels', userCtrl.searchHotels);
 
 
 
@@ -86,7 +87,7 @@ router.get('/public/hotels', vendorCtrl.getAllHotelsPublic);
  *                     hotel:
  *                       $ref: '#/components/schemas/Hotel'
  */
-router.get('/public/hotels/:hotelId', vendorCtrl.getHotelByIdPublic);
+router.get('/public/hotels/:hotelId', userCtrl.getHotelById);
 
 
 // ============ VENDOR AUTHENTICATION API ============
