@@ -38,7 +38,9 @@ api.interceptors.response.use(
       } catch {}
       // Let the app route guard handle redirect; fallback hard redirect
       if (typeof window !== 'undefined') {
-        window.location.href = '/';
+        const p = window.location.pathname || '';
+        const base = p.startsWith('/admin') ? '/admin' : p.startsWith('/vendor') ? '/vendor' : '/';
+        window.location.href = base;
       }
     }
     return Promise.reject(error);

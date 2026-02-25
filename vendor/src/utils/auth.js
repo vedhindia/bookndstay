@@ -125,11 +125,12 @@ export const setupAxiosInterceptor = (axiosInstance) => {
           delete axiosInstance.defaults.headers.common['Authorization'];
         }
         
-        // Only redirect if we're not on the login page
-        if (typeof window !== 'undefined' && 
-            window.location.pathname !== '/login' && 
-            window.location.pathname !== '/') {
-          window.location.href = '/';
+        if (typeof window !== 'undefined') {
+          const p = window.location.pathname || '';
+          const base = p.startsWith('/vendor') ? '/vendor' : p.startsWith('/admin') ? '/admin' : '/';
+          if (p !== base) {
+            window.location.href = base;
+          }
         }
       }
       return Promise.reject(error);

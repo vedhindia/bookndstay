@@ -40,8 +40,12 @@ api.interceptors.response.use(
         clearSession();
       } catch {}
       // Let the app route guard handle redirect; fallback hard redirect
-      if (typeof window !== 'undefined' && window.location.pathname !== '/') {
-        window.location.href = '/';
+      if (typeof window !== 'undefined') {
+        const p = window.location.pathname || '';
+        const base = p.startsWith('/vendor') ? '/vendor' : p.startsWith('/admin') ? '/admin' : '/';
+        if (p !== base) {
+          window.location.href = base;
+        }
       }
     }
     return Promise.reject(error);
