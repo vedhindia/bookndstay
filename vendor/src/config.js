@@ -32,10 +32,16 @@ export const VENDOR_AUTH = {
   CHANGE_PASSWORD: '/vendor/auth/change-password'
 };
 
+// Allow dynamic override of forgot endpoint via env
+const FORGOT_OVERRIDE = import.meta.env.VITE_VENDOR_FORGOT_ENDPOINT && String(import.meta.env.VITE_VENDOR_FORGOT_ENDPOINT).trim() 
+  ? String(import.meta.env.VITE_VENDOR_FORGOT_ENDPOINT).trim() 
+  : null;
+export const VENDOR_FORGOT_ENDPOINT = FORGOT_OVERRIDE || VENDOR_AUTH.FORGOT_PASSWORD;
+
 // Default auth endpoints used in current UI (switching to vendor panel)
 export const AUTH_ENDPOINTS = {
   LOGIN: VENDOR_AUTH.LOGIN,
-  FORGOT: VENDOR_AUTH.FORGOT_PASSWORD,
+  FORGOT: VENDOR_FORGOT_ENDPOINT,
   RESET_PASSWORD: VENDOR_AUTH.RESET_PASSWORD,
   CHANGE_PASSWORD: VENDOR_AUTH.CHANGE_PASSWORD,
 };

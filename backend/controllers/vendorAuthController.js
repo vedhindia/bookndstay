@@ -160,7 +160,7 @@ module.exports = {
       
       // Send password reset email
       const { sendPasswordResetEmail } = require('../utils/mailer');
-      const emailResult = await sendPasswordResetEmail(email, resetToken);
+      const emailResult = await sendPasswordResetEmail(email, resetToken, 'VENDOR');
       
       if (emailResult.success) {
         res.json({ message: 'Password reset email sent successfully. Please check your inbox.' });

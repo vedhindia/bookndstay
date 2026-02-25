@@ -277,7 +277,7 @@ module.exports = {
 
       // Send password reset email
       try {
-        const emailResult = await sendPasswordResetEmail(email, resetToken);
+        const emailResult = await sendPasswordResetEmail(email, resetToken, 'ADMIN');
 
         if (emailResult.success) {
           res.status(200).json({

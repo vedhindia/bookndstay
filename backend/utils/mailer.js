@@ -39,8 +39,12 @@ function createTransporter() {
 
 const transporter = createTransporter();
 
-const sendPasswordResetEmail = async (email, resetToken) => {
-  const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
+const sendPasswordResetEmail = async (email, resetToken, role) => {
+  const base = process.env.FRONTEND_URL || 'http://localhost:3000';
+  let path = '/reset-password';
+  if (String(role).toUpperCase() === 'VENDOR') path = '/vendor/reset-password';
+  if (String(role).toUpperCase() === 'ADMIN') path = '/admin/reset-password';
+  const resetUrl = `${base}${path}?token=${resetToken}`;
 
   const mailOptions = {
     from: `"Hotel Booking System" <${process.env.SMTP_USER || 'no-reply@example.com'}>`,
