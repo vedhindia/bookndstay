@@ -23,7 +23,7 @@ const ResetPassword = () => {
       const resp = await fetch(`${API_BASE_URL}${AUTH_ENDPOINTS.RESET_PASSWORD}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: JSON.stringify({ token, password }),
+        body: JSON.stringify({ token, new_password: password }),
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data?.message || 'Failed to reset password');

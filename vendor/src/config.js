@@ -34,7 +34,6 @@ export const VENDOR_AUTH = {
 
 // Default auth endpoints used in current UI (switching to vendor panel)
 export const AUTH_ENDPOINTS = {
-  REGISTER: VENDOR_AUTH.REGISTER,
   LOGIN: VENDOR_AUTH.LOGIN,
   FORGOT: VENDOR_AUTH.FORGOT_PASSWORD,
   RESET_PASSWORD: VENDOR_AUTH.RESET_PASSWORD,
