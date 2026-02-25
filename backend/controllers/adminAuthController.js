@@ -279,18 +279,14 @@ module.exports = {
       try {
         const emailResult = await sendPasswordResetEmail(email, resetToken, 'ADMIN');
 
-        if (emailResult.success) {
-          res.status(200).json({
-            success: true,
-            message: 'Password reset email sent successfully. Please check your inbox.'
-          });
-        } else {
-          console.error('Email sending failed:', emailResult.error);
-          res.status(500).json({
-            success: false,
-            message: 'Failed to send reset email. Please try again later.'
-          });
+        if (!emailResult.success) {
+          console.error('Email sending failed (admin forgot):', emailResult.error);
         }
+        // Always return generic 200 to avoid account enumeration and UX breakage
+        res.status(200).json({
+          success: true,
+          message: 'If an admin account exists with this email, a password reset link will be sent'
+        });
       } catch (emailErr) {
         console.error('Error sending email:', emailErr);
         res.status(500).json({

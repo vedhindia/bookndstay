@@ -32,10 +32,19 @@ export const VENDOR_AUTH = {
   CHANGE_PASSWORD: '/vendor/auth/change-password'
 };
 
-// Allow dynamic override of forgot endpoint via env
-const FORGOT_OVERRIDE = import.meta.env.VITE_VENDOR_FORGOT_ENDPOINT && String(import.meta.env.VITE_VENDOR_FORGOT_ENDPOINT).trim() 
-  ? String(import.meta.env.VITE_VENDOR_FORGOT_ENDPOINT).trim() 
-  : null;
+// Allow dynamic override of forgot endpoint via env (defensively strip '/api' or domain)
+const resolveForgotOverride = () => {
+  const raw = import.meta.env.VITE_VENDOR_FORGOT_ENDPOINT && String(import.meta.env.VITE_VENDOR_FORGOT_ENDPOINT).trim();
+  if (!raw) return null;
+  // Keep only path (drop protocol+domain if given)
+  let path = raw.replace(/^https?:\/\/[^/]+/i, '');
+  // Remove leading '/api' if provided by mistake (baseURL already includes '/api')
+  path = path.replace(/^\/api(\/|$)/i, '/');
+  // Ensure leading slash
+  if (!path.startsWith('/')) path = `/${path}`;
+  return path;
+};
+const FORGOT_OVERRIDE = resolveForgotOverride();
 export const VENDOR_FORGOT_ENDPOINT = FORGOT_OVERRIDE || VENDOR_AUTH.FORGOT_PASSWORD;
 
 // Default auth endpoints used in current UI (switching to vendor panel)

@@ -21,8 +21,8 @@ const ForgotPassword = () => {
     if (!isValidEmail) return setError('Enter a valid email address.');
     try {
       setLoading(true);
-      const url = `${API_BASE_URL}${AUTH_ENDPOINTS.FORGOT}`;
-      await api.post(url, { email: email.trim() }, { skipAuth: true, headers: { 'X-Skip-Auth': 'true' } });
+      // Use api client's baseURL; do NOT prefix with API_BASE_URL to avoid `/api/api/*` in prod
+      await api.post(AUTH_ENDPOINTS.FORGOT, { email: email.trim() }, { skipAuth: true, headers: { 'X-Skip-Auth': 'true' } });
       setSent(true);
       setMsg('If an account exists for this email, a reset link will be sent.');
     } catch (e) {

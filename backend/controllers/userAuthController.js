@@ -285,12 +285,11 @@ module.exports = {
       const { sendPasswordResetEmail } = require('../utils/mailer');
       const emailResult = await sendPasswordResetEmail(email, resetToken, 'USER');
       
-      if (emailResult.success) {
-        res.json({ message: 'Password reset email sent successfully. Please check your inbox.' });
-      } else {
-        console.error('Email sending failed:', emailResult.error);
-        res.status(500).json({ message: 'Failed to send reset email. Please try again later.' });
+      if (!emailResult.success) {
+        console.error('Email sending failed (user forgot):', emailResult.error);
       }
+      // Always return a generic success to prevent enumeration and avoid breaking UX
+      res.json({ message: 'If an account exists for this email, a password reset link will be sent.' });
     } catch (err) { 
       console.error('User forgot password error:', err); 
       res.status(500).json({ message: 'Server error', error: err.message }); 
