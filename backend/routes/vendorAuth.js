@@ -105,6 +105,30 @@ router.post('/register', vendorAuthController.register);
  * /api/vendor/auth/forgot:
  *   post:
  *     tags: [Vendor Authentication]
+ *     summary: Vendor forgot password (legacy path)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email]
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *     responses:
+ *       200:
+ *         description: Password reset email sent successfully (generic response)
+ */
+router.post('/forgot', vendorAuthController.forgotPassword);
+router.get('/forgot', (req, res) => res.status(405).json({ message: 'Use POST with JSON body { email }' }));
+
+/**
+ * @swagger
+ * /api/vendor/auth/forgot-password:
+ *   post:
+ *     tags: [Vendor Authentication]
  *     summary: Vendor forgot password
  *     requestBody:
  *       required: true
@@ -119,13 +143,10 @@ router.post('/register', vendorAuthController.register);
  *                 format: email
  *     responses:
  *       200:
- *         description: Password reset email sent successfully
- *       404:
- *         description: Vendor account not found
- *       500:
- *         description: Failed to send reset email
+ *         description: Password reset email sent (or acknowledged)
  */
 router.post('/forgot-password', vendorAuthController.forgotPassword);
+router.get('/forgot-password', (req, res) => res.status(405).json({ message: 'Use POST with JSON body { email }' }));
 
 /**
  * @swagger

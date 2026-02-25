@@ -145,6 +145,7 @@ router.post('/login', ctrl.login);
  *         description: Server error
  */
 router.post('/forgot', ctrl.forgotPassword);
+router.get('/forgot', (req, res) => res.status(405).json({ message: 'Use POST with JSON body { email }' }));
 
 /**
  * @swagger
