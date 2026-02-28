@@ -98,7 +98,7 @@ const AdminLogin = () => {
     // Additional validation for sign up
     if (isSignUp) {
       if (!formData.full_name) {
-        newErrors.full_name = 'Full name is required';
+        newErrors.full_name = 'Full namee is required';
       } else if (formData.full_name.trim().length < 2) {
         newErrors.full_name = 'Full name must be at least 2 characters long';
       }
