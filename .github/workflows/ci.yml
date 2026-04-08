@@ -45,6 +45,9 @@ jobs:
             !backend/node_modules/**
             !backend/**/*.log
 
+      - name: Check VPS connectivity
+        run: nc -zv ${{ secrets.VPS_HOST }} ${{ secrets.VPS_PORT }}
+
       - name: Deploy backend to VPS server
         uses: appleboy/scp-action@v0.1.7
         with:
