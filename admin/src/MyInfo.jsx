@@ -166,7 +166,7 @@ const MyInfo = () => {
                 )}
 
                 {/* Email Card */}
-                <div className="col-12 col-xl-6">
+                <div className="col-12 ">
                   <div className={`p-3 border rounded-3 ${isEditing ? 'bg-white' : 'bg-light bg-opacity-50'} h-100 d-flex align-items-center hover-shadow transition-all`}>
                     <div className="bg-white p-3 rounded-circle shadow-sm me-3 text-primary d-flex align-items-center justify-content-center" style={{width: '50px', height: '50px'}}>
                       <i className="fas fa-envelope fa-lg"></i>
