@@ -262,6 +262,7 @@ const Hotels = () => {
 
   // Handlers
   const openCreate = () => {
+    setError('');
     setForm({ ...initialForm, status: 'APPROVED', country: 'India', featured: false });
     const vid = getVendorIdFromLocalStorage();
     if (vid !== undefined && vid !== '' && !Number.isNaN(Number(vid))) {
@@ -271,6 +272,7 @@ const Hotels = () => {
   };
 
   const openEdit = (h) => {
+    setError('');
     const normalized = { ...h };
     setEditOriginal(normalized);
     setForm({
@@ -281,6 +283,7 @@ const Hotels = () => {
   };
 
   const closeModals = () => {
+    setError('');
     setShowCreate(false);
     setShowEdit(false);
     setForm(initialForm);
@@ -401,8 +404,21 @@ const Hotels = () => {
 
   const validate = (f, forCreate = false) => {
     if (!f.name?.trim()) return 'Name is required';
+    if (!f.description?.trim()) return 'Description is required';
     if (!f.address?.trim()) return 'Address is required';
     if (!f.city?.trim()) return 'City is required';
+    if (!f.state?.trim()) return 'State is required';
+    if (!f.pincode?.trim()) return 'Pincode is required';
+    if (!f.phone?.trim()) return 'Phone is required';
+    if (!f.email?.trim()) return 'Email is required';
+    if (!f.total_rooms) return 'Total Rooms is required';
+    if (!f.available_rooms) return 'Available Rooms is required';
+    if (!f.ac_rooms) return 'AC Rooms is required';
+    if (!f.non_ac_rooms) return 'Non-AC Rooms is required';
+    if (!f.base_price) return 'Base Price is required';
+    if (!f.ac_room_price) return 'AC Room Price is required';
+    if (!f.non_ac_room_price) return 'Non-AC Room Price is required';
+    if (!f.gst_number?.trim()) return 'GST Number is required';
     return '';
   };
 
@@ -650,7 +666,6 @@ const Hotels = () => {
       </div>
 
       {success && <div className="alert alert-success py-2">{success}</div>}
-      {error && <div className="alert alert-warning py-2">{error}</div>}
 
       <div className="card border-0 shadow-sm">
         <div className="card-body p-0">
@@ -807,6 +822,7 @@ const Hotels = () => {
                 <button className="btn-close" onClick={closeModals}></button>
               </div>
               <div className="modal-body">
+                {error && <div className="alert alert-warning py-2 mb-3">{error}</div>}
                 <div className="row g-3">
                   <div className="col-md-8">
                     <label className="form-label">Name <span className="text-danger">*</span></label>
@@ -815,6 +831,7 @@ const Hotels = () => {
                       placeholder="Grand Plaza Hotel"
                       value={form.name}
                       onChange={(e) => setForm({ ...form, name: e.target.value })}
+                      required
                     />
                   </div>
                   <div className="col-md-4">
@@ -830,13 +847,14 @@ const Hotels = () => {
                   </div>
 
                   <div className="col-md-12">
-                    <label className="form-label">Description</label>
+                    <label className="form-label">Description <span className="text-danger">*</span></label>
                     <textarea
                       className="form-control"
                       rows="3"
                       placeholder="A luxurious 5-star hotel in the heart of the city"
                       value={form.description}
                       onChange={(e) => setForm({ ...form, description: e.target.value })}
+                      required
                     />
                   </div>
 
@@ -847,6 +865,7 @@ const Hotels = () => {
                       placeholder="123 Main Street"
                       value={form.address}
                       onChange={(e) => setForm({ ...form, address: e.target.value })}
+                      required
                     />
                   </div>
                   <div className="col-md-6">
@@ -856,25 +875,28 @@ const Hotels = () => {
                       placeholder="Mumbai"
                       value={form.city}
                       onChange={(e) => setForm({ ...form, city: e.target.value })}
+                      required
                     />
                   </div>
 
                   <div className="col-md-4">
-                    <label className="form-label">State</label>
+                    <label className="form-label">State <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       placeholder="Maharashtra"
                       value={form.state}
                       onChange={(e) => setForm({ ...form, state: e.target.value })}
+                      required
                     />
                   </div>
                   <div className="col-md-4">
-                    <label className="form-label">Pincode</label>
+                    <label className="form-label">Pincode <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       placeholder="400001"
                       value={form.pincode}
                       onChange={(e) => setForm({ ...form, pincode: e.target.value })}
+                      required
                     />
                   </div>
                   <div className="col-md-4">
@@ -920,69 +942,75 @@ const Hotels = () => {
                   </div>
 
                   <div className="col-md-6">
-                    <label className="form-label">Phone</label>
+                    <label className="form-label">Phone <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       placeholder="+91-22-12345678"
                       value={form.phone}
                       onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                      required
                     />
                   </div>
                   <div className="col-md-6">
-                    <label className="form-label">Email</label>
+                    <label className="form-label">Email <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       type="email"
                       placeholder="contact@grandplaza.com"
                       value={form.email}
                       onChange={(e) => setForm({ ...form, email: e.target.value })}
+                      required
                     />
                   </div>
 
 
                   <div className="col-md-3">
-                    <label className="form-label">Total Rooms</label>
+                    <label className="form-label">Total Rooms <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       type="number"
                       placeholder="50"
                       value={form.total_rooms}
                       onChange={(e) => setForm({ ...form, total_rooms: e.target.value })}
+                      required
                     />
                   </div>
                   <div className="col-md-3">
-                    <label className="form-label">Available Rooms</label>
+                    <label className="form-label">Available Rooms <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       type="number"
                       placeholder="50"
                       value={form.available_rooms}
                       onChange={(e) => setForm({ ...form, available_rooms: e.target.value })}
+                      required
                     />
                   </div>
                   <div className="col-md-3">
-                    <label className="form-label">AC Rooms</label>
+                    <label className="form-label">AC Rooms <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       type="number"
                       placeholder="25"
                       value={form.ac_rooms}
                       onChange={(e) => setForm({ ...form, ac_rooms: e.target.value })}
+                      required
                     />
                   </div>
                   <div className="col-md-3">
-                    <label className="form-label">Non-AC Rooms</label>
+                    <label className="form-label">Non-AC Rooms <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       type="number"
                       placeholder="25"
                       value={form.non_ac_rooms}
                       onChange={(e) => setForm({ ...form, non_ac_rooms: e.target.value })}
+                      required
                     />
                   </div>
 
                   <div className="col-md-4">
-                    <label className="form-label">Base Price (₹)</label>
+                    <label className="form-label">Base Price (₹) <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       type="number"
@@ -990,10 +1018,11 @@ const Hotels = () => {
                       placeholder="2499.00"
                       value={form.base_price}
                       onChange={(e) => setForm({ ...form, base_price: e.target.value })}
+                      required
                     />
                   </div>
                   <div className="col-md-4">
-                    <label className="form-label">AC Room Price (₹)</label>
+                    <label className="form-label">AC Room Price (₹) <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       type="number"
@@ -1001,10 +1030,11 @@ const Hotels = () => {
                       placeholder="2999.00"
                       value={form.ac_room_price}
                       onChange={(e) => setForm({ ...form, ac_room_price: e.target.value })}
+                      required
                     />
                   </div>
                   <div className="col-md-4">
-                    <label className="form-label">Non-AC Room Price (₹)</label>
+                    <label className="form-label">Non-AC Room Price (₹) <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       type="number"
@@ -1012,6 +1042,7 @@ const Hotels = () => {
                       placeholder="1999.00"
                       value={form.non_ac_room_price}
                       onChange={(e) => setForm({ ...form, non_ac_room_price: e.target.value })}
+                      required
                     />
                   </div>
 
@@ -1034,12 +1065,13 @@ const Hotels = () => {
                     />
                   </div>
                   <div className="col-md-6">
-                    <label className="form-label">GST Number</label>
+                    <label className="form-label">GST Number <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       placeholder="GSTIN123456789"
                       value={form.gst_number}
                       onChange={(e) => setForm({ ...form, gst_number: e.target.value })}
+                      required
                     />
                   </div>
 
@@ -1099,6 +1131,7 @@ const Hotels = () => {
                 <button className="btn-close" onClick={closeModals}></button>
               </div>
               <div className="modal-body">
+                {error && <div className="alert alert-warning py-2 mb-3">{error}</div>}
                 <div className="row g-3">
                   <div className="col-md-8">
                     <label className="form-label">Name <span className="text-danger">*</span></label>
@@ -1107,6 +1140,7 @@ const Hotels = () => {
                       placeholder="Grand Plaza Hotel"
                       value={form.name}
                       onChange={(e) => setForm({ ...form, name: e.target.value })}
+                      required
                     />
                   </div>
                   <div className="col-md-4">
@@ -1122,13 +1156,14 @@ const Hotels = () => {
                   </div>
 
                   <div className="col-md-12">
-                    <label className="form-label">Description</label>
+                    <label className="form-label">Description <span className="text-danger">*</span></label>
                     <textarea
                       className="form-control"
                       rows="3"
                       placeholder="A luxurious 5-star hotel in the heart of the city"
                       value={form.description}
                       onChange={(e) => setForm({ ...form, description: e.target.value })}
+                      required
                     />
                   </div>
 
@@ -1139,6 +1174,7 @@ const Hotels = () => {
                       placeholder="123 Main Street"
                       value={form.address}
                       onChange={(e) => setForm({ ...form, address: e.target.value })}
+                      required
                     />
                   </div>
                   <div className="col-md-6">
@@ -1148,25 +1184,28 @@ const Hotels = () => {
                       placeholder="Mumbai"
                       value={form.city}
                       onChange={(e) => setForm({ ...form, city: e.target.value })}
+                      required
                     />
                   </div>
 
                   <div className="col-md-4">
-                    <label className="form-label">State</label>
+                    <label className="form-label">State <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       placeholder="Maharashtra"
                       value={form.state}
                       onChange={(e) => setForm({ ...form, state: e.target.value })}
+                      required
                     />
                   </div>
                   <div className="col-md-4">
-                    <label className="form-label">Pincode</label>
+                    <label className="form-label">Pincode <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       placeholder="400001"
                       value={form.pincode}
                       onChange={(e) => setForm({ ...form, pincode: e.target.value })}
+                      required
                     />
                   </div>
                   <div className="col-md-4">
@@ -1212,69 +1251,75 @@ const Hotels = () => {
                   </div>
 
                   <div className="col-md-6">
-                    <label className="form-label">Phone</label>
+                    <label className="form-label">Phone <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       placeholder="+91-22-12345678"
                       value={form.phone}
                       onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                      required
                     />
                   </div>
                   <div className="col-md-6">
-                    <label className="form-label">Email</label>
+                    <label className="form-label">Email <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       type="email"
                       placeholder="contact@grandplaza.com"
                       value={form.email}
                       onChange={(e) => setForm({ ...form, email: e.target.value })}
+                      required
                     />
                   </div>
 
 
                   <div className="col-md-3">
-                    <label className="form-label">Total Rooms</label>
+                    <label className="form-label">Total Rooms <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       type="number"
                       placeholder="50"
                       value={form.total_rooms}
                       onChange={(e) => setForm({ ...form, total_rooms: e.target.value })}
+                      required
                     />
                   </div>
                   <div className="col-md-3">
-                    <label className="form-label">Available Rooms</label>
+                    <label className="form-label">Available Rooms <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       type="number"
                       placeholder="50"
                       value={form.available_rooms}
                       onChange={(e) => setForm({ ...form, available_rooms: e.target.value })}
+                      required
                     />
                   </div>
                   <div className="col-md-3">
-                    <label className="form-label">AC Rooms</label>
+                    <label className="form-label">AC Rooms <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       type="number"
                       placeholder="25"
                       value={form.ac_rooms}
                       onChange={(e) => setForm({ ...form, ac_rooms: e.target.value })}
+                      required
                     />
                   </div>
                   <div className="col-md-3">
-                    <label className="form-label">Non-AC Rooms</label>
+                    <label className="form-label">Non-AC Rooms <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       type="number"
                       placeholder="25"
                       value={form.non_ac_rooms}
                       onChange={(e) => setForm({ ...form, non_ac_rooms: e.target.value })}
+                      required
                     />
                   </div>
 
                   <div className="col-md-4">
-                    <label className="form-label">Base Price (₹)</label>
+                    <label className="form-label">Base Price (₹) <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       type="number"
@@ -1282,10 +1327,11 @@ const Hotels = () => {
                       placeholder="2499.00"
                       value={form.base_price}
                       onChange={(e) => setForm({ ...form, base_price: e.target.value })}
+                      required
                     />
                   </div>
                   <div className="col-md-4">
-                    <label className="form-label">AC Room Price (₹)</label>
+                    <label className="form-label">AC Room Price (₹) <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       type="number"
@@ -1293,10 +1339,11 @@ const Hotels = () => {
                       placeholder="2999.00"
                       value={form.ac_room_price}
                       onChange={(e) => setForm({ ...form, ac_room_price: e.target.value })}
+                      required
                     />
                   </div>
                   <div className="col-md-4">
-                    <label className="form-label">Non-AC Room Price (₹)</label>
+                    <label className="form-label">Non-AC Room Price (₹) <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       type="number"
@@ -1304,6 +1351,7 @@ const Hotels = () => {
                       placeholder="1999.00"
                       value={form.non_ac_room_price}
                       onChange={(e) => setForm({ ...form, non_ac_room_price: e.target.value })}
+                      required
                     />
                   </div>
 
@@ -1326,12 +1374,13 @@ const Hotels = () => {
                     />
                   </div>
                   <div className="col-md-6">
-                    <label className="form-label">GST Number</label>
+                    <label className="form-label">GST Number <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       placeholder="GSTIN123456789"
                       value={form.gst_number}
                       onChange={(e) => setForm({ ...form, gst_number: e.target.value })}
+                      required
                     />
                   </div>
 
