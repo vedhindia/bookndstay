@@ -271,7 +271,7 @@ const Bookings = () => {
                 onChange={e => { setQuery(e.target.value); setPage(1); }} 
               />
             </div>
-            <div className="col-md-2">
+            {/* <div className="col-md-2">
               <label className="form-label small text-muted mb-1">Hotel</label>
               <select 
                 className="form-select" 
@@ -280,7 +280,7 @@ const Bookings = () => {
               >
                 {hotels.map(h => <option key={h}>{h}</option>)}
               </select>
-            </div>
+            </div> */}
             <div className="col-md-2">
               <label className="form-label small text-muted mb-1">Status</label>
               <select 
