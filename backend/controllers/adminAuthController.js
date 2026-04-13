@@ -307,16 +307,17 @@ module.exports = {
   // ✅ Admin reset password with token (no authentication needed)
   resetPassword: async (req, res) => {
     try {
-      const { token, new_password } = req.body;
+      const { token, new_password, password, newPassword } = req.body;
+      const nextPassword = new_password || password || newPassword;
 
-      if (!token || !new_password) {
+      if (!token || !nextPassword) {
         return res.status(400).json({
           success: false,
           message: 'Token and new password are required'
         });
       }
 
-      if (new_password.length < 6) {
+      if (nextPassword.length < 6) {
         return res.status(400).json({
           success: false,
           message: 'Password must be at least 6 characters long'
@@ -351,7 +352,7 @@ module.exports = {
       }
 
       // Hash and update password
-      const hashed = await bcrypt.hash(new_password, 10);
+      const hashed = await bcrypt.hash(nextPassword, 10);
       admin.password = hashed;
       await admin.save();
 

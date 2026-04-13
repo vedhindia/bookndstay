@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { BrowserRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import Home from './pages/Home';
 import RoomDetailsPage from './pages/RoomDetailsPage';
 import LoginPage from './pages/LoginPage';
@@ -19,6 +20,35 @@ import WriteReviewPage from './pages/WriteReviewPage';
 import BookingHistoryPage from './pages/BookingHistoryPage';
 import InvoicePage from './pages/InvoicePage';
 import VendorLoginPage from './pages/VendorLoginPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
+
+const ExternalPanelRedirect = () => {
+  const location = useLocation();
+
+  useEffect(() => {
+    const backendPort = String(import.meta.env.VITE_BACKEND_PORT || '3001');
+    const isLocalhost =
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1';
+
+    if (!isLocalhost) return;
+    if (window.location.port === backendPort) return;
+
+    const target = `${window.location.protocol}//${window.location.hostname}:${backendPort}${location.pathname}${location.search}${location.hash}`;
+    window.location.replace(target);
+  }, [location]);
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-white p-6">
+      <div className="text-center">
+        <div className="text-lg font-semibold">Redirecting...</div>
+        <div className="text-sm text-gray-500 mt-2">
+          Opening the panel on the backend server (localhost only).
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // Create a wrapper component to use React Router hooks
 const AppContent = () => {
@@ -59,9 +89,16 @@ const AppContent = () => {
     <div className="flex flex-col min-h-screen bg-white">
       <main className="flex-1 flex flex-col">
         <Routes>
+          <Route path="/admin/*" element={<ExternalPanelRedirect />} />
+          <Route path="/vendor/*" element={<ExternalPanelRedirect />} />
           <Route path="/" element={
             <Layout state={state} actions={extendedActions}>
               <Home state={state} actions={extendedActions} />
+            </Layout>
+          } />
+          <Route path="/reset-password" element={
+            <Layout state={state} actions={extendedActions}>
+              <ResetPasswordPage />
             </Layout>
           } />
           <Route path="/roomDetails" element={

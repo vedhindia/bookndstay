@@ -97,6 +97,14 @@ export async function forgotPassword({ email }) {
   });
 }
 
+export async function resetPassword({ token, new_password, password, newPassword }) {
+  const nextPassword = new_password ?? password ?? newPassword;
+  return request('/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ token, new_password: nextPassword }),
+  });
+}
+
 export async function changePassword({ old_password, new_password, oldPassword, newPassword }) {
   const token = getToken();
   if (!token) {

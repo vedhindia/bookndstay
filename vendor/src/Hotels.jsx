@@ -37,7 +37,7 @@ const initialForm = {
   status: 'APPROVED',
 };
 
-const STATUS_OPTIONS = ['APPROVED', 'PENDING', 'REJECTED'];
+const STATUS_OPTIONS = ['APPROVED', 'PENDING', 'REJECTED', 'INACTIVE'];
 
 // Try to extract vendor id from localStorage
 const getVendorIdFromLocalStorage = () => {
@@ -57,33 +57,22 @@ const getVendorIdFromLocalStorage = () => {
   }
 };
 
-  // Ensure image URLs are absolute or at least app-root relative
-  const toAbsoluteUrl = (u) => {
-    if (!u) return '';
-    // Already absolute
-    if (/^https?:\/\//i.test(u)) return u;
-    // Protocol-relative
-    if (u.startsWith('//')) return (typeof window !== 'undefined' ? window.location.protocol : 'https:') + u;
-    
-    // Construct base from API_BASE_URL (removing /api if present, to get root)
-    let base = API_BASE_URL.endsWith('/api') 
-      ? API_BASE_URL.slice(0, -4) 
-      : API_BASE_URL;
+// Ensure image URLs are absolute or at least app-root relative
+const toAbsoluteUrl = (u) => {
+  if (!u) return '';
+  if (/^https?:\/\//i.test(u)) return u;
+  if (u.startsWith('//')) return (typeof window !== 'undefined' ? window.location.protocol : 'https:') + u;
 
-    // If base is empty or relative (e.g. from proxy), and we need absolute URL for images
-    // (because proxy might not cover /uploads), fallback to localhost:3001 for dev
-    if (!base || base.startsWith('/')) {
-       base = 'https://bookndstay.com';
-    }
+  const base = API_BASE_URL.endsWith('/api') ? API_BASE_URL.slice(0, -4) : API_BASE_URL;
 
-    // Root-relative
-    if (u.startsWith('/')) {
-        // If it's like /uploads/..., prepend base
-        return `${base}${u}`;
-    }
-    // Relative path, prepend base + /
-    return `${base}/${u}`;
-  };
+  if (!base || base.startsWith('/')) {
+    if (u.startsWith('/')) return u;
+    return `/${u}`;
+  }
+
+  if (u.startsWith('/')) return `${base}${u}`;
+  return `${base}/${u}`;
+};
 
 // Extract image URL and id safely from various shapes
 const toImageItem = (img) => {
@@ -159,6 +148,7 @@ const Hotels = () => {
   const [images, setImages] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [files, setFiles] = useState([]);
+  const [filePreviewUrls, setFilePreviewUrls] = useState([]);
 
   // Normalizer from API -> UI row and form
   const normalize = (h) => {
@@ -247,15 +237,36 @@ const Hotels = () => {
     fetchHotels();
   }, [page, pageSize, status]);
 
+  useEffect(() => {
+    if (!files || files.length === 0 || typeof URL === 'undefined') {
+      setFilePreviewUrls([]);
+      return;
+    }
+
+    const next = files.map((f) => ({
+      name: f?.name || 'image',
+      url: URL.createObjectURL(f),
+    }));
+    setFilePreviewUrls(next);
+
+    return () => {
+      next.forEach((p) => {
+        try {
+          URL.revokeObjectURL(p.url);
+        } catch {}
+      });
+    };
+  }, [files]);
+
   const filteredItems = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q && status === 'All') return items;
+    if (!q && status === 'All') return items.filter((h) => h.status !== 'INACTIVE');
     return items.filter((h) => {
       const matchesQuery = q
         ? [h.name, h.address, h.city, h.id]
             .some((v) => (v || '').toString().toLowerCase().includes(q))
         : true;
-      const matchesStatus = status === 'All' || h.status === status;
+      const matchesStatus = status === 'All' ? h.status !== 'INACTIVE' : h.status === status;
       return matchesQuery && matchesStatus;
     });
   }, [items, query, status]);
@@ -536,6 +547,7 @@ const Hotels = () => {
     setImagesHotel(null);
     setImages([]);
     setFiles([]);
+    setFilePreviewUrls([]);
   };
 
   const uploadImages = async () => {
@@ -658,6 +670,7 @@ const Hotels = () => {
             <option>APPROVED</option>
             <option>PENDING</option>
             <option>REJECTED</option>
+              <option>INACTIVE</option>
           </select>
           <button className="btn btn-primary btn-sm" onClick={openCreate}>
             <i className="fas fa-plus me-2"></i>New Hotel
@@ -1452,7 +1465,18 @@ const Hotels = () => {
                 </div>
 
                 <div className="d-flex flex-wrap gap-3">
-                  {images.length === 0 && <div className="text-muted">No images found</div>}
+                  {filePreviewUrls.map((p) => (
+                    <div key={p.url} className="card border-primary" style={{ width: 160 }}>
+                      <img src={p.url} alt={p.name} className="card-img-top" style={{ height: 100, objectFit: 'cover' }} />
+                      <div className="card-body p-2">
+                        <div className="small text-truncate" title={p.name}>
+                          {p.name}
+                        </div>
+                        <div className="small text-primary">Selected</div>
+                      </div>
+                    </div>
+                  ))}
+                  {images.length === 0 && filePreviewUrls.length === 0 && <div className="text-muted">No images found</div>}
                   {images.map((img, idx) => (
                     <div key={img.id || img.url || idx} className="card" style={{ width: 160 }}>
                       <img src={img.url} alt="Hotel" className="card-img-top" style={{ height: 100, objectFit: 'cover' }} />

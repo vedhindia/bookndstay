@@ -176,8 +176,9 @@ module.exports = {
   // Vendor reset password with token
   resetPassword: async (req, res) => {
     try {
-      const { token, new_password } = req.body;
-      if (!token || !new_password) {
+      const { token, new_password, password, newPassword } = req.body;
+      const nextPassword = new_password || password || newPassword;
+      if (!token || !nextPassword) {
         return res.status(400).json({ message: 'Token and new password are required' });
       }
 
@@ -189,7 +190,7 @@ module.exports = {
       }
 
       // Update password
-      const hashed = await bcrypt.hash(new_password, 10);
+      const hashed = await bcrypt.hash(nextPassword, 10);
       vendor.password = hashed;
       await vendor.save();
 

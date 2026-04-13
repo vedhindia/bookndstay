@@ -39,12 +39,20 @@ function createTransporter() {
 
 const transporter = createTransporter();
 
+const getFrontendBaseForRole = (role) => {
+  const normalizedRole = String(role || '').toUpperCase();
+  if (normalizedRole === 'ADMIN') return process.env.ADMIN_FRONTEND_URL || process.env.FRONTEND_URL;
+  if (normalizedRole === 'VENDOR') return process.env.VENDOR_FRONTEND_URL || process.env.FRONTEND_URL;
+  if (normalizedRole === 'USER') return process.env.CLIENT_FRONTEND_URL || process.env.FRONTEND_URL;
+  return process.env.FRONTEND_URL;
+};
+
 const sendPasswordResetEmail = async (email, resetToken, role) => {
-  const base = process.env.FRONTEND_URL || 'http://localhost:3000';
+  const base = getFrontendBaseForRole(role) || 'http://localhost:3000';
   let path = '/reset-password';
   if (String(role).toUpperCase() === 'VENDOR') path = '/vendor/reset-password';
   if (String(role).toUpperCase() === 'ADMIN') path = '/admin/reset-password';
-  const resetUrl = `${base}${path}?token=${resetToken}`;
+  const resetUrl = new URL(`${path}?token=${encodeURIComponent(resetToken)}`, base).toString();
 
   const mailOptions = {
     from: `"Hotel Booking System" <${process.env.SMTP_USER || 'no-reply@example.com'}>`,

@@ -45,7 +45,7 @@ const ResetPassword = () => {
       // Call reset password API using adminAuth service
       const data = await adminAuth.resetPassword({ 
         token, 
-        password 
+          new_password: password
       });
       
       setMessage(data.message || 'Password reset successful. You can now log in.');

@@ -3,12 +3,15 @@
  * Handles vendor operations - hotel management, room management, booking management
  */
 
-const { Hotel, HotelImage, Room, Booking, User, Vendor, Review } = require('../models');
+const fs = require('fs');
+const path = require('path');
+const { Op } = require('sequelize');
+const { sequelize, Hotel, HotelImage, Room, Booking, User, Vendor, Review } = require('../models');
 const { sendSuccess, sendError, sendPaginatedResponse } = require('../utils/responseHelper');
 const { validateRequiredFields, validatePagination, isValidEmail } = require('../utils/validationHelper');
 const { getBookingIncludes, getPaginationOffset } = require('../utils/dbHelper');
 const { asyncHandler } = require('../middlewares/errorHandler');
-const { Op, fn, col } = require('sequelize');
+const { fn, col } = require('sequelize');
 
 /* ===================== HELPERS ===================== */
 
@@ -168,18 +171,51 @@ module.exports = {
 
     if (!hotel) throw createError('Hotel not found', 404);
 
-    const activeBookings = await Booking.count({
-      where: {
-        hotel_id: hotel.id,
-        status: ['PENDING', 'CONFIRMED']
-      }
+    const confirmedBookings = await Booking.count({
+      where: { hotel_id: hotel.id, status: 'CONFIRMED' }
     });
 
-    if (activeBookings > 0) {
-      throw createError('Cannot delete hotel with active bookings');
+    if (confirmedBookings > 0) {
+      throw createError('Cannot delete hotel with confirmed bookings', 409);
     }
 
-    await hotel.destroy();
+    await Booking.update(
+      { status: 'CANCELLED' },
+      { where: { hotel_id: hotel.id, status: 'PENDING' } }
+    );
+
+    const anyBookings = await Booking.count({ where: { hotel_id: hotel.id } });
+
+    if (anyBookings > 0) {
+      await hotel.update({ status: 'INACTIVE' });
+      await hotel.reload();
+      sendSuccess(res, { hotel }, 'Hotel removed successfully');
+      return;
+    }
+
+    const uploadsDir = path.join(__dirname, '..', 'uploads');
+    const imageRows = await HotelImage.findAll({ where: { hotel_id: hotel.id } });
+    const fileNames = imageRows
+      .map((img) => String(img.url || ''))
+      .filter((u) => u.startsWith('/uploads/'))
+      .map((u) => u.replace('/uploads/', ''))
+      .filter(Boolean);
+
+    await sequelize.transaction(async (t) => {
+      await HotelImage.destroy({ where: { hotel_id: hotel.id }, transaction: t });
+      await Room.destroy({ where: { hotel_id: hotel.id }, transaction: t });
+      await Review.destroy({ where: { hotel_id: hotel.id }, transaction: t });
+      await Hotel.destroy({ where: { id: hotel.id }, transaction: t });
+    });
+
+    await Promise.all(
+      fileNames.map(async (name) => {
+        const fp = path.join(uploadsDir, name);
+        try {
+          await fs.promises.unlink(fp);
+        } catch {}
+      })
+    );
     sendSuccess(res, null, 'Hotel deleted successfully');
   }),
 

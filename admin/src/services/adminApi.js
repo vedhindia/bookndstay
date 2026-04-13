@@ -80,7 +80,7 @@ export const adminAuth = {
 
   /**
    * Reset password with token
-   * @param {Object} resetData - { token, password }
+   * @param {Object} resetData - { token, new_password }
    * @returns {Promise} API response
    */
   resetPassword: async (resetData) => {
