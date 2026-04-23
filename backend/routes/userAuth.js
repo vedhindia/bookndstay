@@ -73,6 +73,55 @@ router.post('/login-mobile/request-otp', userAuthController.requestMobileLoginOt
 
 /**
  * @swagger
+ * /api/user/auth/login-email/request-otp:
+ *   post:
+ *     tags: [User Authentication]
+ *     summary: Request OTP for email login
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email]
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *     responses:
+ *       200:
+ *         description: OTP sent to email
+ */
+router.post('/login-email/request-otp', userAuthController.requestEmailLoginOtp);
+
+/**
+ * @swagger
+ * /api/user/auth/login-email:
+ *   post:
+ *     tags: [User Authentication]
+ *     summary: Login with email and password (no OTP)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Login successful with token
+ *       401:
+ *         description: Invalid credentials
+ */
+router.post('/login-email', userAuthController.loginWithEmailPassword);
+
+/**
+ * @swagger
  * /api/user/auth/login-mobile:
  *   post:
  *     tags: [User Authentication]
@@ -120,6 +169,30 @@ router.post('/login-mobile', userAuthController.loginWithMobilePassword);
  *         description: Login successful with token
  */
 router.post('/verify-otp', userAuthController.verifyLoginOtp);
+
+/**
+ * @swagger
+ * /api/user/auth/verify-email-otp:
+ *   post:
+ *     tags: [User Authentication]
+ *     summary: Verify email OTP to complete login
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, otp]
+ *             properties:
+ *               email:
+ *                 type: string
+ *               otp:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Login successful with token
+ */
+router.post('/verify-email-otp', userAuthController.verifyEmailLoginOtp);
 
 /**
  * @swagger

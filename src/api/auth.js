@@ -70,10 +70,37 @@ export async function requestMobileLoginOtp({ phone }) {
   });
 }
 
+export async function requestEmailLoginOtp({ email }) {
+  return request('/login-email/request-otp', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+}
+
 export async function verifyLoginOtp({ phone, otp }) {
   const res = await request('/verify-otp', {
     method: 'POST',
     body: JSON.stringify({ phone, otp }),
+  });
+  if (res && res.token) setToken(res.token);
+  if (res && res.user) setUser(res.user);
+  return res;
+}
+
+export async function verifyEmailLoginOtp({ email, otp }) {
+  const res = await request('/verify-email-otp', {
+    method: 'POST',
+    body: JSON.stringify({ email, otp }),
+  });
+  if (res && res.token) setToken(res.token);
+  if (res && res.user) setUser(res.user);
+  return res;
+}
+
+export async function loginWithEmailPassword({ email, password }) {
+  const res = await request('/login-email', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
   });
   if (res && res.token) setToken(res.token);
   if (res && res.user) setUser(res.user);
@@ -147,7 +174,10 @@ export async function logout() {
 export default {
   signup,
   requestMobileLoginOtp,
+  requestEmailLoginOtp,
   verifyLoginOtp,
+  verifyEmailLoginOtp,
+  loginWithEmailPassword,
   loginWithMobilePassword,
   forgotPassword,
   changePassword,

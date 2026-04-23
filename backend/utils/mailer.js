@@ -39,6 +39,15 @@ function createTransporter() {
 
 const transporter = createTransporter();
 
+const isProd = () => String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+
+const isSmtpConfigured = () => {
+  const { SMTP_SERVICE, SMTP_HOST, SMTP_USER, SMTP_PASS } = process.env;
+  if (SMTP_HOST) return true;
+  if (SMTP_SERVICE && SMTP_USER && SMTP_PASS) return true;
+  return false;
+};
+
 const getFrontendBaseForRole = (role) => {
   const normalizedRole = String(role || '').toUpperCase();
   if (normalizedRole === 'ADMIN') return process.env.ADMIN_FRONTEND_URL || process.env.FRONTEND_URL;
@@ -107,6 +116,10 @@ const sendPasswordResetEmail = async (email, resetToken, role) => {
 
 // Send OTP via email
 const sendOtpEmail = async (email, otp, purpose = 'Login OTP') => {
+  if (!isSmtpConfigured()) {
+    return { success: false, error: 'SMTP is not configured' };
+  }
+
   const mailOptions = {
     from: `"Hotel Booking System" <${process.env.SMTP_USER || 'no-reply@example.com'}>`,
     to: email,

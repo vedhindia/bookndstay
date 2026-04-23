@@ -1,80 +1,111 @@
 import { useState } from 'react';
-import { FaPhone, FaLock, FaGoogle, FaFacebook, FaApple, FaEye, FaEyeSlash } from 'react-icons/fa';
+import { FaEnvelope, FaLock, FaEye, FaEyeSlash, FaGoogle, FaFacebook, FaApple } from 'react-icons/fa';
 import { useNavigate } from 'react-router-dom';
 import ForgotPasswordModal from '../components/ForgotPasswordModal';
-import { requestMobileLoginOtp, verifyLoginOtp, loginWithMobilePassword } from '../api/auth';
+import { requestEmailLoginOtp, verifyEmailLoginOtp, loginWithEmailPassword } from '../api/auth';
 
 const LoginPage = () => {
   const navigate = useNavigate();
   const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
-  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [otp, setOtp] = useState('');
   const [otpRequested, setOtpRequested] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loadingAction, setLoadingAction] = useState(null);
   const [error, setError] = useState('');
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setError('');
-    // If both phone and password provided -> direct login
-    if (phone && password) {
-      try {
-        setLoading(true);
-        await loginWithMobilePassword({ phone: phone.trim(), password });
-        const redirectUrl = sessionStorage.getItem('redirectUrl');
-        if (redirectUrl) {
-          sessionStorage.removeItem('redirectUrl');
-          navigate(redirectUrl);
-        } else {
-          navigate('/');
-        }
-      } catch (err) {
-        setError(err.message || 'Login failed');
-      } finally {
-        setLoading(false);
-      }
-      return;
-    }
+  const isLoading = Boolean(loadingAction);
+  const isLoggingInWithPassword = loadingAction === 'password';
+  const isSendingOtp = loadingAction === 'sendOtp';
+  const isLoggingInWithOtp = loadingAction === 'otp';
 
-    // If only phone is provided -> request OTP
-    if (phone && !password) {
-      try {
-        setLoading(true);
-        await requestMobileLoginOtp({ phone: phone.trim() });
-        setOtpRequested(true);
-      } catch (err) {
-        setError(err.message || 'Failed to send OTP');
-      } finally {
-        setLoading(false);
-      }
-      return;
+  const redirectAfterLogin = () => {
+    const redirectUrl = sessionStorage.getItem('redirectUrl');
+    if (redirectUrl) {
+      sessionStorage.removeItem('redirectUrl');
+      navigate(redirectUrl);
+    } else {
+      navigate('/');
     }
-
-    setError('Enter mobile number (and password for direct login).');
   };
 
-  const handleVerifyOtp = async () => {
+  const handlePasswordLogin = async () => {
     setError('');
-    if (!phone || !otp) {
-      setError('Enter mobile and OTP.');
+    if (!email) {
+      setError('Enter your registered email.');
+      return;
+    }
+    if (!password) {
+      setError('Enter your password.');
+      return;
+    }
+
+    try {
+      setLoadingAction('password');
+      await loginWithEmailPassword({ email: email.trim(), password });
+      redirectAfterLogin();
+    } catch (err) {
+      setError(err.message || 'Login failed');
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const handleLogin = async () => {
+    if (!email) {
+      setError('Enter your registered email.');
+      return;
+    }
+
+    if (password) {
+      await handlePasswordLogin();
+      return;
+    }
+
+    if (!otpRequested) {
+      setError('Click Send OTP and enter the OTP to login (or enter your password).');
+      return;
+    }
+
+    await handleOtpLogin();
+  };
+
+  const handleSendOtp = async () => {
+    setError('');
+    if (!email) {
+      setError('Enter your registered email.');
       return;
     }
     try {
-      setLoading(true);
-      await verifyLoginOtp({ phone: phone.trim(), otp: otp.trim() });
-      const redirectUrl = sessionStorage.getItem('redirectUrl');
-      if (redirectUrl) {
-        sessionStorage.removeItem('redirectUrl');
-        navigate(redirectUrl);
-      } else {
-        navigate('/');
-      }
+      setLoadingAction('sendOtp');
+      await requestEmailLoginOtp({ email: email.trim() });
+      setOtpRequested(true);
+    } catch (err) {
+      setError(err.message || 'Failed to send OTP');
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const handleOtpLogin = async () => {
+    setError('');
+    if (!email) {
+      setError('Enter your registered email.');
+      return;
+    }
+    if (!otp) {
+      setError('Enter OTP.');
+      return;
+    }
+    try {
+      setLoadingAction('otp');
+      await verifyEmailLoginOtp({ email: email.trim(), otp: otp.trim() });
+      redirectAfterLogin();
     } catch (err) {
       setError(err.message || 'OTP verification failed');
     } finally {
-      setLoading(false);
+      setLoadingAction(null);
     }
   };
 
@@ -89,29 +120,35 @@ const LoginPage = () => {
 
         <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
           <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
-            <form className="space-y-6" onSubmit={handleLogin}>
-              {/* Mobile Number */}
+            <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
+              {/* Email */}
               <div>
-                <label htmlFor="phone" className="block text-sm font-medium text-gray-700">
-                  Mobile number
+                <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+                  Email
                 </label>
                 <div className="mt-1 relative rounded-md shadow-sm">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <FaPhone className="h-5 w-5 text-gray-400" />
+                    <FaEnvelope className="h-5 w-5 text-gray-400" />
                   </div>
                   <input
-                    id="phone"
-                    name="phone"
-                    type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    id="email"
+                    name="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (otpRequested) {
+                        setOtpRequested(false);
+                        setOtp('');
+                      }
+                      if (password) setPassword('');
+                    }}
                     className="focus:ring-[#ee2e24] focus:border-[#ee2e24] block w-full pl-10 sm:text-sm border-gray-300 rounded-md py-3"
-                    placeholder="+91 9313 9313 93"
+                    placeholder="name@example.com"
                   />
                 </div>
               </div>
 
-              {/* Password (optional) */}
               <div>
                 <label htmlFor="password" className="block text-sm font-medium text-gray-700">
                   Password (optional)
@@ -142,6 +179,24 @@ const LoginPage = () => {
                 </div>
                 <p className="text-xs text-gray-500 mt-1">Enter password to login directly; otherwise use OTP.</p>
               </div>
+
+              {/* OTP Input when requested */}
+              {otpRequested && (
+                <div>
+                  <label htmlFor="otp" className="block text-sm font-medium text-gray-700">
+                    Enter OTP
+                  </label>
+                  <input
+                    id="otp"
+                    name="otp"
+                    type="text"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value)}
+                    className=" ps-1 mt-1 block w-full sm:text-sm border-gray-300 rounded-md py-3 border border-dark"
+                    placeholder="6-digit OTP"
+                  />
+                </div>
+              )}
 
               {/* Remember me / Forgot password */}
               <div className="flex items-center justify-between">
@@ -176,43 +231,23 @@ const LoginPage = () => {
               {/* Actions */}
               <div className="grid grid-cols-2 gap-3">
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={handleLogin}
                   className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-[#ee2e24] hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#ee2e24]"
-                  disabled={loading}
+                  disabled={isLoading}
                 >
-                  {password ? (loading ? 'Logging in...' : 'Login') : (loading ? 'Sending OTP...' : 'Send OTP')}
+                  {(isLoggingInWithPassword || isLoggingInWithOtp) ? 'Logging in...' : 'Login'}
                 </button>
 
-                {/* Verify OTP Button appears after requesting OTP */}
-                {otpRequested && (
-                  <button
-                    type="button"
-                    onClick={handleVerifyOtp}
-                    className="w-full flex justify-center py-3 px-4 border border-[#ee2e24] rounded-md shadow-sm text-sm font-medium text-[#ee2e24] hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#ee2e24]"
-                    disabled={loading}
-                  >
-                    {loading ? 'Verifying...' : 'Verify OTP'}
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={handleSendOtp}
+                  className="w-full flex justify-center py-3 px-4 border border-[#ee2e24] rounded-md shadow-sm text-sm font-medium text-[#ee2e24] hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#ee2e24]"
+                  disabled={isLoading}
+                >
+                  {isSendingOtp ? 'Sending...' : (otpRequested ? 'Resend OTP' : 'Send OTP')}
+                </button>
               </div>
-
-              {/* OTP Input when requested */}
-              {otpRequested && (
-                <div>
-                  <label htmlFor="otp" className="block text-sm font-medium text-gray-700">
-                    Enter OTP
-                  </label>
-                  <input
-                    id="otp"
-                    name="otp"
-                    type="text"
-                    value={otp}
-                    onChange={(e) => setOtp(e.target.value)}
-                    className="mt-1 block w-full sm:text-sm border-gray-300 rounded-md py-3"
-                    placeholder="6-digit OTP"
-                  />
-                </div>
-              )}
 
               {/* Registration Link */}
               <div className="text-center mt-4">

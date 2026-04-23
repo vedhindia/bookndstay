@@ -3,13 +3,15 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { User, UserOtp, BlacklistedToken } = require('../models');
 const { generateNumericOtp, hashOtp, verifyOtp, getExpiry } = require('../utils/otpHelper');
-// const { sendOtpEmail } = require('../utils/mailer');
+const { sendOtpEmail } = require('../utils/mailer');
 const { sendOtpSms } = require('../utils/sms');
 require('dotenv').config();
 
 const generateToken = (user) => {
   return jwt.sign({ id: user.id, role: 'USER' }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES || '7d' });
 };
+
+const isProd = () => String(process.env.NODE_ENV || '').toLowerCase() === 'production';
 
 module.exports = {
   // User signup
@@ -108,7 +110,85 @@ module.exports = {
     }
   },
 
-  // Removed: email+password OTP login (not required per current spec)
+  // Request OTP for email login
+  requestEmailLoginOtp: async (req, res) => {
+    try {
+      const { email } = req.body || {};
+      const normalizedEmail = String(email || '').trim().toLowerCase();
+      if (!normalizedEmail) {
+        return res.status(400).json({ message: 'Email is required' });
+      }
+
+      const user = await User.findOne({ where: { email: normalizedEmail } });
+      if (!user) {
+        return res.status(404).json({ message: 'User not found for this email' });
+      }
+      if (!user.is_active) {
+        return res.status(403).json({ message: 'Account has been deactivated' });
+      }
+
+      const otp = generateNumericOtp();
+      const codeHash = await hashOtp(otp);
+      const expiresAt = getExpiry();
+
+      await UserOtp.create({
+        user_id: user.id,
+        channel: 'email',
+        destination: normalizedEmail,
+        code_hash: codeHash,
+        expires_at: expiresAt,
+      });
+
+      const emailResult = await sendOtpEmail(normalizedEmail, otp, 'Login OTP');
+      if (!emailResult.success) {
+        const details = emailResult.error ? `: ${emailResult.error}` : '';
+        return res.status(500).json({ message: `Failed to send OTP${details}` });
+      }
+
+      res.json({ message: 'OTP sent to email' });
+    } catch (err) {
+      console.error('Request email OTP error:', err);
+      res.status(500).json({ message: 'Server error', error: err.message });
+    }
+  },
+
+  // Direct login with email and password (no OTP)
+  loginWithEmailPassword: async (req, res) => {
+    try {
+      const { email, password } = req.body || {};
+      const normalizedEmail = String(email || '').trim().toLowerCase();
+      const pwd = String(password || '');
+      if (!normalizedEmail || !pwd) {
+        return res.status(400).json({ message: 'Email and password are required' });
+      }
+
+      const user = await User.findOne({ where: { email: normalizedEmail } });
+      if (!user) {
+        return res.status(401).json({ message: 'Invalid user credentials' });
+      }
+      if (!user.is_active) {
+        return res.status(403).json({ message: 'Account has been deactivated' });
+      }
+
+      const match = await bcrypt.compare(pwd, user.password);
+      if (!match) {
+        return res.status(401).json({ message: 'Invalid user credentials' });
+      }
+
+      user.last_login = new Date();
+      await user.save();
+
+      const token = generateToken(user);
+      return res.json({
+        message: 'Login successful',
+        user: { id: user.id, full_name: user.full_name, email: user.email, phone: user.phone, role: 'USER' },
+        token,
+      });
+    } catch (err) {
+      console.error('Email+password login error:', err);
+      res.status(500).json({ message: 'Server error', error: err.message });
+    }
+  },
 
   // Direct login with mobile number and password (no OTP)
   loginWithMobilePassword: async (req, res) => {
@@ -210,6 +290,67 @@ module.exports = {
       });
     } catch (err) {
       console.error('Verify login OTP error:', err);
+      res.status(500).json({ message: 'Server error', error: err.message });
+    }
+  },
+
+  // Verify OTP for login (email only)
+  verifyEmailLoginOtp: async (req, res) => {
+    try {
+      const { email, otp } = req.body || {};
+      const normalizedEmail = String(email || '').trim().toLowerCase();
+      const enteredOtp = String(otp || '').trim();
+      if (!normalizedEmail || !enteredOtp) {
+        return res.status(400).json({ message: 'Email and otp are required' });
+      }
+
+      const user = await User.findOne({ where: { email: normalizedEmail } });
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+      if (!user.is_active) {
+        return res.status(403).json({ message: 'Account has been deactivated' });
+      }
+
+      const otpRecord = await UserOtp.findOne({
+        where: {
+          user_id: user.id,
+          channel: 'email',
+          destination: normalizedEmail,
+          consumed: false,
+        },
+        order: [['created_at', 'DESC']]
+      });
+
+      if (!otpRecord) {
+        return res.status(400).json({ message: 'No active OTP found' });
+      }
+
+      if (new Date(otpRecord.expires_at) < new Date()) {
+        return res.status(400).json({ message: 'OTP expired' });
+      }
+
+      const valid = await verifyOtp(enteredOtp, otpRecord.code_hash);
+      if (!valid) {
+        otpRecord.attempts = (otpRecord.attempts || 0) + 1;
+        await otpRecord.save();
+        return res.status(400).json({ message: 'Invalid OTP' });
+      }
+
+      otpRecord.consumed = true;
+      await otpRecord.save();
+
+      user.last_login = new Date();
+      await user.save();
+
+      const token = generateToken(user);
+      res.json({
+        message: 'Login successful',
+        user: { id: user.id, full_name: user.full_name, email: user.email, role: 'USER' },
+        token
+      });
+    } catch (err) {
+      console.error('Verify email OTP error:', err);
       res.status(500).json({ message: 'Server error', error: err.message });
     }
   },
