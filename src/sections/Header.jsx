@@ -162,19 +162,21 @@ export default function Header({ navigate, state, actions }) {
           </a>
 
           {/* Phone */}
-          <motion.div 
+          <motion.a
             whileHover={{ scale: 1.05, backgroundColor: '#f9fafb' }}
             whileTap={{ scale: 0.98 }}
             className='flex items-center gap-1.5 lg:gap-2 px-2 lg:px-3 xl:px-4 py-1.5 lg:py-2 rounded-full border border-gray-200/70 bg-white cursor-pointer hover:shadow-md transition-all'
+            href="tel:7057062000"
+            style={{ textDecoration: 'none' }}
           >
             <div className='h-7 w-7 lg:h-8 lg:w-8 rounded-full bg-gray-100 flex items-center justify-center shadow-inner flex-shrink-0'>
               <FaPhone className='text-gray-600 text-xs lg:text-sm' />
             </div>
             <div className='leading-tight'>
-              <div className='text-gray-900 text-[10px] lg:text-xs font-bold whitespace-nowrap'>0124-6201611</div>
+              <div className='text-gray-900 text-[10px] lg:text-xs font-bold whitespace-nowrap'>7057062000</div>
               <div className='text-[9px] lg:text-[10px] text-gray-500 font-medium whitespace-nowrap hidden xl:block'>Call us to Book now</div>
             </div>
-          </motion.div>
+          </motion.a>
         </div>
 
         {/* Right: User Profile or Login - Desktop & Tablet */}
@@ -362,13 +364,18 @@ export default function Header({ navigate, state, actions }) {
                   </a>
 
                   {/* Phone - Mobile */}
-                  <div className="py-2.5 xs:py-3 px-3 xs:px-4 rounded-xl text-gray-800 font-medium flex items-center gap-3 border-b border-gray-100">
+                  <a
+                    href="tel:7057062000"
+                    className="py-2.5 xs:py-3 px-3 xs:px-4 rounded-xl text-gray-800 hover:bg-red-50 active:bg-red-100 hover:text-[#ee2e24] cursor-pointer transition-all font-medium flex items-center gap-3 border-b border-gray-100 no-underline"
+                    style={{ textDecoration: 'none' }}
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
                     <FaPhone className="text-gray-400 flex-shrink-0 text-sm xs:text-base" />
                     <div className="flex flex-col">
-                      <span className="text-sm xs:text-base">0124-6201611</span>
+                      <span className="text-sm xs:text-base">7057062000</span>
                       <span className="text-[10px] xs:text-xs text-gray-400 font-normal">Call us to Book now</span>
                     </div>
-                  </div>
+                  </a>
                   
                   {/* Login/Register buttons for non-logged-in users */}
                   {!isLoggedIn && (
