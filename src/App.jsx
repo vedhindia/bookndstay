@@ -23,6 +23,8 @@ import VendorLoginPage from './pages/VendorLoginPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import VendorApplyPage from './pages/VendorApplyPage';
 
+const VENDOR_APPLY_ROUTE = '/list-your-property';
+
 const ExternalPanelRedirect = () => {
   const location = useLocation();
 
@@ -76,7 +78,7 @@ const AppContent = () => {
     else if (page === 'bookingHistory') navigate('/bookingHistory');
     else if (page === 'writeReview') navigate('/writeReview');
     else if (page === 'vendorLogin') window.location.href = 'https://bookndstay.com/vendor';
-    else if (page === 'vendorApply') navigate('/vendor/apply');
+    else if (page === 'vendorApply') navigate(VENDOR_APPLY_ROUTE);
     
     window.scrollTo(0, 0);
   };
@@ -173,7 +175,7 @@ const AppContent = () => {
               <VendorLoginPage navigate={navigateTo} />
             </Layout>
           } />
-          <Route path="/vendor/apply" element={
+          <Route path={VENDOR_APPLY_ROUTE} element={
             <Layout state={state} actions={extendedActions}>
               <VendorApplyPage />
             </Layout>

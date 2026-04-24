@@ -133,7 +133,7 @@ export default function Footer() {
               <li><a href='#' className='hover:text-white transition-colors'>Careers</a></li>
               <li><a href='#' className='hover:text-white transition-colors'>Press</a></li>
               <li><a href='#' className='hover:text-white transition-colors'>Investor Relations</a></li>
-              <li><Link to='/vendor/apply' className='hover:text-white transition-colors'>Partner With Us</Link></li>
+              <li><Link to='/list-your-property' className='hover:text-white transition-colors'>Partner With Us</Link></li>
               <li><a href='#' className='hover:text-white transition-colors'>Terms & Privacy</a></li>
             </ul>
           </div>
@@ -184,7 +184,7 @@ export default function Footer() {
                 <li><a href='#' className='hover:text-white transition-colors'>Careers</a></li>
                 <li><a href='#' className='hover:text-white transition-colors'>Press</a></li>
                 <li><a href='#' className='hover:text-white transition-colors'>Investor Relations</a></li>
-                <li><Link to='/vendorLogin' className='hover:text-white transition-colors'>Partner With Us</Link></li>
+                <li><Link to='/list-your-property' className='hover:text-white transition-colors'>Partner With Us</Link></li>
                 <li><a href='#' className='hover:text-white transition-colors'>Terms & Privacy</a></li>
               </ul>
             </details>
@@ -228,4 +228,3 @@ export default function Footer() {
     </footer>
   );
 }
-

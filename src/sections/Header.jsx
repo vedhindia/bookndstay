@@ -14,7 +14,7 @@ export default function Header({ navigate, state, actions }) {
   const userDropdownRefMobile = useRef(null);
 
   const VENDOR_URL = 'https://bookndstay.com/vendor/';
-  const VENDOR_APPLY_URL = '/vendor/apply';
+  const VENDOR_APPLY_URL = '/list-your-property';
   
   const toggleUserDropdown = () => {
     setShowUserDropdown(!showUserDropdown);
