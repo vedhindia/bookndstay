@@ -126,6 +126,26 @@ export const adminVendors = {
   },
 };
 
+export const adminVendorApplications = {
+  list: async (params = {}) => {
+    const url = `/admin/vendor-applications${buildQuery(params)}`;
+    const res = await api.get(url);
+    return res.data;
+  },
+  getById: async (id) => {
+    const res = await api.get(`/admin/vendor-applications/${id}`);
+    return res.data;
+  },
+  approve: async (id, payload = {}) => {
+    const res = await api.post(`/admin/vendor-applications/${id}/approve`, payload);
+    return res.data;
+  },
+  reject: async (id, payload = {}) => {
+    const res = await api.post(`/admin/vendor-applications/${id}/reject`, payload);
+    return res.data;
+  },
+};
+
 // HOTELS
 export const adminHotels = {
   list: async (params = {}) => {
@@ -306,6 +326,7 @@ export const adminUsers = {
 
 export default {
   vendors: adminVendors,
+  vendorApplications: adminVendorApplications,
   hotels: adminHotels,
   vendorHotels: vendorHotels,
   rooms: adminRooms,

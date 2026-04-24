@@ -118,7 +118,8 @@ export const setupAxiosInterceptor = (axiosInstance) => {
     (response) => response,
     (error) => {
       // Handle authentication errors
-      if (error.response?.status === 401 || error.response?.status === 403) {
+      // Skip redirect if this was an auth request (skipAuth is true)
+      if ((error.response?.status === 401 || error.response?.status === 403) && !error.config?.skipAuth && !error.config?.headers?.['X-Skip-Auth']) {
         console.log('Authentication error - clearing session');
         clearSession();
         if (axiosInstance.defaults?.headers?.common) {
@@ -127,8 +128,9 @@ export const setupAxiosInterceptor = (axiosInstance) => {
         
         if (typeof window !== 'undefined') {
           const p = window.location.pathname || '';
-          const base = p.startsWith('/admin') ? '/admin' : p.startsWith('/vendor') ? '/vendor' : '/';
-          if (p !== base) {
+          const base = p.startsWith('/admin') ? '/admin/' : p.startsWith('/vendor') ? '/vendor/' : '/';
+          // Only redirect if we're not already at the base path
+          if (p !== base && p !== base.slice(0, -1)) {
             window.location.href = base;
           }
         }

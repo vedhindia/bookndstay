@@ -4,12 +4,16 @@
  */
 
 const bcrypt = require('bcrypt');
+const crypto = require('crypto');
 const { Op } = require('sequelize');
-const { Admin, User, Vendor, Hotel, Booking, Room, HotelImage, Review, Coupon, Payment, sequelize } = require('../models');
+const { Admin, User, Vendor, VendorApplication, VendorApplicationDocument, Hotel, Booking, Room, HotelImage, Review, Coupon, Payment, sequelize } = require('../models');
 const { sendSuccess, sendError, sendPaginatedResponse } = require('../utils/responseHelper');
 const { validateRequiredFields, isValidEmail, validatePagination } = require('../utils/validationHelper');
 const { getHotelIncludes, getBookingIncludes, getPaginationOffset } = require('../utils/dbHelper');
 const { asyncHandler } = require('../middlewares/errorHandler');
+const { sendVendorCredentialsEmail, sendVendorApplicationRejectedEmail } = require('../utils/mailer');
+
+const generateTempPassword = () => crypto.randomBytes(8).toString('hex');
 
 module.exports = {
   // ============ USER MANAGEMENT ============
@@ -581,6 +585,147 @@ module.exports = {
     };
 
     return sendPaginatedResponse(res, rows, pagination, 'Vendor hotels retrieved successfully');
+  }),
+
+  getVendorApplications: asyncHandler(async (req, res) => {
+    const { page, limit } = validatePagination(req.query.page, req.query.limit);
+    const offset = getPaginationOffset(page, limit);
+    const { status, search } = req.query;
+
+    const where = {};
+    if (status) where.status = String(status).toUpperCase();
+    if (search) {
+      where[Op.or] = [
+        { full_name: { [Op.like]: `%${search}%` } },
+        { email: { [Op.like]: `%${search}%` } },
+        { phone: { [Op.like]: `%${search}%` } },
+        { business_name: { [Op.like]: `%${search}%` } },
+      ];
+    }
+
+    const { rows, count } = await VendorApplication.findAndCountAll({
+      where,
+      include: [{ model: VendorApplicationDocument, as: 'documents' }],
+      limit,
+      offset,
+      order: [['createdAt', 'DESC']],
+    });
+
+    const pagination = {
+      page,
+      limit,
+      totalItems: count,
+      totalPages: Math.ceil(count / limit),
+      hasNext: offset + rows.length < count,
+      hasPrev: page > 1,
+    };
+
+    return sendPaginatedResponse(res, rows, pagination, 'Vendor applications retrieved successfully');
+  }),
+
+  getVendorApplicationById: asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const application = await VendorApplication.findByPk(id, {
+      include: [{ model: VendorApplicationDocument, as: 'documents' }],
+    });
+
+    if (!application) {
+      const err = new Error('Vendor application not found');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    return sendSuccess(res, { application }, 'Vendor application retrieved successfully');
+  }),
+
+  approveVendorApplication: asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { admin_notes } = req.body || {};
+
+    const application = await VendorApplication.findByPk(id, {
+      include: [{ model: VendorApplicationDocument, as: 'documents' }],
+    });
+    if (!application) {
+      const err = new Error('Vendor application not found');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    if (application.status === 'APPROVED') {
+      const err = new Error('Application already approved');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const email = String(application.email || '').trim().toLowerCase();
+    const existingVendor = await Vendor.findOne({ where: { email } });
+    if (existingVendor) {
+      const err = new Error('Vendor already exists with this email');
+      err.statusCode = 409;
+      throw err;
+    }
+
+    const tempPassword = generateTempPassword();
+    const emailRes = await sendVendorCredentialsEmail(email, tempPassword);
+    if (!emailRes.success) {
+      return res.status(502).json({ message: emailRes.error || 'Failed to send vendor credentials email' });
+    }
+
+    const hashed = await bcrypt.hash(tempPassword, 10);
+
+    const vendor = await Vendor.create({
+      full_name: application.full_name,
+      email,
+      phone: application.phone,
+      password: hashed,
+      business_name: application.business_name,
+      business_address: application.business_address,
+      status: 'ACTIVE',
+    });
+
+    await application.update({
+      status: 'APPROVED',
+      admin_notes: admin_notes ? String(admin_notes) : application.admin_notes,
+      rejection_reason: null,
+    });
+
+    return sendSuccess(
+      res,
+      { vendor: { id: vendor.id, email: vendor.email }, application },
+      'Vendor application approved and credentials sent'
+    );
+  }),
+
+  rejectVendorApplication: asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { reason, admin_notes } = req.body || {};
+
+    const application = await VendorApplication.findByPk(id);
+    if (!application) {
+      const err = new Error('Vendor application not found');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    if (application.status === 'APPROVED') {
+      const err = new Error('Approved application cannot be rejected');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    await application.update({
+      status: 'REJECTED',
+      rejection_reason: reason ? String(reason) : 'Rejected by admin',
+      admin_notes: admin_notes ? String(admin_notes) : application.admin_notes,
+    });
+
+    const email = String(application.email || '').trim().toLowerCase();
+    const emailRes = await sendVendorApplicationRejectedEmail(email, application.rejection_reason);
+    if (!emailRes.success) {
+      return res.status(502).json({ message: emailRes.error || 'Failed to send rejection email' });
+    }
+
+    return sendSuccess(res, { application }, 'Vendor application rejected');
   }),
 
   // ============ HOTEL MANAGEMENT ============

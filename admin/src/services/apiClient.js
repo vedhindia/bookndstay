@@ -31,7 +31,8 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error?.response?.status === 401) {
+    // Skip redirect if this was an auth request
+    if (error?.response?.status === 401 && !error.config?.skipAuth && !error.config?.headers?.['X-Skip-Auth']) {
       try {
         localStorage.removeItem('adminToken');
         localStorage.removeItem('adminUser');
@@ -39,8 +40,10 @@ api.interceptors.response.use(
       // Let the app route guard handle redirect; fallback hard redirect
       if (typeof window !== 'undefined') {
         const p = window.location.pathname || '';
-        const base = p.startsWith('/admin') ? '/admin' : p.startsWith('/vendor') ? '/vendor' : '/';
-        window.location.href = base;
+        const base = p.startsWith('/admin') ? '/admin/' : p.startsWith('/vendor') ? '/vendor/' : '/';
+        if (p !== base && p !== base.slice(0, -1)) {
+          window.location.href = base;
+        }
       }
     }
     return Promise.reject(error);

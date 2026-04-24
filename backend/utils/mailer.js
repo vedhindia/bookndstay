@@ -263,4 +263,80 @@ const sendBookingConfirmationEmail = async (email, bookingDetails) => {
   }
 };
 
-module.exports = { transporter, sendPasswordResetEmail, sendOtpEmail, sendBookingConfirmationEmail };
+const sendVendorCredentialsEmail = async (email, password) => {
+  if (!isSmtpConfigured()) {
+    return { success: false, error: 'SMTP is not configured' };
+  }
+
+  const vendorUrl = process.env.VENDOR_FRONTEND_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+  const loginUrl = new URL('/vendor', vendorUrl).toString();
+
+  const mailOptions = {
+    from: `"Hotel Booking System" <${process.env.SMTP_USER || 'no-reply@example.com'}>`,
+    to: email,
+    subject: 'Vendor Account Approved - Login Credentials',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+        <h2 style="color: #333;">Vendor Account Approved</h2>
+        <p>Your vendor registration has been approved. Use the credentials below to login.</p>
+        <div style="background-color: #f1f1f1; padding: 15px; border-radius: 6px; margin: 20px 0;">
+          <p style="margin: 0 0 8px;"><strong>Email:</strong> ${email}</p>
+          <p style="margin: 0;"><strong>Password:</strong> ${password}</p>
+        </div>
+        <div style="text-align: center; margin: 24px 0;">
+          <a href="${loginUrl}" style="background-color: #007bff; color: white; padding: 12px 22px; text-decoration: none; border-radius: 5px; display: inline-block;">
+            Login to Vendor Panel
+          </a>
+        </div>
+        <p>If you did not request this, please contact support.</p>
+        <hr style="margin: 30px 0;">
+        <p style="color: #666; font-size: 12px;">This is an automated email from Hotel Booking System.</p>
+      </div>
+    `
+  };
+
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    return { success: true, info };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+};
+
+const sendVendorApplicationRejectedEmail = async (email, reason) => {
+  if (!isSmtpConfigured()) {
+    return { success: false, error: 'SMTP is not configured' };
+  }
+
+  const mailOptions = {
+    from: `"Hotel Booking System" <${process.env.SMTP_USER || 'no-reply@example.com'}>`,
+    to: email,
+    subject: 'Vendor Application Update',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+        <h2 style="color: #333;">Vendor Application Update</h2>
+        <p>Your vendor application was not approved.</p>
+        ${reason ? `<p><strong>Reason:</strong> ${String(reason)}</p>` : ''}
+        <p>You can re-apply after updating your details/documents.</p>
+        <hr style="margin: 30px 0;">
+        <p style="color: #666; font-size: 12px;">This is an automated email from Hotel Booking System.</p>
+      </div>
+    `
+  };
+
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    return { success: true, info };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+};
+
+module.exports = {
+  transporter,
+  sendPasswordResetEmail,
+  sendOtpEmail,
+  sendBookingConfirmationEmail,
+  sendVendorCredentialsEmail,
+  sendVendorApplicationRejectedEmail,
+};

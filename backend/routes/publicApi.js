@@ -3,6 +3,8 @@ const router = require('express').Router();
 const userCtrl = require('../controllers/userController');
 const couponCtrl = require('../controllers/couponController');
 const paymentCtrl = require('../controllers/paymentController');
+const vendorAppCtrl = require('../controllers/vendorApplicationController');
+const upload = require('../middlewares/upload');
 
 // ============ PUBLIC HOTEL BROWSING API ============
 // These endpoints are accessible without authentication
@@ -130,6 +132,15 @@ router.get('/health', (req, res) => {
 
 // Get payment key
 router.get('/payment-key', paymentCtrl.getPaymentKey);
+
+router.post(
+  '/vendor/apply',
+  upload.fields([
+    { name: 'gst', maxCount: 1 },
+    { name: 'hotel_license', maxCount: 1 },
+  ]),
+  vendorAppCtrl.apply
+);
 
 // ============ PUBLIC COUPON API ============
 /**

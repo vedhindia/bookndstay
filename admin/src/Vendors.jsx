@@ -1,14 +1,14 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { adminVendors } from './services/adminApi';
+import { adminVendors, adminVendorApplications } from './services/adminApi';
 import Pagination from './components/Pagination';
 import { useNavigate } from 'react-router-dom';
 
 const Vendors = () => {
   const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState('vendors');
   const [vendors, setVendors] = useState([]);
   const [query, setQuery] = useState('');
-  const [formState, setFormState] = useState({ open: false, mode: 'add', data: null });
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -17,6 +17,15 @@ const Vendors = () => {
   const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
   const [statusConfirm, setStatusConfirm] = useState(null);
+
+  const [applications, setApplications] = useState([]);
+  const [appQuery, setAppQuery] = useState('');
+  const [appStatus, setAppStatus] = useState('SUBMITTED');
+  const [appPage, setAppPage] = useState(1);
+  const [appPageSize, setAppPageSize] = useState(10);
+  const [appTotal, setAppTotal] = useState(0);
+  const [appLoading, setAppLoading] = useState(false);
+  const [appSubmitting, setAppSubmitting] = useState(false);
 
   // Vendor Hotels State
   const [vendorHotels, setVendorHotels] = useState([]);
@@ -104,15 +113,82 @@ const Vendors = () => {
     }
   };
 
+  const fetchApplications = async () => {
+    setAppLoading(true);
+    setError('');
+    try {
+      const token = localStorage.getItem('adminToken');
+      if (!token) {
+        throw new Error('Authentication token not found. Please login again.');
+      }
+
+      const raw = await adminVendorApplications.list({
+        page: appPage,
+        limit: appPageSize,
+        status: appStatus || undefined,
+        search: appQuery || undefined,
+      });
+
+      const list = Array.isArray(raw?.data)
+        ? raw.data
+        : Array.isArray(raw?.results)
+        ? raw.results
+        : Array.isArray(raw?.applications)
+        ? raw.applications
+        : Array.isArray(raw)
+        ? raw
+        : [];
+
+      const normalized = list.map((a) => ({
+        id: a.id,
+        full_name: a.full_name || '',
+        email: a.email || '',
+        phone: a.phone || '',
+        business_name: a.business_name || '',
+        business_address: a.business_address || '',
+        gst_number: a.gst_number || '',
+        hotel_license_number: a.hotel_license_number || '',
+        status: (a.status || 'SUBMITTED').toString().toUpperCase(),
+        createdAt: a.createdAt || a.created_at || new Date().toISOString(),
+        documents: Array.isArray(a.documents) ? a.documents : [],
+        rejection_reason: a.rejection_reason || '',
+      }));
+
+      setApplications(normalized);
+      const computedTotal = raw?.total ?? raw?.pagination?.totalItems ?? raw?.pagination?.total ?? raw?.count ?? normalized.length;
+      setAppTotal(Number(computedTotal));
+    } catch (err) {
+      console.error('Fetch vendor applications failed:', err);
+      const errorMsg = err?.response?.data?.message || err?.message || 'Failed to fetch vendor applications';
+      if (err?.response?.status === 401 || err?.response?.status === 403) {
+        localStorage.removeItem('adminToken');
+        setError('Authentication failed. Please login again.');
+      } else {
+        setError(errorMsg);
+      }
+    } finally {
+      setAppLoading(false);
+    }
+  };
+
   // Debounced search
   useEffect(() => {
     const delayedFetch = setTimeout(() => {
-      fetchVendors();
+      if (activeTab === 'vendors') fetchVendors();
     }, query ? 500 : 0);
 
     return () => clearTimeout(delayedFetch);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, pageSize, query]);
+  }, [activeTab, page, pageSize, query]);
+
+  useEffect(() => {
+    const delayedFetch = setTimeout(() => {
+      if (activeTab === 'applications') fetchApplications();
+    }, appQuery ? 500 : 0);
+
+    return () => clearTimeout(delayedFetch);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, appPage, appPageSize, appStatus, appQuery]);
 
   const filtered = useMemo(() => {
     if (!query.trim()) return vendors;
@@ -132,48 +208,6 @@ const Vendors = () => {
         .some(x => String(x).toLowerCase().includes(searchTerm));
     });
   }, [query, vendors]);
-
-  const openAdd = () => {
-    setFormState({ 
-      open: true, 
-      mode: 'add', 
-      data: {
-        id: null,
-        full_name: '',
-        email: '',
-        phone: '',
-        password: '',
-        business_name: '',
-        business_address: '',
-        status: 'PENDING',
-      }
-    });
-    setError('');
-    setSuccess('');
-  };
-
-  const openEdit = (v) => {
-    setFormState({ 
-      open: true, 
-      mode: 'edit', 
-      data: { ...v, password: '' } 
-    });
-    setError('');
-    setSuccess('');
-  };
-
-  const closeForm = () => {
-    setFormState({ open: false, mode: 'add', data: null });
-    setError('');
-    setSuccess('');
-  };
-
-  const handleChange = (field, value) => {
-    setFormState(prev => ({ 
-      ...prev, 
-      data: { ...prev.data, [field]: value } 
-    }));
-  };
 
   const handleViewHotels = async (vendorId, page = 1) => {
     // If vendorId is an object (event or full vendor object), extract ID or handle appropriately
@@ -231,102 +265,6 @@ const Vendors = () => {
     }
   };
 
-  // Validate form data
-  const validateForm = (data) => {
-    const errors = [];
-    
-    if (!data.full_name?.trim()) errors.push('Full name is required');
-    if (!data.email?.trim()) errors.push('Email is required');
-    if (!data.phone?.trim()) errors.push('Phone is required');
-    if (!data.business_name?.trim()) errors.push('Business name is required');
-    if (!data.business_address?.trim()) errors.push('Business address is required');
-    
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (data.email && !emailRegex.test(data.email)) {
-      errors.push('Please enter a valid email address');
-    }
-    
-    const phoneRegex = /^[\+]?[\d\s\-\(\)]{10,}$/;
-    if (data.phone && !phoneRegex.test(data.phone)) {
-      errors.push('Please enter a valid phone number');
-    }
-    
-    if (data.mode === 'add' && !data.password?.trim()) {
-      errors.push('Password is required for new vendors');
-    }
-    
-    return errors;
-  };
-
-  // Create vendor via Admin API: POST /api/admin/vendors
-  const apiRegisterVendor = async (payload) => {
-    const body = {
-      full_name: payload.full_name.trim(),
-      email: payload.email.trim().toLowerCase(),
-      phone: payload.phone.replace(/[\s\-\(\)]/g, ''),
-      password: payload.password,
-      business_name: payload.business_name.trim(),
-      business_address: payload.business_address.trim(),
-      status: payload.status || 'PENDING',
-    };
-
-    try {
-      console.log('Creating vendor with payload:', body);
-      const res = await adminVendors.create(body);
-      console.log('Create vendor response:', res);
-      return res;
-    } catch (error) {
-      console.error('Create vendor error:', error);
-      if (error?.response?.status === 409) {
-        throw new Error('Email already exists. Please use a different email address.');
-      } else if (error?.response?.status === 400) {
-        const errorMsg = error?.response?.data?.message || 'Invalid data provided';
-        throw new Error(errorMsg);
-      } else if (error?.response?.status === 401) {
-        throw new Error('Authentication failed. Please login again.');
-      } else if (error?.response?.status === 403) {
-        throw new Error('You do not have permission to create vendors.');
-      }
-      throw new Error(error?.response?.data?.message || error?.message || 'Failed to create vendor');
-    }
-  };
-
-  // Update vendor via Admin API: PUT /api/admin/vendors/{vendorId}
-  const apiUpdateVendorDetails = async (payload) => {
-    if (!payload.id) throw new Error('Vendor ID is missing. Cannot update vendor.');
-    
-    const body = {
-      full_name: payload.full_name.trim(),
-      email: payload.email.trim().toLowerCase(),
-      phone: payload.phone.replace(/[\s\-\(\)]/g, ''),
-      business_name: payload.business_name.trim(),
-      business_address: payload.business_address.trim(),
-      status: payload.status,
-    };
-
-    if (payload.password && payload.password.trim()) {
-      body.password = payload.password.trim();
-    }
-
-    try {
-      console.log('Updating vendor with ID:', payload.id, 'and payload:', body);
-      const res = await adminVendors.update(payload.id, body);
-      console.log('Update vendor response:', res);
-      return res;
-    } catch (error) {
-      console.error('Update vendor error:', error);
-      if (error?.response?.status === 404) {
-        throw new Error('Vendor not found. It may have been deleted.');
-      } else if (error?.response?.status === 409) {
-        throw new Error('Email already exists. Please use a different email address.');
-      } else if (error?.response?.status === 401) {
-        throw new Error('Authentication failed. Please login again.');
-      } else if (error?.response?.status === 403) {
-        throw new Error('You do not have permission to update this vendor.');
-      }
-      throw new Error(error?.response?.data?.message || error?.message || 'Failed to update vendor');
-    }
-  };
 
   // Activate vendor via Admin API: POST /api/admin/vendors/{vendorId}/activate
   const apiActivateVendor = async (vendorId) => {
@@ -441,117 +379,127 @@ const Vendors = () => {
     }
   };
 
-  const handleSubmit = async () => {
-    if (!formState.data) {
-      setError('Form data is missing');
-      return;
-    }
-
-    const validation = validateForm({ ...formState.data, mode: formState.mode });
-    if (validation.length > 0) {
-      setError(validation.join('. '));
-      return;
-    }
-
-    const payload = { ...formState.data };
-    
-    try {
-      setSubmitting(true);
-      setError('');
-      setSuccess('');
-
-      const token = localStorage.getItem('adminToken');
-      if (!token) {
-        setError('Your session has expired. Please login again.');
-        return;
-      }
-
-      if (formState.mode === 'add') {
-        const result = await apiRegisterVendor(payload);
-        setSuccess('Vendor registered successfully!');
-        
-        if (result?.vendor || result?.data || result) {
-          const newVendor = result?.vendor || result?.data || result;
-          const normalized = {
-            id: newVendor.id || newVendor._id || Date.now(),
-            full_name: newVendor.full_name || payload.full_name,
-            email: newVendor.email || payload.email,
-            phone: newVendor.phone || payload.phone,
-            business_name: newVendor.business_name || payload.business_name,
-            business_address: newVendor.business_address || payload.business_address,
-            status: newVendor.status || payload.status || 'PENDING',
-            created_at: newVendor.created_at || new Date().toISOString(),
-          };
-          setVendors(prev => [normalized, ...prev]);
-          setTotal(prev => prev + 1);
-        }
-        
-      } else if (formState.mode === 'edit') {
-        await apiUpdateVendorDetails(payload);
-        setSuccess('Vendor details updated successfully.');
-        
-        setVendors(prev => prev.map(v => 
-          v.id === payload.id 
-            ? { 
-                ...v, 
-                full_name: payload.full_name,
-                email: payload.email,
-                phone: payload.phone,
-                business_name: payload.business_name,
-                business_address: payload.business_address,
-                status: payload.status
-              }
-            : v
-        ));
-      }
-
-      closeForm();
-      
-      setTimeout(fetchVendors, 1000);
-      
-    } catch (error) {
-      console.error('Vendor submit failed:', error);
-      const errorMsg = error?.message || 'Operation failed. Please try again.';
-      setError(errorMsg);
-      
-      if (errorMsg.includes('Authentication failed')) {
-        localStorage.removeItem('adminToken');
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   // Calculate serial number based on current page and index
   const getSerialNumber = (index) => {
     return (page - 1) * pageSize + index + 1;
   };
 
+  const getAppSerialNumber = (index) => {
+    return (appPage - 1) * appPageSize + index + 1;
+  };
+
+  const handleApproveApplication = async (application) => {
+    if (!application?.id) return;
+    try {
+      setAppSubmitting(true);
+      setError('');
+      setSuccess('');
+      await adminVendorApplications.approve(application.id);
+      setSuccess(`Application approved and credentials sent to ${application.email}`);
+      fetchApplications();
+      fetchVendors();
+    } catch (err) {
+      console.error('Approve application failed:', err);
+      const errorMsg = err?.response?.data?.message || err?.message || 'Failed to approve application';
+      setError(errorMsg);
+    } finally {
+      setAppSubmitting(false);
+    }
+  };
+
+  const handleRejectApplication = async (application) => {
+    if (!application?.id) return;
+    const reason = window.prompt('Enter rejection reason (required):');
+    if (!reason || !String(reason).trim()) return;
+    try {
+      setAppSubmitting(true);
+      setError('');
+      setSuccess('');
+      await adminVendorApplications.reject(application.id, { reason: String(reason).trim() });
+      setSuccess(`Application rejected for ${application.email}`);
+      fetchApplications();
+    } catch (err) {
+      console.error('Reject application failed:', err);
+      const errorMsg = err?.response?.data?.message || err?.message || 'Failed to reject application';
+      setError(errorMsg);
+    } finally {
+      setAppSubmitting(false);
+    }
+  };
+
   return (
     <div className="container-fluid p-3 p-md-4">
       <div className="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
         <div>
-          <h4 className="mb-0">Vendors</h4>
-          <small className="text-muted">Manage vendor profiles ({total} total)</small>
+          <h4 className="mb-0">{activeTab === 'vendors' ? 'Vendors' : 'Vendor Applications'}</h4>
+          <small className="text-muted">
+            {activeTab === 'vendors'
+              ? `Manage vendor profiles (${total} total)`
+              : `Review new vendor applications (${appTotal} total)`}
+          </small>
         </div>
-        <div className="d-flex gap-2">
-          <input 
-            className="form-control" 
-            placeholder="Search vendors..." 
-            value={query} 
-            onChange={e => { 
-              setQuery(e.target.value); 
-              setPage(1); 
-            }} 
-            style={{ minWidth: '250px' }}
-          />
-          <button 
-            className="btn btn-primary" 
-            onClick={openAdd} 
-            disabled={submitting || loading}
-          >
-            <i className="fas fa-user-plus me-2"></i>Add Vendor
-          </button>
+        <div className="d-flex flex-wrap gap-2 align-items-center">
+          <div className="btn-group" role="group" aria-label="Vendor tabs">
+            <button
+              type="button"
+              className={`btn btn-sm ${activeTab === 'vendors' ? 'btn-primary' : 'btn-outline-primary'}`}
+              onClick={() => setActiveTab('vendors')}
+              disabled={submitting || loading || appSubmitting || appLoading}
+            >
+              Vendors
+            </button>
+            <button
+              type="button"
+              className={`btn btn-sm ${activeTab === 'applications' ? 'btn-primary' : 'btn-outline-primary'}`}
+              onClick={() => setActiveTab('applications')}
+              disabled={submitting || loading || appSubmitting || appLoading}
+            >
+              Applications
+            </button>
+          </div>
+
+          {activeTab === 'vendors' ? (
+            <>
+              <input
+                className="form-control"
+                placeholder="Search vendors..."
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setPage(1);
+                }}
+                style={{ minWidth: '250px' }}
+              />
+            </>
+          ) : (
+            <>
+              <select
+                className="form-select"
+                value={appStatus}
+                onChange={(e) => {
+                  setAppStatus(e.target.value);
+                  setAppPage(1);
+                }}
+                style={{ minWidth: '170px' }}
+              >
+                <option value="SUBMITTED">SUBMITTED</option>
+                <option value="NEED_MORE_INFO">NEED_MORE_INFO</option>
+                <option value="APPROVED">APPROVED</option>
+                <option value="REJECTED">REJECTED</option>
+              </select>
+              <input
+                className="form-control"
+                placeholder="Search applications..."
+                value={appQuery}
+                onChange={(e) => {
+                  setAppQuery(e.target.value);
+                  setAppPage(1);
+                }}
+                style={{ minWidth: '250px' }}
+              />
+            </>
+          )}
         </div>
       </div>
 
@@ -581,253 +529,247 @@ const Vendors = () => {
 
       <div className="card border-0 shadow-sm">
         <div className="card-body p-0">
-          <div className="table-responsive">
-            <table className="table table-hover align-middle mb-0">
-              <thead className="bg-light">
-                <tr>
-                  <th style={{ width: '80px' }}>Sr No.</th>
-                  <th>Full Name</th>
-                  <th>Email</th>
-                  <th>Phone</th>
-                  <th>Business Name</th>
-                  <th>Business Address</th>
-                  <th>Status</th>
-                  <th className="text-end">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan="8" className="text-center py-4">
-                      <div className="spinner-border text-primary" role="status">
-                        <span className="visually-hidden">Loading...</span>
-                      </div>
-                      <div className="mt-2">Loading vendors...</div>
-                    </td>
-                  </tr>
-                ) : filtered.length > 0 ? (
-                  filtered.map((v, index) => (
-                    <tr key={`${v.id || v.vendor_id || v._id}-${v.email}`}>
-                      <td className="text-muted fw-semibold">{getSerialNumber(index)}</td>
-                      <td>{v.full_name}</td>
-                      <td>{v.email}</td>
-                      <td>{v.phone}</td>
-                      <td>{v.business_name}</td>
-                      <td 
-                        className="text-truncate" 
-                        style={{maxWidth: '200px'}} 
-                        title={v.business_address}
-                      >
-                        {v.business_address}
-                      </td>
-                      <td>
-                        <span className={`badge ${
-                          String(v.status).toUpperCase() === 'ACTIVE' ? 'bg-success' : 
-                          String(v.status).toUpperCase() === 'PENDING' ? 'bg-warning text-dark' : 
-                          'bg-secondary'
-                        }`}>
-                          {v.status}
-                        </span>
-                      </td>
-                      <td className="text-end">
-                        <div className="btn-group">
-                          <button 
-                            className="btn btn-sm btn-outline-info" 
-                            onClick={() => handleViewHotels(v.id || v.vendor_id || v._id)} 
-                            disabled={submitting}
-                            title="View Hotels"
-                          >
-                            <i className="fas fa-hotel"></i>
-                          </button>
-                          <button 
-                            className="btn btn-sm btn-outline-primary" 
-                            onClick={() => openEdit(v)} 
-                            disabled={submitting}
-                            title="Edit Vendor"
-                          >
-                            <i className="fas fa-edit"></i>
-                          </button>
-                          {String(v.status).toUpperCase() === 'ACTIVE' ? (
-                            <button 
-                              className="btn btn-sm btn-outline-warning" 
-                              onClick={() => setStatusConfirm({ vendor: v, action: 'deactivate' })} 
-                              disabled={submitting}
-                              title="Deactivate Vendor"
-                            >
-                              <i className="fas fa-pause"></i>
-                            </button>
-                          ) : (
-                            <button 
-                              className="btn btn-sm btn-outline-success" 
-                              onClick={() => setStatusConfirm({ vendor: v, action: 'activate' })} 
-                              disabled={submitting}
-                              title="Activate Vendor"
-                            >
-                              <i className="fas fa-play"></i>
-                            </button>
-                          )}
-                        </div>
-                      </td>
+          {activeTab === 'vendors' ? (
+            <>
+              <div className="table-responsive">
+                <table className="table table-hover align-middle mb-0">
+                  <thead className="bg-light">
+                    <tr>
+                      <th style={{ width: '80px' }}>Sr No.</th>
+                      <th>Full Name</th>
+                      <th>Email</th>
+                      <th>Phone</th>
+                      <th>Business Name</th>
+                      <th>Business Address</th>
+                      <th>Status</th>
+                      <th className="text-end">Actions</th>
                     </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan="8" className="text-center text-muted py-4">
-                      {query ? 'No vendors found matching your search' : 'No vendors found'}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          
-          {/* Pagination */}
-          {total > pageSize && (
-            <div className="p-3 border-top d-flex flex-wrap justify-content-between align-items-center">
-              <div className="d-flex align-items-center gap-2">
-                <small className="text-muted">
-                  Showing {Math.min((page - 1) * pageSize + 1, total)} to {Math.min(page * pageSize, total)} of {total} vendors
-                </small>
-                <select 
-                  className="form-select form-select-sm" 
-                  style={{width: 'auto'}} 
-                  value={pageSize} 
-                  onChange={e => { 
-                    setPageSize(Number(e.target.value)); 
-                    setPage(1); 
-                  }}
-                >
-                  <option value={10}>10 per page</option>
-                  <option value={20}>20 per page</option>
-                  <option value={50}>50 per page</option>
-                </select>
+                  </thead>
+                  <tbody>
+                    {loading ? (
+                      <tr>
+                        <td colSpan="8" className="text-center py-4">
+                          <div className="spinner-border text-primary" role="status">
+                            <span className="visually-hidden">Loading...</span>
+                          </div>
+                          <div className="mt-2">Loading vendors...</div>
+                        </td>
+                      </tr>
+                    ) : filtered.length > 0 ? (
+                      filtered.map((v, index) => (
+                        <tr key={`${v.id || v.vendor_id || v._id}-${v.email}`}>
+                          <td className="text-muted fw-semibold">{getSerialNumber(index)}</td>
+                          <td>{v.full_name}</td>
+                          <td>{v.email}</td>
+                          <td>{v.phone}</td>
+                          <td>{v.business_name}</td>
+                          <td className="text-truncate" style={{ maxWidth: '200px' }} title={v.business_address}>
+                            {v.business_address}
+                          </td>
+                          <td>
+                            <span
+                              className={`badge ${
+                                String(v.status).toUpperCase() === 'ACTIVE'
+                                  ? 'bg-success'
+                                  : String(v.status).toUpperCase() === 'PENDING'
+                                  ? 'bg-warning text-dark'
+                                  : 'bg-secondary'
+                              }`}
+                            >
+                              {v.status}
+                            </span>
+                          </td>
+                          <td className="text-end">
+                            <div className="btn-group">
+                              <button
+                                className="btn btn-sm btn-outline-info"
+                                onClick={() => handleViewHotels(v.id || v.vendor_id || v._id)}
+                                disabled={submitting}
+                                title="View Hotels"
+                              >
+                                <i className="fas fa-hotel"></i>
+                              </button>
+                              {String(v.status).toUpperCase() === 'ACTIVE' ? (
+                                <button
+                                  className="btn btn-sm btn-outline-warning"
+                                  onClick={() => setStatusConfirm({ vendor: v, action: 'deactivate' })}
+                                  disabled={submitting}
+                                  title="Deactivate Vendor"
+                                >
+                                  <i className="fas fa-pause"></i>
+                                </button>
+                              ) : (
+                                <button
+                                  className="btn btn-sm btn-outline-success"
+                                  onClick={() => setStatusConfirm({ vendor: v, action: 'activate' })}
+                                  disabled={submitting}
+                                  title="Activate Vendor"
+                                >
+                                  <i className="fas fa-play"></i>
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="8" className="text-center text-muted py-4">
+                          {query ? 'No vendors found matching your search' : 'No vendors found'}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
-              <Pagination 
-                current={page} 
-                total={total} 
-                pageSize={pageSize} 
-                onChange={setPage} 
-              />
-            </div>
+
+              {total > pageSize && (
+                <div className="p-3 border-top d-flex flex-wrap justify-content-between align-items-center">
+                  <div className="d-flex align-items-center gap-2">
+                    <small className="text-muted">
+                      Showing {Math.min((page - 1) * pageSize + 1, total)} to {Math.min(page * pageSize, total)} of {total} vendors
+                    </small>
+                    <select
+                      className="form-select form-select-sm"
+                      style={{ width: 'auto' }}
+                      value={pageSize}
+                      onChange={(e) => {
+                        setPageSize(Number(e.target.value));
+                        setPage(1);
+                      }}
+                    >
+                      <option value={10}>10 per page</option>
+                      <option value={20}>20 per page</option>
+                      <option value={50}>50 per page</option>
+                    </select>
+                  </div>
+                  <Pagination current={page} total={total} pageSize={pageSize} onChange={setPage} />
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="table-responsive">
+                <table className="table table-hover align-middle mb-0">
+                  <thead className="bg-light">
+                    <tr>
+                      <th style={{ width: '80px' }}>Sr No.</th>
+                      <th>Full Name</th>
+                      <th>Email</th>
+                      <th>Phone</th>
+                      <th>Business Name</th>
+                      <th>GST</th>
+                      <th>Hotel License</th>
+                      <th>Status</th>
+                      <th className="text-end">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {appLoading ? (
+                      <tr>
+                        <td colSpan="9" className="text-center py-4">
+                          <div className="spinner-border text-primary" role="status">
+                            <span className="visually-hidden">Loading...</span>
+                          </div>
+                          <div className="mt-2">Loading applications...</div>
+                        </td>
+                      </tr>
+                    ) : applications.length > 0 ? (
+                      applications.map((a, index) => {
+                        const gstDoc = a.documents.find((d) => String(d.doc_type).toUpperCase() === 'GST');
+                        const licenseDoc = a.documents.find((d) => String(d.doc_type).toUpperCase() === 'HOTEL_LICENSE');
+                        return (
+                          <tr key={`${a.id}-${a.email}`}>
+                            <td className="text-muted fw-semibold">{getAppSerialNumber(index)}</td>
+                            <td>{a.full_name}</td>
+                            <td>{a.email}</td>
+                            <td>{a.phone}</td>
+                            <td className="text-truncate" style={{ maxWidth: '180px' }} title={a.business_name}>
+                              {a.business_name}
+                            </td>
+                            <td>
+                              {gstDoc?.file_path ? (
+                                <a href={gstDoc.file_path} target="_blank" rel="noreferrer">
+                                  View
+                                </a>
+                              ) : (
+                                <span className="text-muted">-</span>
+                              )}
+                            </td>
+                            <td>
+                              {licenseDoc?.file_path ? (
+                                <a href={licenseDoc.file_path} target="_blank" rel="noreferrer">
+                                  View
+                                </a>
+                              ) : (
+                                <span className="text-muted">-</span>
+                              )}
+                            </td>
+                            <td>
+                              <span className="badge bg-secondary">{a.status}</span>
+                            </td>
+                            <td className="text-end">
+                              <div className="btn-group">
+                                <button
+                                  className="btn btn-sm btn-outline-success"
+                                  onClick={() => handleApproveApplication(a)}
+                                  disabled={appSubmitting}
+                                  title="Approve"
+                                >
+                                  <i className="fas fa-check"></i>
+                                </button>
+                                <button
+                                  className="btn btn-sm btn-outline-danger"
+                                  onClick={() => handleRejectApplication(a)}
+                                  disabled={appSubmitting}
+                                  title="Reject"
+                                >
+                                  <i className="fas fa-times"></i>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan="9" className="text-center text-muted py-4">
+                          {appQuery ? 'No applications found matching your search' : 'No applications found'}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {appTotal > appPageSize && (
+                <div className="p-3 border-top d-flex flex-wrap justify-content-between align-items-center">
+                  <div className="d-flex align-items-center gap-2">
+                    <small className="text-muted">
+                      Showing {Math.min((appPage - 1) * appPageSize + 1, appTotal)} to {Math.min(appPage * appPageSize, appTotal)} of {appTotal}{' '}
+                      applications
+                    </small>
+                    <select
+                      className="form-select form-select-sm"
+                      style={{ width: 'auto' }}
+                      value={appPageSize}
+                      onChange={(e) => {
+                        setAppPageSize(Number(e.target.value));
+                        setAppPage(1);
+                      }}
+                    >
+                      <option value={10}>10 per page</option>
+                      <option value={20}>20 per page</option>
+                      <option value={50}>50 per page</option>
+                    </select>
+                  </div>
+                  <Pagination current={appPage} total={appTotal} pageSize={appPageSize} onChange={setAppPage} />
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
-
-      {/* Add/Edit Modal */}
-      {formState.open && (
-        <div className="modal d-block" tabIndex="-1" role="dialog" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <div className="modal-dialog modal-lg modal-dialog-centered" role="document">
-            <div className="modal-content">
-              <div className="modal-header">
-                <h5 className="modal-title">
-                  {formState.mode === 'add' ? 'Add New Vendor' : 'Edit Vendor'}
-                </h5>
-                <button 
-                  type="button" 
-                  className="btn-close" 
-                  onClick={closeForm}
-                  disabled={submitting}
-                  aria-label="Close"
-                ></button>
-              </div>
-              <div className="modal-body">
-                <div className="row g-3">
-                  <div className="col-md-6">
-                    <label className="form-label">Full Name <span className="text-danger">*</span></label>
-                    <input 
-                      className="form-control" 
-                      value={formState.data?.full_name || ''} 
-                      onChange={e => handleChange('full_name', e.target.value)}
-                      disabled={submitting}
-                      placeholder="Enter full name"
-                    />
-                  </div>
-                  <div className="col-md-6">
-                    <label className="form-label">Email <span className="text-danger">*</span></label>
-                    <input 
-                      type="email" 
-                      className="form-control" 
-                      value={formState.data?.email || ''} 
-                      onChange={e => handleChange('email', e.target.value)}
-                      disabled={submitting}
-                      placeholder="Enter email address"
-                    />
-                  </div>
-                  <div className="col-md-6">
-                    <label className="form-label">Phone <span className="text-danger">*</span></label>
-                    <input 
-                      className="form-control" 
-                      value={formState.data?.phone || ''} 
-                      onChange={e => handleChange('phone', e.target.value)}
-                      disabled={submitting}
-                      placeholder="Enter phone number"
-                    />
-                  </div>
-                  <div className="col-md-6">
-                    <label className="form-label">
-                      Password 
-                      {formState.mode === 'add' && <span className="text-danger">*</span>}
-                      {formState.mode === 'edit' && <small className="text-muted">(leave blank to keep current)</small>}
-                    </label>
-                    <input 
-                      type="password" 
-                      className="form-control" 
-                      value={formState.data?.password || ''} 
-                      onChange={e => handleChange('password', e.target.value)}
-                      disabled={submitting}
-                      placeholder={formState.mode === 'add' ? 'Enter password' : 'Enter new password (optional)'}
-                    />
-                  </div>
-                  <div className="col-md-12">
-                    <label className="form-label">Business Name <span className="text-danger">*</span></label>
-                    <input 
-                      className="form-control" 
-                      value={formState.data?.business_name || ''} 
-                      onChange={e => handleChange('business_name', e.target.value)}
-                      disabled={submitting}
-                      placeholder="Enter business name"
-                    />
-                  </div>
-                  <div className="col-12">
-                    <label className="form-label">Business Address <span className="text-danger">*</span></label>
-                    <textarea 
-                      className="form-control" 
-                      rows="3"
-                      value={formState.data?.business_address || ''} 
-                      onChange={e => handleChange('business_address', e.target.value)}
-                      disabled={submitting}
-                      placeholder="Enter complete business address"
-                    />
-                  </div>
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button 
-                  className="btn btn-secondary" 
-                  onClick={closeForm} 
-                  disabled={submitting}
-                >
-                  Cancel
-                </button>
-                <button 
-                  className="btn btn-primary" 
-                  onClick={handleSubmit} 
-                  disabled={submitting}
-                >
-                  {submitting ? (
-                    <>
-                      <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                      {formState.mode === 'add' ? 'Adding...' : 'Updating...'}
-                    </>
-                  ) : (
-                    formState.mode === 'add' ? 'Add Vendor' : 'Save Changes'
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Status Change Confirmation Modal */}
       {statusConfirm && (

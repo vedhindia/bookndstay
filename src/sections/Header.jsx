@@ -14,6 +14,7 @@ export default function Header({ navigate, state, actions }) {
   const userDropdownRefMobile = useRef(null);
 
   const VENDOR_URL = 'https://bookndstay.com/vendor/';
+  const VENDOR_APPLY_URL = '/vendor/apply';
   
   const toggleUserDropdown = () => {
     setShowUserDropdown(!showUserDropdown);
@@ -146,9 +147,7 @@ export default function Header({ navigate, state, actions }) {
           
           {/* List your property */}
           <a
-            href={VENDOR_URL}
-            target="_blank"
-            rel="noopener noreferrer"
+            href={VENDOR_APPLY_URL}
             className='flex items-center gap-1.5 lg:gap-2 px-2 lg:px-3 xl:px-4 py-1.5 lg:py-2 rounded-full cursor-pointer hover:shadow-md transition-all border border-[#ee2e24]/20 bg-white no-underline'
             style={{ textDecoration: 'none' }}
           >
@@ -352,9 +351,7 @@ export default function Header({ navigate, state, actions }) {
                   
                   {/* List Your Property - Mobile */}
                   <a
-                    href={VENDOR_URL}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    href={VENDOR_APPLY_URL}
                     className="py-2.5 xs:py-3 px-3 xs:px-4 rounded-xl text-gray-800 hover:bg-red-50 active:bg-red-100 hover:text-[#ee2e24] cursor-pointer transition-all font-medium flex items-center gap-3 text-sm xs:text-base no-underline"
                     style={{ textDecoration: 'none' }}
                     onClick={() => setMobileMenuOpen(false)}

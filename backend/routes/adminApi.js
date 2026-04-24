@@ -225,6 +225,11 @@ router.get('/vendors/:vendorId/hotels', requireRole(['ADMIN']), adminCtrl.getVen
 // ============ ALL ROUTES BELOW REQUIRE ADMIN ROLE ONLY ============
 router.use(requireRole(['ADMIN']));
 
+router.get('/vendor-applications', adminCtrl.getVendorApplications);
+router.get('/vendor-applications/:id', adminCtrl.getVendorApplicationById);
+router.post('/vendor-applications/:id/approve', adminCtrl.approveVendorApplication);
+router.post('/vendor-applications/:id/reject', adminCtrl.rejectVendorApplication);
+
 /**
  * @swagger
  * /api/admin/vendors:
