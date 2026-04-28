@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import api from './services/apiClient';
 import Pagination from './components/Pagination';
 import { API_BASE_URL } from './config';
@@ -138,7 +138,6 @@ const Hotels = () => {
   const [showCreate, setShowCreate] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [form, setForm] = useState(initialForm);
-  const [editOriginal, setEditOriginal] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [toDelete, setToDelete] = useState(null);
 
@@ -200,7 +199,7 @@ const Hotels = () => {
     };
   };
 
-  const fetchHotels = async () => {
+  const fetchHotels = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -231,11 +230,11 @@ const Hotels = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, pageSize, status]);
 
   useEffect(() => {
     fetchHotels();
-  }, [page, pageSize, status]);
+  }, [fetchHotels]);
 
   useEffect(() => {
     if (!files || files.length === 0 || typeof URL === 'undefined') {
@@ -253,7 +252,9 @@ const Hotels = () => {
       next.forEach((p) => {
         try {
           URL.revokeObjectURL(p.url);
-        } catch {}
+        } catch {
+          void 0;
+        }
       });
     };
   }, [files]);
@@ -285,7 +286,6 @@ const Hotels = () => {
   const openEdit = (h) => {
     setError('');
     const normalized = { ...h };
-    setEditOriginal(normalized);
     setForm({
       ...initialForm,
       ...normalized,
@@ -298,7 +298,6 @@ const Hotels = () => {
     setShowCreate(false);
     setShowEdit(false);
     setForm(initialForm);
-    setEditOriginal(null);
   };
 
   // Build UI -> API payload for create
@@ -413,7 +412,7 @@ const Hotels = () => {
     return payload;
   };
 
-  const validate = (f, forCreate = false) => {
+  const validate = (f) => {
     if (!f.name?.trim()) return 'Name is required';
     if (!f.description?.trim()) return 'Description is required';
     if (!f.address?.trim()) return 'Address is required';
@@ -422,19 +421,40 @@ const Hotels = () => {
     if (!f.pincode?.trim()) return 'Pincode is required';
     if (!f.phone?.trim()) return 'Phone is required';
     if (!f.email?.trim()) return 'Email is required';
-    if (!f.total_rooms) return 'Total Rooms is required';
-    if (!f.available_rooms) return 'Available Rooms is required';
-    if (!f.ac_rooms) return 'AC Rooms is required';
-    if (!f.non_ac_rooms) return 'Non-AC Rooms is required';
-    if (!f.base_price) return 'Base Price is required';
-    if (!f.ac_room_price) return 'AC Room Price is required';
-    if (!f.non_ac_room_price) return 'Non-AC Room Price is required';
+
+    const totalRooms = Number(f.total_rooms);
+    const availableRooms = Number(f.available_rooms);
+    const acRooms = Number(f.ac_rooms);
+    const nonAcRooms = Number(f.non_ac_rooms);
+
+    if (!Number.isInteger(totalRooms) || totalRooms <= 0) return 'Total Rooms must be a positive integer';
+    if (!Number.isInteger(availableRooms) || availableRooms <= 0) return 'Available Rooms must be a positive integer';
+    if (availableRooms !== totalRooms) return 'Available Rooms must be equal to Total Rooms';
+
+    if (!Number.isInteger(acRooms) || acRooms < 0) return 'AC Rooms must be 0 or more';
+    if (!Number.isInteger(nonAcRooms) || nonAcRooms < 0) return 'Non-AC Rooms must be 0 or more';
+    if (acRooms > availableRooms) return 'AC Rooms must be less than or equal to Available Rooms';
+    if (nonAcRooms > availableRooms) return 'Non-AC Rooms must be less than or equal to Available Rooms';
+    if (acRooms + nonAcRooms !== availableRooms) return 'AC Rooms + Non-AC Rooms must be equal to Available Rooms';
+
+    const basePrice = Number(f.base_price);
+    const acRoomPrice = Number(f.ac_room_price);
+    const nonAcRoomPrice = Number(f.non_ac_room_price);
+
+    if (!Number.isFinite(basePrice) || basePrice <= 0) return 'Base Price must be greater than 0';
+    if (!Number.isFinite(nonAcRoomPrice) || nonAcRoomPrice <= 0) return 'Non-AC Room Price must be greater than 0';
+    if (!Number.isFinite(acRoomPrice) || acRoomPrice <= 0) return 'AC Room Price must be greater than 0';
+
+    if (nonAcRoomPrice < basePrice) return 'Non-AC Room Price must be greater than or equal to Base Price';
+    if (acRoomPrice <= basePrice) return 'AC Room Price must be greater than Base Price';
+    if (acRoomPrice <= nonAcRoomPrice) return 'AC Room Price must be greater than Non-AC Room Price';
+
     if (!f.gst_number?.trim()) return 'GST Number is required';
     return '';
   };
 
   const createHotel = async () => {
-    const v = validate(form, true);
+    const v = validate(form);
     if (v) {
       setError(v);
       return;
@@ -457,7 +477,7 @@ const Hotels = () => {
 
   const updateHotel = async () => {
     if (!form.id) return;
-    const v = validate(form, false);
+    const v = validate(form);
     if (v) {
       setError(v);
       return;
@@ -838,7 +858,7 @@ const Hotels = () => {
                 {error && <div className="alert alert-warning py-2 mb-3">{error}</div>}
                 <div className="row g-3">
                   <div className="col-md-8">
-                    <label className="form-label">Name <span className="text-danger">*</span></label>
+                    <label className="form-label">Hotel Name <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       placeholder="Grand Plaza Hotel"
@@ -982,9 +1002,11 @@ const Hotels = () => {
                     <input
                       className="form-control"
                       type="number"
+                      min="1"
+                      step="1"
                       placeholder="50"
                       value={form.total_rooms}
-                      onChange={(e) => setForm({ ...form, total_rooms: e.target.value })}
+                      onChange={(e) => setForm({ ...form, total_rooms: e.target.value, available_rooms: e.target.value })}
                       required
                     />
                   </div>
@@ -995,7 +1017,7 @@ const Hotels = () => {
                       type="number"
                       placeholder="50"
                       value={form.available_rooms}
-                      onChange={(e) => setForm({ ...form, available_rooms: e.target.value })}
+                      readOnly
                       required
                     />
                   </div>
@@ -1004,6 +1026,8 @@ const Hotels = () => {
                     <input
                       className="form-control"
                       type="number"
+                      min="0"
+                      step="1"
                       placeholder="25"
                       value={form.ac_rooms}
                       onChange={(e) => setForm({ ...form, ac_rooms: e.target.value })}
@@ -1015,6 +1039,8 @@ const Hotels = () => {
                     <input
                       className="form-control"
                       type="number"
+                      min="0"
+                      step="1"
                       placeholder="25"
                       value={form.non_ac_rooms}
                       onChange={(e) => setForm({ ...form, non_ac_rooms: e.target.value })}
@@ -1078,7 +1104,7 @@ const Hotels = () => {
                     />
                   </div>
                   <div className="col-md-6">
-                    <label className="form-label">GST Number <span className="text-danger">*</span></label>
+                    <label className="form-label">Hotel GST Number <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       placeholder="GSTIN123456789"
@@ -1291,9 +1317,11 @@ const Hotels = () => {
                     <input
                       className="form-control"
                       type="number"
+                      min="1"
+                      step="1"
                       placeholder="50"
                       value={form.total_rooms}
-                      onChange={(e) => setForm({ ...form, total_rooms: e.target.value })}
+                      onChange={(e) => setForm({ ...form, total_rooms: e.target.value, available_rooms: e.target.value })}
                       required
                     />
                   </div>
@@ -1304,7 +1332,7 @@ const Hotels = () => {
                       type="number"
                       placeholder="50"
                       value={form.available_rooms}
-                      onChange={(e) => setForm({ ...form, available_rooms: e.target.value })}
+                      readOnly
                       required
                     />
                   </div>
@@ -1313,6 +1341,8 @@ const Hotels = () => {
                     <input
                       className="form-control"
                       type="number"
+                      min="0"
+                      step="1"
                       placeholder="25"
                       value={form.ac_rooms}
                       onChange={(e) => setForm({ ...form, ac_rooms: e.target.value })}
@@ -1324,6 +1354,8 @@ const Hotels = () => {
                     <input
                       className="form-control"
                       type="number"
+                      min="0"
+                      step="1"
                       placeholder="25"
                       value={form.non_ac_rooms}
                       onChange={(e) => setForm({ ...form, non_ac_rooms: e.target.value })}

@@ -36,6 +36,38 @@ const normalizeArray = (val) => {
   return null;
 };
 
+const parseStrictInt = (val) => {
+  if (val === null || val === undefined || val === '') return Number.NaN;
+  const n = Number(val);
+  if (!Number.isFinite(n) || !Number.isInteger(n)) return Number.NaN;
+  return n;
+};
+
+const parseStrictNumber = (val) => {
+  if (val === null || val === undefined || val === '') return Number.NaN;
+  const n = typeof val === 'number' ? val : parseFloat(String(val));
+  if (!Number.isFinite(n)) return Number.NaN;
+  return n;
+};
+
+const assertRoomsValid = ({ totalRooms, acRooms, nonAcRooms }) => {
+  if (!Number.isInteger(totalRooms) || totalRooms <= 0) throw createError('total_rooms must be a positive integer');
+  if (!Number.isInteger(acRooms) || acRooms < 0) throw createError('ac_rooms must be an integer 0 or more');
+  if (!Number.isInteger(nonAcRooms) || nonAcRooms < 0) throw createError('non_ac_rooms must be an integer 0 or more');
+  if (acRooms > totalRooms) throw createError('ac_rooms must be less than or equal to total_rooms');
+  if (nonAcRooms > totalRooms) throw createError('non_ac_rooms must be less than or equal to total_rooms');
+  if (acRooms + nonAcRooms !== totalRooms) throw createError('ac_rooms + non_ac_rooms must be equal to total_rooms');
+};
+
+const assertPricesValid = ({ basePrice, acRoomPrice, nonAcRoomPrice }) => {
+  if (!Number.isFinite(basePrice) || basePrice <= 0) throw createError('base_price must be greater than 0');
+  if (!Number.isFinite(nonAcRoomPrice) || nonAcRoomPrice <= 0) throw createError('non_ac_room_price must be greater than 0');
+  if (!Number.isFinite(acRoomPrice) || acRoomPrice <= 0) throw createError('ac_room_price must be greater than 0');
+  if (nonAcRoomPrice < basePrice) throw createError('non_ac_room_price must be greater than or equal to base_price');
+  if (acRoomPrice <= basePrice) throw createError('ac_room_price must be greater than base_price');
+  if (acRoomPrice <= nonAcRoomPrice) throw createError('ac_room_price must be greater than non_ac_room_price');
+};
+
 /* ===================== CONTROLLER ===================== */
 
 module.exports = {
@@ -59,7 +91,15 @@ module.exports = {
       throw createError('Invalid email format');
     }
 
-    const totalRooms = parseInt(body.total_rooms) || 0;
+    const totalRooms = parseStrictInt(body.total_rooms);
+    const acRooms = parseStrictInt(body.ac_rooms);
+    const nonAcRooms = parseStrictInt(body.non_ac_rooms);
+    assertRoomsValid({ totalRooms, acRooms, nonAcRooms });
+
+    const basePrice = parseStrictNumber(body.base_price);
+    const acRoomPrice = parseStrictNumber(body.ac_room_price);
+    const nonAcRoomPrice = parseStrictNumber(body.non_ac_room_price);
+    assertPricesValid({ basePrice, acRoomPrice, nonAcRoomPrice });
 
     const hotel = await Hotel.create({
       vendor_id: req.user.id,
@@ -81,12 +121,12 @@ module.exports = {
       total_rooms: totalRooms,
       booked_room: 0,
       available_rooms: totalRooms,
-      base_price: parseFloat(body.base_price) || 0,
+      base_price: basePrice,
       featured: String(body.featured).toLowerCase() === 'true',
-      ac_room_price: body.ac_room_price ? parseFloat(body.ac_room_price) : null,
-      non_ac_room_price: body.non_ac_room_price ? parseFloat(body.non_ac_room_price) : null,
-      ac_rooms: parseInt(body.ac_rooms) || 0,
-      non_ac_rooms: parseInt(body.non_ac_rooms) || 0,
+      ac_room_price: acRoomPrice,
+      non_ac_room_price: nonAcRoomPrice,
+      ac_rooms: acRooms,
+      non_ac_rooms: nonAcRooms,
       check_in_time: body.check_in_time || null,
       check_out_time: body.check_out_time || null,
       cancellation_policy: body.cancellation_policy || null,
@@ -156,6 +196,45 @@ module.exports = {
     delete updates.vendor_id;
     delete updates.status;
     delete updates.rating;
+
+    const roomKeys = ['total_rooms', 'available_rooms', 'ac_rooms', 'non_ac_rooms'];
+    const touchesRooms = roomKeys.some((k) => Object.prototype.hasOwnProperty.call(updates, k));
+    if (touchesRooms) {
+      const nextTotalRooms = Object.prototype.hasOwnProperty.call(updates, 'total_rooms')
+        ? parseStrictInt(updates.total_rooms)
+        : hotel.total_rooms;
+      const nextAcRooms = Object.prototype.hasOwnProperty.call(updates, 'ac_rooms')
+        ? parseStrictInt(updates.ac_rooms)
+        : hotel.ac_rooms;
+      const nextNonAcRooms = Object.prototype.hasOwnProperty.call(updates, 'non_ac_rooms')
+        ? parseStrictInt(updates.non_ac_rooms)
+        : hotel.non_ac_rooms;
+
+      assertRoomsValid({ totalRooms: nextTotalRooms, acRooms: nextAcRooms, nonAcRooms: nextNonAcRooms });
+      updates.total_rooms = nextTotalRooms;
+      updates.available_rooms = nextTotalRooms;
+      updates.ac_rooms = nextAcRooms;
+      updates.non_ac_rooms = nextNonAcRooms;
+    }
+
+    const priceKeys = ['base_price', 'ac_room_price', 'non_ac_room_price'];
+    const touchesPrices = priceKeys.some((k) => Object.prototype.hasOwnProperty.call(updates, k));
+    if (touchesPrices) {
+      const nextBasePrice = Object.prototype.hasOwnProperty.call(updates, 'base_price')
+        ? parseStrictNumber(updates.base_price)
+        : parseStrictNumber(hotel.base_price);
+      const nextAcRoomPrice = Object.prototype.hasOwnProperty.call(updates, 'ac_room_price')
+        ? parseStrictNumber(updates.ac_room_price)
+        : parseStrictNumber(hotel.ac_room_price);
+      const nextNonAcRoomPrice = Object.prototype.hasOwnProperty.call(updates, 'non_ac_room_price')
+        ? parseStrictNumber(updates.non_ac_room_price)
+        : parseStrictNumber(hotel.non_ac_room_price);
+
+      assertPricesValid({ basePrice: nextBasePrice, acRoomPrice: nextAcRoomPrice, nonAcRoomPrice: nextNonAcRoomPrice });
+      updates.base_price = nextBasePrice;
+      updates.ac_room_price = nextAcRoomPrice;
+      updates.non_ac_room_price = nextNonAcRoomPrice;
+    }
 
     await hotel.update(updates);
     await hotel.reload();

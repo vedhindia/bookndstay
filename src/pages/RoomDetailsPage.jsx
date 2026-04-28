@@ -210,13 +210,20 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
               const listData = await resList.json();
               const list = Array.isArray(listData?.data?.hotels) ? listData.data.hotels : Array.isArray(listData?.hotels) ? listData.hotels : Array.isArray(listData?.data) ? listData.data : [];
               const mapped = list.filter((h) => (h?.id ?? h?._id) !== id).slice(0, 6).map((h) => {
+                const toNumber = (v) => {
+                  if (v === null || v === undefined || v === '') return null;
+                  const n = typeof v === 'number' ? v : parseFloat(String(v));
+                  return Number.isFinite(n) ? n : null;
+                };
+
                 const hid = h.id ?? h._id ?? Math.random();
                 const name = h.name ?? 'Hotel';
                 const loc = h.city ?? '';
-                const price = typeof h.base_price === 'number' ? h.base_price : (typeof h.price === 'number' ? h.price : 1000);
+                const basePrice = toNumber(h.base_price) ?? toNumber(h.basePrice);
+                const price = basePrice ?? 0;
                 const image = pickPrimaryImage(h) || '/placeholder-hotel.jpg';
                 const rating = typeof h.rating === 'number' ? h.rating : (typeof h.rating === 'string' ? (parseFloat(h.rating) || 0) : 0);
-                return { id: hid, name, location: loc, rating, price, image };
+                return { id: hid, name, location: loc, rating, price: Math.round(price), image };
               });
               setSimilarProperties(mapped);
             }
