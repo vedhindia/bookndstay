@@ -12,9 +12,18 @@ export default function InvoicePage() {
   const [error, setError] = useState('');
 
   const apiUserBase = (() => {
-    const base = import.meta.env.VITE_API_BASE || 'https://bookndstay.com/api/auth';
-    const cleaned = base.replace(/\/auth\/?$/, '');
-    return `${cleaned}/user`;
+    const raw = import.meta.env.VITE_API_BASE || '/api/user/auth';
+    const base = raw.replace(/\/+$/, '');
+    if (base.endsWith('/user/auth')) {
+      return base.slice(0, -'/auth'.length);
+    }
+    if (base.endsWith('/auth')) {
+      return `${base.slice(0, -'/auth'.length)}/user`;
+    }
+    if (base.endsWith('/user')) {
+      return base;
+    }
+    return `${base}/user`;
   })();
 
   useEffect(() => {
@@ -205,7 +214,7 @@ export default function InvoicePage() {
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                   {/* Logo & Branding */}
                   <div className="text-center sm:text-left">
-                    <h1 className="text-3xl sm:text-4xl font-bold text-[#ee2e24] mb-1 print:text-black">OYO</h1>
+                    <h1 className="text-3xl sm:text-4xl font-bold text-[#ee2e24] mb-1 print:text-black">BookndStay</h1>
                     <p className="text-sm text-gray-600 print:text-gray-700">Hotel Booking Platform</p>
                   </div>
                   
@@ -401,12 +410,12 @@ export default function InvoicePage() {
               <div className="text-center space-y-4">
                 <div className="border-t border-dashed border-gray-300 print:border-gray-400 pt-4">
                   <p className="text-base font-semibold text-gray-800 print:text-black mb-3">
-                    Thank you for choosing OYO!
+                    Thank you for choosing BookndStay!
                   </p>
                   <div className="text-sm text-gray-600 print:text-gray-700 space-y-1">
                     <p className="font-medium mb-2">For support & queries:</p>
-                    <p>📧 support@oyo.com | 📞 +91-124-4565656</p>
-                    <p className="mt-2">🌐 www.oyo.com</p>
+                    <p>📧 support@bookndstay.com | 📞 +91-124-4565656</p>
+                    <p className="mt-2">🌐 www.bookndstay.com</p>
                   </div>
                 </div>
 

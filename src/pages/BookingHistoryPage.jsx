@@ -13,9 +13,18 @@ export default function BookingHistoryPage() {
 
   // Fixed API base URL construction
   const apiUserBase = (() => {
-    const base = (import.meta.env.VITE_API_BASE || '/api/auth').replace(/\/+$/, '');
-    const cleaned = base.replace(/\/auth\/?$/, '');
-    return `${cleaned}/user`;
+    const raw = import.meta.env.VITE_API_BASE || '/api/user/auth';
+    const base = raw.replace(/\/+$/, '');
+    if (base.endsWith('/user/auth')) {
+      return base.slice(0, -'/auth'.length);
+    }
+    if (base.endsWith('/auth')) {
+      return `${base.slice(0, -'/auth'.length)}/user`;
+    }
+    if (base.endsWith('/user')) {
+      return base;
+    }
+    return `${base}/user`;
   })();
 
   const filesBase = (import.meta.env.VITE_FILES_BASE || (() => {
