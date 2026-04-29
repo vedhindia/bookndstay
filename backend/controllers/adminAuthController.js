@@ -19,6 +19,14 @@ module.exports = {
     try {
       const { full_name, email, phone, password } = req.body;
 
+      const adminsCount = await Admin.count();
+      if (adminsCount > 0) {
+        return res.status(403).json({
+          success: false,
+          message: 'Admin account already exists. Only one admin account is allowed.'
+        });
+      }
+
       // Validate required fields
       if (!full_name || !email || !password) {
         return res.status(400).json({
@@ -97,6 +105,14 @@ module.exports = {
         return res.status(401).json({
           success: false,
           message: 'Invalid email or password'
+        });
+      }
+
+      const primaryAdmin = await Admin.findOne({ order: [['createdAt', 'ASC'], ['id', 'ASC']] });
+      if (primaryAdmin && admin.id !== primaryAdmin.id) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. Only the primary admin account is allowed to login.'
         });
       }
 

@@ -126,16 +126,40 @@ module.exports = {
     }
 
     // Calculate real-time availability
-    const { check_in, check_out } = req.query;
-    
+    const { check_in, check_out, check_in_at, check_out_at } = req.query;
+
+    const toDateOnly = (d) => {
+      const dt = new Date(d);
+      if (Number.isNaN(dt.getTime())) return null;
+      return new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    };
+
     const today = new Date().toISOString().split('T')[0];
-    const targetCheckIn = check_in || today;
-    
+    let targetCheckIn = check_in || today;
     let targetCheckOut = check_out;
+    let reqStartAt = null;
+    let reqEndAt = null;
+
+    if (check_in_at && check_out_at) {
+      const ciAt = new Date(check_in_at);
+      const coAt = new Date(check_out_at);
+      if (!Number.isNaN(ciAt.getTime()) && !Number.isNaN(coAt.getTime()) && coAt > ciAt) {
+        reqStartAt = ciAt;
+        reqEndAt = coAt;
+        targetCheckIn = toDateOnly(ciAt) || targetCheckIn;
+        targetCheckOut = toDateOnly(coAt) || targetCheckOut;
+      }
+    }
+
     if (!targetCheckOut) {
-       const d = new Date(targetCheckIn);
-       d.setDate(d.getDate() + 1);
-       targetCheckOut = d.toISOString().split('T')[0];
+      const d = new Date(targetCheckIn);
+      d.setDate(d.getDate() + 1);
+      targetCheckOut = d.toISOString().split('T')[0];
+    }
+
+    if (!reqStartAt || !reqEndAt) {
+      reqStartAt = new Date(`${targetCheckIn}T00:00:00`);
+      reqEndAt = new Date(`${targetCheckOut}T00:00:00`);
     }
 
     // 1. Calculate Bookings (PENDING + CONFIRMED) to subtract from available inventory
@@ -157,42 +181,94 @@ module.exports = {
         // So I should count my own pending booking as "used".
     }
 
-    const bookedCount = await Booking.sum('booked_room', {
-      where: {
-        hotel_id: hotel.id,
-        status: { [Op.in]: ['PENDING', 'CONFIRMED'] },
-        [Op.and]: [
-          { check_in: { [Op.lt]: targetCheckOut } },
-          { check_out: { [Op.gt]: targetCheckIn } }
-        ]
-      }
-    }) || 0;
+    const statusWhere = { [Op.in]: ['PENDING', 'CONFIRMED'] };
+    const nightlyModeWhere = { [Op.or]: [{ booking_mode: 'NIGHTLY' }, { booking_mode: null }] };
+    const hourlyModeWhere = { booking_mode: 'HOURLY' };
+
+    const [nightlyBookedCountRaw, hourlyBookedCountRaw] = await Promise.all([
+      Booking.sum('booked_room', {
+        where: {
+          hotel_id: hotel.id,
+          status: statusWhere,
+          ...nightlyModeWhere,
+          [Op.and]: [
+            { check_in: { [Op.lt]: targetCheckOut } },
+            { check_out: { [Op.gt]: targetCheckIn } }
+          ]
+        }
+      }),
+      Booking.sum('booked_room', {
+        where: {
+          hotel_id: hotel.id,
+          status: statusWhere,
+          ...hourlyModeWhere,
+          [Op.and]: [
+            { check_in_at: { [Op.lt]: reqEndAt } },
+            { check_out_at: { [Op.gt]: reqStartAt } }
+          ]
+        }
+      })
+    ]);
+    const bookedCount = Number(nightlyBookedCountRaw || 0) + Number(hourlyBookedCountRaw || 0);
 
     // 2. Calculate AC Bookings
-    const acBookedCount = await Booking.sum('booked_room', {
-      where: {
-        hotel_id: hotel.id,
-        room_type: 'AC',
-        status: { [Op.in]: ['PENDING', 'CONFIRMED'] },
-        [Op.and]: [
-          { check_in: { [Op.lt]: targetCheckOut } },
-          { check_out: { [Op.gt]: targetCheckIn } }
-        ]
-      }
-    }) || 0;
+    const [acNightlyBookedRaw, acHourlyBookedRaw] = await Promise.all([
+      Booking.sum('booked_room', {
+        where: {
+          hotel_id: hotel.id,
+          room_type: 'AC',
+          status: statusWhere,
+          ...nightlyModeWhere,
+          [Op.and]: [
+            { check_in: { [Op.lt]: targetCheckOut } },
+            { check_out: { [Op.gt]: targetCheckIn } }
+          ]
+        }
+      }),
+      Booking.sum('booked_room', {
+        where: {
+          hotel_id: hotel.id,
+          room_type: 'AC',
+          status: statusWhere,
+          ...hourlyModeWhere,
+          [Op.and]: [
+            { check_in_at: { [Op.lt]: reqEndAt } },
+            { check_out_at: { [Op.gt]: reqStartAt } }
+          ]
+        }
+      })
+    ]);
+    const acBookedCount = Number(acNightlyBookedRaw || 0) + Number(acHourlyBookedRaw || 0);
 
     // 3. Calculate Non-AC Bookings
-    const nonAcBookedCount = await Booking.sum('booked_room', {
-      where: {
-        hotel_id: hotel.id,
-        room_type: 'Non AC', // Matches DB value
-        status: { [Op.in]: ['PENDING', 'CONFIRMED'] },
-        [Op.and]: [
-          { check_in: { [Op.lt]: targetCheckOut } },
-          { check_out: { [Op.gt]: targetCheckIn } }
-        ]
-      }
-    }) || 0;
+    const nonAcRoomTypeValues = ['NON_AC', 'Non AC', 'NON-AC', 'Non-AC', 'NON AC'];
+    const [nonAcNightlyBookedRaw, nonAcHourlyBookedRaw] = await Promise.all([
+      Booking.sum('booked_room', {
+        where: {
+          hotel_id: hotel.id,
+          room_type: { [Op.in]: nonAcRoomTypeValues },
+          status: statusWhere,
+          ...nightlyModeWhere,
+          [Op.and]: [
+            { check_in: { [Op.lt]: targetCheckOut } },
+            { check_out: { [Op.gt]: targetCheckIn } }
+          ]
+        }
+      }),
+      Booking.sum('booked_room', {
+        where: {
+          hotel_id: hotel.id,
+          room_type: { [Op.in]: nonAcRoomTypeValues },
+          status: statusWhere,
+          ...hourlyModeWhere,
+          [Op.and]: [
+            { check_in_at: { [Op.lt]: reqEndAt } },
+            { check_out_at: { [Op.gt]: reqStartAt } }
+          ]
+        }
+      })
+    ]);
+    const nonAcBookedCount = Number(nonAcNightlyBookedRaw || 0) + Number(nonAcHourlyBookedRaw || 0);
 
     // Overwrite the fields with AVAILABLE count
     // The DB values (ac_rooms, non_ac_rooms, available_rooms) represent "Total Capacity".
@@ -318,7 +394,7 @@ module.exports = {
    * Get hotel room types (AC / NON_AC) with prices and availability
    */
   getHotelRoomTypes: asyncHandler(async (req, res) => {
-    const { check_in, check_out, search } = req.query;
+    const { check_in, check_out, check_in_at, check_out_at, search } = req.query;
     
     const where = { id: req.params.hotelId };
     if (search) {
@@ -337,39 +413,103 @@ module.exports = {
     let acAvailable = acTotal;
     let nonAcAvailable = nonAcTotal;
 
+    const toDateOnly = (d) => {
+      const dt = new Date(d);
+      if (Number.isNaN(dt.getTime())) return null;
+      return new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    };
+
     // NOTE: We calculate real-time availability based on overlapping bookings
-    const targetCheckIn = check_in || new Date().toISOString().split('T')[0];
-    // If check_out is not provided, assume 1 night stay for availability check
+    let targetCheckIn = check_in || new Date().toISOString().split('T')[0];
     let targetCheckOut = check_out;
+    let reqStartAt = null;
+    let reqEndAt = null;
+
+    if (check_in_at && check_out_at) {
+      const ciAt = new Date(check_in_at);
+      const coAt = new Date(check_out_at);
+      if (!Number.isNaN(ciAt.getTime()) && !Number.isNaN(coAt.getTime()) && coAt > ciAt) {
+        reqStartAt = ciAt;
+        reqEndAt = coAt;
+        targetCheckIn = toDateOnly(ciAt) || targetCheckIn;
+        targetCheckOut = toDateOnly(coAt) || targetCheckOut;
+      }
+    }
+
     if (!targetCheckOut) {
       const d = new Date(targetCheckIn);
       d.setDate(d.getDate() + 1);
       targetCheckOut = d.toISOString().split('T')[0];
     }
 
-    const acBookings = await Booking.sum('booked_room', {
-      where: {
-        hotel_id: hotel.id,
-        room_type: 'AC',
-        status: { [Op.in]: ['PENDING', 'CONFIRMED'] },
-        [Op.and]: [
-          { check_in: { [Op.lt]: targetCheckOut } },
-          { check_out: { [Op.gt]: targetCheckIn } }
-        ]
-      }
-    }) || 0;
+    if (!reqStartAt || !reqEndAt) {
+      reqStartAt = new Date(`${targetCheckIn}T00:00:00`);
+      reqEndAt = new Date(`${targetCheckOut}T00:00:00`);
+    }
 
-    const nonAcBookings = await Booking.sum('booked_room', {
-      where: {
-        hotel_id: hotel.id,
-        room_type: 'NON_AC',
-        status: { [Op.in]: ['PENDING', 'CONFIRMED'] },
-        [Op.and]: [
-          { check_in: { [Op.lt]: targetCheckOut } },
-          { check_out: { [Op.gt]: targetCheckIn } }
-        ]
-      }
-    }) || 0;
+    const statusWhere = { [Op.in]: ['PENDING', 'CONFIRMED'] };
+    const nightlyModeWhere = { [Op.or]: [{ booking_mode: 'NIGHTLY' }, { booking_mode: null }] };
+    const hourlyModeWhere = { booking_mode: 'HOURLY' };
+    const nonAcRoomTypeValues = ['NON_AC', 'Non AC', 'NON-AC', 'Non-AC', 'NON AC'];
+
+    const [
+      acNightlyRaw,
+      acHourlyRaw,
+      nonAcNightlyRaw,
+      nonAcHourlyRaw
+    ] = await Promise.all([
+      Booking.sum('booked_room', {
+        where: {
+          hotel_id: hotel.id,
+          room_type: 'AC',
+          status: statusWhere,
+          ...nightlyModeWhere,
+          [Op.and]: [
+            { check_in: { [Op.lt]: targetCheckOut } },
+            { check_out: { [Op.gt]: targetCheckIn } }
+          ]
+        }
+      }),
+      Booking.sum('booked_room', {
+        where: {
+          hotel_id: hotel.id,
+          room_type: 'AC',
+          status: statusWhere,
+          ...hourlyModeWhere,
+          [Op.and]: [
+            { check_in_at: { [Op.lt]: reqEndAt } },
+            { check_out_at: { [Op.gt]: reqStartAt } }
+          ]
+        }
+      }),
+      Booking.sum('booked_room', {
+        where: {
+          hotel_id: hotel.id,
+          room_type: { [Op.in]: nonAcRoomTypeValues },
+          status: statusWhere,
+          ...nightlyModeWhere,
+          [Op.and]: [
+            { check_in: { [Op.lt]: targetCheckOut } },
+            { check_out: { [Op.gt]: targetCheckIn } }
+          ]
+        }
+      }),
+      Booking.sum('booked_room', {
+        where: {
+          hotel_id: hotel.id,
+          room_type: { [Op.in]: nonAcRoomTypeValues },
+          status: statusWhere,
+          ...hourlyModeWhere,
+          [Op.and]: [
+            { check_in_at: { [Op.lt]: reqEndAt } },
+            { check_out_at: { [Op.gt]: reqStartAt } }
+          ]
+        }
+      })
+    ]);
+
+    const acBookings = Number(acNightlyRaw || 0) + Number(acHourlyRaw || 0);
+    const nonAcBookings = Number(nonAcNightlyRaw || 0) + Number(nonAcHourlyRaw || 0);
 
     acAvailable = Math.max(0, acTotal - acBookings);
     nonAcAvailable = Math.max(0, nonAcTotal - nonAcBookings);
@@ -421,18 +561,60 @@ module.exports = {
    * Create a new booking
    */
   createBooking: asyncHandler(async (req, res) => {
-    const { hotel_id, room_type, check_in, check_out, guests = 1, rooms = 1, coupon_code } = req.body;
+    const { hotel_id, room_type, check_in, check_out, check_in_at, check_out_at, booking_mode, guests = 1, rooms = 1, coupon_code } = req.body;
     
     // Validate required fields
-    const validation = validateRequiredFields(req.body, ['hotel_id', 'room_type', 'check_in', 'check_out']);
-    if (!validation.isValid) {
-      throw createError(`Missing required fields: ${validation.missingFields.join(', ')}`, 400);
+    const bookingMode = String(booking_mode || 'NIGHTLY').toUpperCase();
+    if (!['NIGHTLY', 'HOURLY'].includes(bookingMode)) {
+      throw createError('Invalid booking_mode. Must be NIGHTLY or HOURLY', 400);
+    }
+    if (!hotel_id || !room_type) {
+      throw createError('Missing required fields: hotel_id, room_type', 400);
     }
 
-    // Validate date range
-    const dateValidation = validateDateRange(check_in, check_out);
-    if (!dateValidation.isValid) {
-      throw createError(dateValidation.message, 400);
+    const toDateOnly = (d) => {
+      const dt = new Date(d);
+      if (Number.isNaN(dt.getTime())) return null;
+      return new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    };
+
+    let effectiveCheckIn = check_in;
+    let effectiveCheckOut = check_out;
+    let ciAt = null;
+    let coAt = null;
+    let durationHours = null;
+
+    if (bookingMode === 'HOURLY') {
+      if (!check_in_at || !check_out_at) {
+        throw createError('Missing required fields: check_in_at, check_out_at', 400);
+      }
+      ciAt = new Date(check_in_at);
+      coAt = new Date(check_out_at);
+      if (Number.isNaN(ciAt.getTime()) || Number.isNaN(coAt.getTime())) {
+        throw createError('Invalid datetime format for check_in_at/check_out_at', 400);
+      }
+      if (coAt <= ciAt) {
+        throw createError('check_out_at must be after check_in_at', 400);
+      }
+      const now = new Date();
+      if (ciAt < now) {
+        throw createError('Check-in time cannot be in the past', 400);
+      }
+      durationHours = Math.max(1, Math.ceil((coAt - ciAt) / (1000 * 60 * 60)));
+      effectiveCheckIn = toDateOnly(ciAt);
+      effectiveCheckOut = toDateOnly(coAt);
+      if (!effectiveCheckIn || !effectiveCheckOut) {
+        throw createError('Invalid datetime values', 400);
+      }
+    } else {
+      const validation = validateRequiredFields(req.body, ['check_in', 'check_out']);
+      if (!validation.isValid) {
+        throw createError(`Missing required fields: ${validation.missingFields.join(', ')}`, 400);
+      }
+      const dateValidation = validateDateRange(check_in, check_out);
+      if (!dateValidation.isValid) {
+        throw createError(dateValidation.message, 400);
+      }
     }
 
     // Validate room type
@@ -493,26 +675,65 @@ module.exports = {
     }
 
     // Check availability
-    const overlappingBookings = await Booking.count({
-      where: {
+    const statusWhere = { [Op.in]: ['PENDING', 'CONFIRMED'] };
+    const nightlyModeWhere = { [Op.or]: [{ booking_mode: 'NIGHTLY' }, { booking_mode: null }] };
+    const hourlyModeWhere = { booking_mode: 'HOURLY' };
+
+    const nightlyOverlapWhere = {
+      hotel_id,
+      room_type: normalizedRoomType,
+      status: statusWhere,
+      ...nightlyModeWhere,
+      [Op.and]: [
+        { check_in: { [Op.lt]: effectiveCheckOut } },
+        { check_out: { [Op.gt]: effectiveCheckIn } }
+      ]
+    };
+
+    const hourlyOverlapWhere = (() => {
+      const reqStartAt = bookingMode === 'HOURLY' ? ciAt : new Date(`${effectiveCheckIn}T00:00:00`);
+      const reqEndAt = bookingMode === 'HOURLY' ? coAt : new Date(`${effectiveCheckOut}T00:00:00`);
+      return {
         hotel_id,
         room_type: normalizedRoomType,
-        status: { [Op.in]: ['PENDING', 'CONFIRMED'] },
+        status: statusWhere,
+        ...hourlyModeWhere,
         [Op.and]: [
-          { check_in: { [Op.lt]: check_out } },
-          { check_out: { [Op.gt]: check_in } }
+          { check_in_at: { [Op.lt]: reqEndAt } },
+          { check_out_at: { [Op.gt]: reqStartAt } }
         ]
-      }
-    });
+      };
+    })();
+
+    const [nightlyBookedRoomsRaw, hourlyBookedRoomsRaw] = await Promise.all([
+      Booking.sum('booked_room', { where: nightlyOverlapWhere }),
+      Booking.sum('booked_room', { where: hourlyOverlapWhere })
+    ]);
+    const overlappingBookedRooms = Number(nightlyBookedRoomsRaw || 0) + Number(hourlyBookedRoomsRaw || 0);
 
     // Check if enough rooms are available
-    if (overlappingBookings + Number(rooms) > totalCapacity) {
+    if (overlappingBookedRooms + Number(rooms) > totalCapacity) {
       throw createError('Not enough rooms available for the selected dates', 400);
     }
 
     // Calculate base booking amount
-    const { amount: singleRoomAmount, nights } = calculateBookingAmount(pricePerNight, check_in, check_out);
-    const baseAmount = singleRoomAmount * Number(rooms);
+    let baseAmount = 0;
+    let nights = null;
+    let pricePerHour = null;
+
+    if (bookingMode === 'HOURLY') {
+      const explicitPricePerHour =
+        normalizedRoomType === 'AC'
+          ? parseFloat(hotel.ac_price_per_hour || 0)
+          : parseFloat(hotel.non_ac_price_per_hour || 0);
+      const derived = parseFloat((pricePerNight / 24).toFixed(2));
+      pricePerHour = explicitPricePerHour > 0 ? explicitPricePerHour : derived;
+      baseAmount = pricePerHour * Number(durationHours) * Number(rooms);
+    } else {
+      const calculated = calculateBookingAmount(pricePerNight, effectiveCheckIn, effectiveCheckOut);
+      nights = calculated.nights;
+      baseAmount = calculated.amount * Number(rooms);
+    }
     
     let finalAmount = baseAmount;
     let discountAmount = 0;
@@ -551,12 +772,17 @@ module.exports = {
       hotel_id,
       room_type: normalizedRoomType,
       // room_id is null
-      check_in,
-      check_out,
+      booking_mode: bookingMode,
+      check_in: effectiveCheckIn,
+      check_out: effectiveCheckOut,
+      check_in_at: ciAt,
+      check_out_at: coAt,
+      duration_hours: durationHours,
       guests,
       booked_room: rooms,
       amount: finalAmount,
       price_per_night: pricePerNight,
+      price_per_hour: pricePerHour,
       base_amount: baseAmount,
       discount_amount: discountAmount,
       nights,
@@ -574,9 +800,12 @@ module.exports = {
       booking, 
       amount: finalAmount, 
       price_per_night: pricePerNight,
+      price_per_hour: pricePerHour,
       base_amount: baseAmount,
       discount_amount: discountAmount,
       nights,
+      duration_hours: durationHours,
+      booking_mode: bookingMode,
       coupon_applied: appliedCouponCode 
     }, 'Booking created successfully', 201);
   }),

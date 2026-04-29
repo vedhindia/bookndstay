@@ -153,20 +153,34 @@ export default function PaymentPage() {
                 setAmount(Math.round(localIntent.amount));
              }
           } else {
-            // Fallback to server data if no valid local context
+            const bookingMode = (data?.data?.booking_mode || booking?.booking_mode || 'NIGHTLY').toUpperCase();
+
             let nights = data?.data?.nights;
-            if (!nights && booking.check_in && booking.check_out) {
+            let durationHours = data?.data?.duration_hours ?? booking?.duration_hours;
+
+            if (bookingMode === 'HOURLY') {
+              if (!durationHours && booking.check_in_at && booking.check_out_at) {
+                const start = new Date(booking.check_in_at);
+                const end = new Date(booking.check_out_at);
+                durationHours = Math.max(1, Math.ceil((end - start) / (1000 * 60 * 60)));
+              }
+            } else {
+              if (!nights && booking.check_in && booking.check_out) {
                 const start = new Date(booking.check_in);
                 const end = new Date(booking.check_out);
                 nights = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+              }
             }
 
             const bd = {
               amount: data?.data?.amount ?? booking?.amount,
               base_amount: data?.data?.base_amount ?? booking?.base_amount,
               discount_amount: data?.data?.discount_amount ?? booking?.discount_amount,
-              price_per_night: data?.data?.price_per_night ?? booking?.price_per_night,
-              nights: nights || 1,
+              booking_mode: bookingMode,
+              price_per_night: bookingMode === 'NIGHTLY' ? (data?.data?.price_per_night ?? booking?.price_per_night) : undefined,
+              nights: bookingMode === 'NIGHTLY' ? (nights || 1) : undefined,
+              price_per_hour: bookingMode === 'HOURLY' ? (data?.data?.price_per_hour ?? booking?.price_per_hour) : undefined,
+              duration_hours: bookingMode === 'HOURLY' ? (Number(durationHours) || 1) : undefined,
               coupon_applied: data?.data?.coupon_applied ?? booking?.coupon_code
             };
             setBreakdown(bd);
@@ -178,8 +192,9 @@ export default function PaymentPage() {
                     hotelName: booking.hotel?.name,
                     address: booking.hotel?.address,
                     city: booking.hotel?.city,
-                    checkIn: booking.check_in,
-                    checkOut: booking.check_out,
+                    bookingMode: bookingMode,
+                    checkIn: bookingMode === 'HOURLY' ? booking.check_in_at : booking.check_in,
+                    checkOut: bookingMode === 'HOURLY' ? booking.check_out_at : booking.check_out,
                     guests: booking.guests,
                     rooms: booking.booked_room,
                     image: booking.hotel?.images?.[0]?.url
@@ -632,11 +647,23 @@ export default function PaymentPage() {
         <div className="grid sm:grid-cols-2 gap-4 mb-4 pb-4 border-b">
           <div>
             <p className="text-sm text-gray-600">Check-in</p>
-            <p className="font-semibold">{summary?.checkIn ? new Date(summary.checkIn).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A'}</p>
+            <p className="font-semibold">
+              {summary?.checkIn
+                ? (String(summary?.bookingMode || breakdown?.booking_mode || '').toUpperCase() === 'HOURLY'
+                    ? new Date(summary.checkIn).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                    : new Date(summary.checkIn).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }))
+                : 'N/A'}
+            </p>
           </div>
           <div>
             <p className="text-sm text-gray-600">Check-out</p>
-            <p className="font-semibold">{summary?.checkOut ? new Date(summary.checkOut).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A'}</p>
+            <p className="font-semibold">
+              {summary?.checkOut
+                ? (String(summary?.bookingMode || breakdown?.booking_mode || '').toUpperCase() === 'HOURLY'
+                    ? new Date(summary.checkOut).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                    : new Date(summary.checkOut).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }))
+                : 'N/A'}
+            </p>
           </div>
           <div>
             <p className="text-sm text-gray-600">Guests</p>
@@ -653,6 +680,14 @@ export default function PaymentPage() {
         <div className="space-y-2">
           {breakdown ? (
             <>
+              {breakdown.duration_hours && breakdown.price_per_hour && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">
+                    {breakdown.duration_hours} Hour{breakdown.duration_hours > 1 ? 's' : ''} × {summary?.rooms || 1} Room{(summary?.rooms || 1) !== 1 ? 's' : ''} × ₹{Math.round(breakdown.price_per_hour)}
+                  </span>
+                  <span>₹{Math.round(breakdown.base_amount || 0)}</span>
+                </div>
+              )}
               {breakdown.nights && breakdown.price_per_night && (
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">

@@ -68,13 +68,15 @@ export default function InvoicePage() {
           const apiBooking = data?.data?.booking || data?.booking;
 
           if (apiBooking) {
+            const bookingMode = String(apiBooking.booking_mode || 'NIGHTLY').toUpperCase();
             const transformedBooking = {
               id: apiBooking.id,
               hotelName: apiBooking.hotel?.name || bookingData?.hotelName || 'Hotel',
               address: apiBooking.hotel?.address || apiBooking.hotel?.location || bookingData?.address || '',
               city: apiBooking.hotel?.city || bookingData?.city,
-              checkIn: apiBooking.check_in,
-              checkOut: apiBooking.check_out,
+              bookingMode,
+              checkIn: bookingMode === 'HOURLY' ? (apiBooking.check_in_at || apiBooking.check_in) : apiBooking.check_in,
+              checkOut: bookingMode === 'HOURLY' ? (apiBooking.check_out_at || apiBooking.check_out) : apiBooking.check_out,
               guests: apiBooking.guests || 2,
               rooms: apiBooking.booked_room || apiBooking.rooms || apiBooking.no_of_rooms || 1,
               amount: apiBooking.amount,

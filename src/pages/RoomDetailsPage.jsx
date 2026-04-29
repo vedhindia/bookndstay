@@ -22,6 +22,8 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
   const [selectedRoomType, setSelectedRoomType] = useState('AC');
   const [roomConfigs, setRoomConfigs] = useState([{ id: 1, guests: 2, children: 0 }]);
   const [showRoomGuestModal, setShowRoomGuestModal] = useState(false);
+
+  const [bookingMode, setBookingMode] = useState('NIGHTLY');
   
   const [checkIn, setCheckIn] = useState(() => {
     try {
@@ -37,6 +39,31 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
     const d = new Date();
     const d2 = new Date(d.getTime() + 24 * 60 * 60 * 1000);
     return new Date(d2.getTime() - d2.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  });
+
+  const toDateTimeLocal = (d) => {
+    const dt = new Date(d);
+    return new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  };
+
+  const [checkInAt, setCheckInAt] = useState(() => {
+    try {
+      if (state?.checkInAt) return String(state.checkInAt).slice(0, 16);
+    } catch {}
+    const base = new Date();
+    base.setMinutes(0, 0, 0);
+    base.setHours(base.getHours() + 1);
+    return toDateTimeLocal(base);
+  });
+
+  const [checkOutAt, setCheckOutAt] = useState(() => {
+    try {
+      if (state?.checkOutAt) return String(state.checkOutAt).slice(0, 16);
+    } catch {}
+    const base = new Date();
+    base.setMinutes(0, 0, 0);
+    base.setHours(base.getHours() + 2);
+    return toDateTimeLocal(base);
   });
   
   const [selectedRoomPrice, setSelectedRoomPrice] = useState(() => {
@@ -147,7 +174,15 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
         }
 
         if (id) {
-          const res = await fetch(`${apiVendorPublicBase}/hotels/${id}?check_in=${checkIn}&check_out=${checkOut}`, { method: 'GET', headers: { Accept: 'application/json' } });
+          const hotelParams = new URLSearchParams();
+          if (bookingMode === 'HOURLY') {
+            hotelParams.set('check_in_at', checkInAt);
+            hotelParams.set('check_out_at', checkOutAt);
+          } else {
+            hotelParams.set('check_in', checkIn);
+            hotelParams.set('check_out', checkOut);
+          }
+          const res = await fetch(`${apiVendorPublicBase}/hotels/${id}?${hotelParams.toString()}`, { method: 'GET', headers: { Accept: 'application/json' } });
           if (res.ok) {
             const data = await res.json();
             const hotel = data?.data?.hotel || data?.hotel || data?.data || null;
@@ -239,7 +274,7 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
     };
     fetchDetail();
     return () => { active = false; };
-  }, [searchParams, apiVendorPublicBase, filesBase, checkIn, checkOut]);
+  }, [searchParams, apiVendorPublicBase, filesBase, checkIn, checkOut, bookingMode, checkInAt, checkOutAt]);
 
   useEffect(() => {
     const token = getToken();
@@ -476,6 +511,21 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
     }
   })();
 
+  const durationHours = (() => {
+    try {
+      const ci = new Date(checkInAt);
+      const co = new Date(checkOutAt);
+      const diff = Math.ceil((co - ci) / (1000 * 60 * 60));
+      return Math.max(1, diff);
+    } catch {
+      return 1;
+    }
+  })();
+
+  const unitCount = bookingMode === 'HOURLY' ? durationHours : nights;
+  const unitLabel = bookingMode === 'HOURLY' ? 'Hour' : 'Night';
+  const unitPrice = bookingMode === 'HOURLY' ? Math.max(1, Math.round(Number(selectedRoomPrice || 0) / 24)) : Number(selectedRoomPrice || 0);
+
   const totalRooms = roomConfigs.length;
   const totalGuests = roomConfigs.reduce((sum, room) => sum + room.guests + (room.children || 0), 0);
 
@@ -517,7 +567,7 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
       return;
     }
     const code = codeToUse.trim().toUpperCase();
-    const base = Math.round(selectedRoomPrice * nights * totalRooms);
+    const base = Math.round(unitPrice * unitCount * totalRooms);
     
     // Coupon logic
     const coupon = availableCoupons.find(c => c.code === code);
@@ -556,21 +606,37 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
       return;
     }
 
-    // Validate dates
-    const todayDate = new Date();
-    todayDate.setHours(0, 0, 0, 0);
-    const ciDate = new Date(checkIn);
-    const coDate = new Date(checkOut);
-    ciDate.setHours(0, 0, 0, 0);
-    coDate.setHours(0, 0, 0, 0);
+    if (bookingMode === 'HOURLY') {
+      const ci = new Date(checkInAt);
+      const co = new Date(checkOutAt);
+      if (Number.isNaN(ci.getTime()) || Number.isNaN(co.getTime())) {
+        alert('Please select valid check-in and check-out time');
+        return;
+      }
+      if (co <= ci) {
+        alert('Check-out time must be after check-in time');
+        return;
+      }
+      if (ci < new Date()) {
+        alert('Check-in time cannot be in the past');
+        return;
+      }
+    } else {
+      const todayDate = new Date();
+      todayDate.setHours(0, 0, 0, 0);
+      const ciDate = new Date(checkIn);
+      const coDate = new Date(checkOut);
+      ciDate.setHours(0, 0, 0, 0);
+      coDate.setHours(0, 0, 0, 0);
 
-    if (ciDate < todayDate) {
-      alert('Check-in date cannot be in the past');
-      return;
-    }
-    if (coDate <= ciDate) {
-      alert('Check-out must be after check-in');
-      return;
+      if (ciDate < todayDate) {
+        alert('Check-in date cannot be in the past');
+        return;
+      }
+      if (coDate <= ciDate) {
+        alert('Check-out must be after check-in');
+        return;
+      }
     }
 
     const hotelId = detail?.id || detail?._id;
@@ -591,8 +657,10 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
       const payload = {
         hotel_id: hotelId,
         room_type: roomType,
-        check_in: checkIn,
-        check_out: checkOut,
+        booking_mode: bookingMode,
+        ...(bookingMode === 'HOURLY'
+          ? { check_in_at: checkInAt, check_out_at: checkOutAt }
+          : { check_in: checkIn, check_out: checkOut }),
         guests: totalGuests,
         rooms: roomConfigs.length,
         booked_room: roomConfigs.length // Redundant but ensures backend catches it
@@ -632,9 +700,11 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
         throw new Error('Booking ID not received');
       }
 
-      // Calculate final amount on frontend to match display
-      const basePrice = Math.round(selectedRoomPrice * nights * roomConfigs.length);
-      const finalAmount = Math.max(0, basePrice - discountAmount);
+      const apiBaseAmount = data?.data?.base_amount ?? booking?.base_amount;
+      const apiDiscount = data?.data?.discount_amount ?? booking?.discount_amount ?? discountAmount;
+      const apiAmount = data?.data?.amount ?? booking?.amount;
+      const basePrice = Math.round(Number(apiBaseAmount ?? (unitPrice * unitCount * roomConfigs.length)) || 0);
+      const finalAmount = Math.round(Number(apiAmount ?? Math.max(0, basePrice - apiDiscount)) || 0);
 
       // Prepare payment intent with booking details
       const paymentIntent = {
@@ -644,8 +714,9 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
         city: detail?.city || '',
         latitude: detail?.latitude,
         longitude: detail?.longitude,
-        checkIn: checkIn,
-        checkOut: checkOut,
+        bookingMode: bookingMode,
+        checkIn: bookingMode === 'HOURLY' ? checkInAt : checkIn,
+        checkOut: bookingMode === 'HOURLY' ? checkOutAt : checkOut,
         guests: totalGuests,
         rooms: roomConfigs.length,
         amount: finalAmount,
@@ -653,9 +724,12 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
         breakdown: {
           amount: finalAmount,
           base_amount: basePrice,
-          discount_amount: discountAmount,
-          price_per_night: selectedRoomPrice,
-          nights: nights,
+          discount_amount: Math.round(Number(apiDiscount ?? 0)),
+          booking_mode: bookingMode,
+          price_per_night: bookingMode === 'NIGHTLY' ? selectedRoomPrice : undefined,
+          nights: bookingMode === 'NIGHTLY' ? nights : undefined,
+          price_per_hour: bookingMode === 'HOURLY' ? (data?.data?.price_per_hour ?? booking?.price_per_hour ?? unitPrice) : undefined,
+          duration_hours: bookingMode === 'HOURLY' ? (data?.data?.duration_hours ?? booking?.duration_hours ?? durationHours) : undefined,
           coupon_applied: appliedCoupon
         }
       };
@@ -1075,10 +1149,12 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
                       <div className="ml-3 flex-1">
                         <div className="flex justify-between items-center">
                           <span className="font-semibold text-gray-800">{room.name}</span>
-                          <span className="text-[#ee2e24] font-bold text-lg">₹{room.price}</span>
+                          <span className="text-[#ee2e24] font-bold text-lg">
+                            ₹{bookingMode === 'HOURLY' ? Math.max(1, Math.round(Number(room.price || 0) / 24)) : room.price}
+                          </span>
                         </div>
                         <div className="flex justify-between items-center mt-1">
-                           <span className="text-sm text-gray-500">per night</span>
+                           <span className="text-sm text-gray-500">{bookingMode === 'HOURLY' ? 'per hour' : 'per night'}</span>
                            {room.available > 5 ? (
                               <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded">Available: {room.available}</span>
                            ) : room.available > 0 ? (
@@ -1093,34 +1169,78 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
                 </div>
               </div>
 
-              {/* Date Selection */}
-              <div className="grid grid-cols-2 gap-3 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Check-in</label>
-                  <input
-                    type="date"
-                    value={checkIn}
-                    onChange={(e) => setCheckIn(e.target.value)}
-                    min={new Date().toISOString().split('T')[0]}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#ee2e24] focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Check-out</label>
-                  <input
-                    type="date"
-                    value={checkOut}
-                    onChange={(e) => setCheckOut(e.target.value)}
-                    min={(() => {
-                      if (!checkIn) return '';
-                      const d = new Date(checkIn);
-                      d.setDate(d.getDate() + 1);
-                      return d.toISOString().split('T')[0];
-                    })()}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#ee2e24] focus:outline-none"
-                  />
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Booking Type</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setBookingMode('NIGHTLY')}
+                    className={`border rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${bookingMode === 'NIGHTLY' ? 'bg-[#ee2e24] text-white border-[#ee2e24]' : 'bg-white text-gray-700 border-gray-300 hover:border-gray-400'}`}
+                  >
+                    Day
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBookingMode('HOURLY')}
+                    className={`border rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${bookingMode === 'HOURLY' ? 'bg-[#ee2e24] text-white border-[#ee2e24]' : 'bg-white text-gray-700 border-gray-300 hover:border-gray-400'}`}
+                  >
+                    Hours
+                  </button>
                 </div>
               </div>
+
+              {bookingMode === 'HOURLY' ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Check-in time</label>
+                    <input
+                      type="datetime-local"
+                      value={checkInAt}
+                      onChange={(e) => setCheckInAt(e.target.value)}
+                      min={toDateTimeLocal(new Date())}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#ee2e24] focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Check-out time</label>
+                    <input
+                      type="datetime-local"
+                      value={checkOutAt}
+                      onChange={(e) => setCheckOutAt(e.target.value)}
+                      min={checkInAt || toDateTimeLocal(new Date())}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#ee2e24] focus:outline-none"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Check-in</label>
+                    <input
+                      type="date"
+                      value={checkIn}
+                      onChange={(e) => setCheckIn(e.target.value)}
+                      min={new Date().toISOString().split('T')[0]}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#ee2e24] focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Check-out</label>
+                    <input
+                      type="date"
+                      value={checkOut}
+                      onChange={(e) => setCheckOut(e.target.value)}
+                      min={(() => {
+                        if (!checkIn) return '';
+                        const d = new Date(checkIn);
+                        d.setDate(d.getDate() + 1);
+                        return d.toISOString().split('T')[0];
+                      })()}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#ee2e24] focus:outline-none"
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* Room & Guest Selection Button */}
               <div className="mb-4">
@@ -1199,13 +1319,15 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
               <div className="bg-gray-50 rounded-lg p-4 mb-6">
                 <h4 className="font-semibold mb-3 text-gray-800">Price Breakdown</h4>
                 {(() => {
-                  const base = Math.round(selectedRoomPrice * nights * totalRooms);
+                  const base = Math.round(unitPrice * unitCount * totalRooms);
                   // Removed Service Fee and GST as requested
                   const total = Math.max(0, base - discountAmount);
                   return (
                     <div className="space-y-2">
                       <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">{totalRooms} Room{totalRooms > 1 ? 's' : ''} × {nights} Night{nights > 1 ? 's' : ''}</span>
+                        <span className="text-gray-600">
+                          {totalRooms} Room{totalRooms > 1 ? 's' : ''} × {unitCount} {unitLabel}{unitCount > 1 ? 's' : ''}
+                        </span>
                         <span className="text-gray-800">₹{base.toLocaleString()}</span>
                       </div>
                       

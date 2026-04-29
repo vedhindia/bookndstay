@@ -137,6 +137,7 @@ export default function ViewBookingPage() {
               }
             }
 
+            const bookingMode = String(apiBooking.booking_mode || 'NIGHTLY').toUpperCase();
             // Transform API data to component format
             const transformedBooking = {
               id: apiBooking.id,
@@ -146,8 +147,9 @@ export default function ViewBookingPage() {
               latitude: apiBooking.hotel?.latitude || bookingData?.latitude,
               longitude: apiBooking.hotel?.longitude || bookingData?.longitude,
               city: apiBooking.hotel?.city || bookingData?.city,
-              checkIn: apiBooking.check_in,
-              checkOut: apiBooking.check_out,
+              bookingMode,
+              checkIn: bookingMode === 'HOURLY' ? (apiBooking.check_in_at || apiBooking.check_in) : apiBooking.check_in,
+              checkOut: bookingMode === 'HOURLY' ? (apiBooking.check_out_at || apiBooking.check_out) : apiBooking.check_out,
               guests: apiBooking.guests || 2,
               rooms: apiBooking.booked_room || apiBooking.rooms || apiBooking.no_of_rooms || 1,
               amount: apiBooking.amount,

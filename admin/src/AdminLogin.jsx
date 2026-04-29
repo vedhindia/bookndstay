@@ -289,9 +289,13 @@ const AdminLogin = () => {
               : 'Invalid email or password. Please check your credentials.';
             break;
           case 403:
-            errorMessage = isSignUp 
-              ? 'Registration not allowed. Please contact administrator.' 
-              : 'Access denied. Admin privileges required.';
+            if (responseData?.message) {
+              errorMessage = responseData.message;
+            } else {
+              errorMessage = isSignUp 
+                ? 'Registration not allowed. Please contact administrator.' 
+                : 'Access denied. Admin privileges required.';
+            }
             break;
           case 404:
             errorMessage = isSignUp 

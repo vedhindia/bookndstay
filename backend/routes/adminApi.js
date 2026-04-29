@@ -225,6 +225,8 @@ router.get('/vendors/:vendorId/hotels', requireRole(['ADMIN']), adminCtrl.getVen
 // ============ ALL ROUTES BELOW REQUIRE ADMIN ROLE ONLY ============
 router.use(requireRole(['ADMIN']));
 
+router.get('/notifications/counts', adminCtrl.getNotificationCounts);
+
 router.get('/vendor-applications', adminCtrl.getVendorApplications);
 router.get('/vendor-applications/:id', adminCtrl.getVendorApplicationById);
 router.post('/vendor-applications/:id/approve', adminCtrl.approveVendorApplication);
@@ -289,6 +291,7 @@ router.post('/vendors', adminCtrl.createVendor);
  *         description: Vendor updated
  */
 router.put('/vendors/:vendorId', adminCtrl.updateVendor);
+router.delete('/vendors/:vendorId', adminCtrl.deleteVendor);
 
 /**
  * @swagger

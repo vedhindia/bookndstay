@@ -95,6 +95,47 @@ const PORT = process.env.PORT || 3001;
           after: 'amount'
         });
       }
+      if (!bookings.booking_mode) {
+        console.log('Adding missing column bookings.booking_mode');
+        await qi.addColumn('bookings', 'booking_mode', {
+          type: DataTypes.ENUM('NIGHTLY', 'HOURLY'),
+          allowNull: false,
+          defaultValue: 'NIGHTLY',
+          after: 'room_type'
+        });
+      }
+      if (!bookings.check_in_at) {
+        console.log('Adding missing column bookings.check_in_at');
+        await qi.addColumn('bookings', 'check_in_at', {
+          type: DataTypes.DATE,
+          allowNull: true,
+          after: 'check_out'
+        });
+      }
+      if (!bookings.check_out_at) {
+        console.log('Adding missing column bookings.check_out_at');
+        await qi.addColumn('bookings', 'check_out_at', {
+          type: DataTypes.DATE,
+          allowNull: true,
+          after: 'check_in_at'
+        });
+      }
+      if (!bookings.duration_hours) {
+        console.log('Adding missing column bookings.duration_hours');
+        await qi.addColumn('bookings', 'duration_hours', {
+          type: DataTypes.INTEGER.UNSIGNED,
+          allowNull: true,
+          after: 'check_out_at'
+        });
+      }
+      if (!bookings.price_per_hour) {
+        console.log('Adding missing column bookings.price_per_hour');
+        await qi.addColumn('bookings', 'price_per_hour', {
+          type: DataTypes.FLOAT,
+          allowNull: true,
+          after: 'price_per_night'
+        });
+      }
 
       // Fix coupon vendor_id constraint
       try {

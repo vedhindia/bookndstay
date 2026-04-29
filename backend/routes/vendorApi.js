@@ -701,6 +701,7 @@ router.get('/bookings/:bookingId', vendorCtrl.getBookingById);
  *         description: Booking status updated successfully
  */
 router.put('/bookings/:bookingId/status', vendorCtrl.updateBookingStatus);
+router.get('/notifications/counts', vendorCtrl.getNotificationCounts);
 
 /**
  * @swagger

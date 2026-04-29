@@ -126,6 +126,14 @@ export const adminVendors = {
   },
 };
 
+export const adminNotifications = {
+  counts: async (params = {}) => {
+    const url = `/admin/notifications/counts${buildQuery(params)}`;
+    const res = await api.get(url);
+    return res.data;
+  }
+};
+
 export const adminVendorApplications = {
   list: async (params = {}) => {
     const url = `/admin/vendor-applications${buildQuery(params)}`;
@@ -326,6 +334,7 @@ export const adminUsers = {
 
 export default {
   vendors: adminVendors,
+  notifications: adminNotifications,
   vendorApplications: adminVendorApplications,
   hotels: adminHotels,
   vendorHotels: vendorHotels,

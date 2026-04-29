@@ -1,11 +1,13 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { logoutVendor } from "./utils/auth";
+import api from "./services/apiClient";
 
 const Sidebar = ({ isCollapsed, onClose }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [expandedItems, setExpandedItems] = useState({});
+  const [badgeCounts, setBadgeCounts] = useState({ users: 0, bookings: 0 });
 
   const menuItems = [
     { title: 'Dashboard', icon: 'fas fa-tachometer-alt', path: '/dashboard', exact: true },
@@ -20,6 +22,55 @@ const Sidebar = ({ isCollapsed, onClose }) => {
   const isActive = (path, exact = false) => {
     return exact ? location.pathname === path : location.pathname.startsWith(path);
   };
+
+  const lastSeenKeyForPath = (path) => {
+    if (path.startsWith('/dashboard/users')) return 'vendor_last_seen_users';
+    if (path.startsWith('/dashboard/bookings')) return 'vendor_last_seen_bookings';
+    return null;
+  };
+
+  const sectionKeyForPath = (path) => {
+    if (path.startsWith('/dashboard/users')) return 'users';
+    if (path.startsWith('/dashboard/bookings')) return 'bookings';
+    return null;
+  };
+
+  const ensureLastSeenInitialized = () => {
+    const now = new Date().toISOString();
+    const keys = ['vendor_last_seen_users', 'vendor_last_seen_bookings'];
+    keys.forEach((k) => {
+      try {
+        const v = localStorage.getItem(k);
+        if (!v) localStorage.setItem(k, now);
+      } catch {}
+    });
+  };
+
+  const fetchBadges = async () => {
+    try {
+      ensureLastSeenInitialized();
+      const params = {
+        users_since: localStorage.getItem('vendor_last_seen_users') || undefined,
+        bookings_since: localStorage.getItem('vendor_last_seen_bookings') || undefined,
+      };
+      const res = await api.get('/vendor/notifications/counts', { params });
+      const c = res?.data?.data?.counts || res?.data?.counts || {};
+      setBadgeCounts({
+        users: Number(c.users) || 0,
+        bookings: Number(c.bookings) || 0,
+      });
+    } catch {
+      void 0;
+    }
+  };
+
+  const getBadgeCount = (path) => {
+    const section = sectionKeyForPath(path);
+    if (!section) return 0;
+    return badgeCounts[section] || 0;
+  };
+
+  const formatBadge = (n) => (n > 99 ? '99+' : String(n));
 
   const toggleSubmenu = (title) => {
     setExpandedItems((prev) => ({
@@ -37,7 +88,13 @@ const Sidebar = ({ isCollapsed, onClose }) => {
     navigate("/", { replace: true });
   };
 
-  const handleLinkClick = () => {
+  const handleLinkClick = (targetPath) => {
+    const key = targetPath ? lastSeenKeyForPath(targetPath) : null;
+    if (key) {
+      try {
+        localStorage.setItem(key, new Date().toISOString());
+      } catch {}
+    }
     // Close mobile sidebar when a link is clicked
     if (onClose && window.innerWidth < 992) {
       onClose();
@@ -46,7 +103,25 @@ const Sidebar = ({ isCollapsed, onClose }) => {
 
   useEffect(() => {
     setExpandedItems({});
+    const key = lastSeenKeyForPath(location.pathname);
+    const section = sectionKeyForPath(location.pathname);
+    if (key && section) {
+      try {
+        localStorage.setItem(key, new Date().toISOString());
+      } catch {}
+      setBadgeCounts((prev) => ({ ...prev, [section]: 0 }));
+      fetchBadges();
+    }
   }, [location.pathname]);
+
+  useEffect(() => {
+    ensureLastSeenInitialized();
+    fetchBadges();
+    const interval = setInterval(() => {
+      fetchBadges();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <>
@@ -77,9 +152,16 @@ const Sidebar = ({ isCollapsed, onClose }) => {
                     to={item.path}
                     className={({ isActive: isTopActive }) => `menu-link ${isTopActive ? 'active' : ''}`}
                     end={item.exact}
-                    onClick={handleLinkClick}
+                    onClick={() => handleLinkClick(item.path)}
                   >
-                    <i className={`${item.icon} menu-icon`}></i>
+                    <span className="menu-icon-wrap">
+                      <i className={`${item.icon} menu-icon`}></i>
+                      {getBadgeCount(item.path) > 0 && (
+                        <span className={`notif-badge ${isCollapsed ? 'collapsed-badge' : ''}`}>
+                          {formatBadge(getBadgeCount(item.path))}
+                        </span>
+                      )}
+                    </span>
                     {!isCollapsed && <span className="menu-text">{item.title}</span>}
                   </NavLink>
                 ) : (
@@ -104,12 +186,12 @@ const Sidebar = ({ isCollapsed, onClose }) => {
 
                     <ul className={`submenu list-unstyled ${expandedItems[item.title] ? 'show' : ''}`}>
                       <li>
-                        <NavLink to="/dashboard/myInfo" className="submenu-link" onClick={handleLinkClick}>
+                        <NavLink to="/dashboard/myInfo" className="submenu-link" onClick={() => handleLinkClick('/dashboard/myInfo')}>
                           <i className="fas fa-user-circle me-2"></i> Profile
                         </NavLink>
                       </li>
                       <li>
-                        <NavLink to="/dashboard/change-password" className="submenu-link" onClick={handleLinkClick}>
+                        <NavLink to="/dashboard/change-password" className="submenu-link" onClick={() => handleLinkClick('/dashboard/change-password')}>
                           <i className="fas fa-key me-2"></i> Change Password
                         </NavLink>
                       </li>
@@ -239,6 +321,32 @@ const Sidebar = ({ isCollapsed, onClose }) => {
           min-width: 20px;
           text-align: center;
           font-size: 1.1rem;
+        }
+
+        .menu-icon-wrap {
+          position: relative;
+          display: inline-flex;
+          align-items: center;
+        }
+
+        .notif-badge {
+          position: absolute;
+          top: -6px;
+          right: -6px;
+          background: #ff3b30;
+          color: #fff;
+          border-radius: 999px;
+          font-size: 11px;
+          font-weight: 700;
+          line-height: 1;
+          padding: 3px 6px;
+          border: 2px solid rgba(30, 60, 114, 0.9);
+          min-width: 22px;
+          text-align: center;
+        }
+
+        .collapsed-badge {
+          right: -10px;
         }
 
         .menu-text {

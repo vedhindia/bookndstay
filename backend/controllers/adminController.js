@@ -544,6 +544,67 @@ module.exports = {
     } }, 'Vendor suspended successfully');
   }),
 
+  getNotificationCounts: asyncHandler(async (req, res) => {
+    const parseSince = (v) => {
+      if (!v) return null;
+      const d = new Date(String(v));
+      if (Number.isNaN(d.getTime())) return null;
+      return d;
+    };
+
+    const usersSince = parseSince(req.query.users_since);
+    const hotelsSince = parseSince(req.query.hotels_since);
+    const vendorsSince = parseSince(req.query.vendors_since);
+    const bookingsSince = parseSince(req.query.bookings_since);
+
+    const [users, hotels, vendors, bookings] = await Promise.all([
+      usersSince ? User.count({ where: { createdAt: { [Op.gt]: usersSince } } }) : Promise.resolve(0),
+      hotelsSince ? Hotel.count({ where: { createdAt: { [Op.gt]: hotelsSince } } }) : Promise.resolve(0),
+      vendorsSince ? Vendor.count({ where: { createdAt: { [Op.gt]: vendorsSince } } }) : Promise.resolve(0),
+      bookingsSince ? Booking.count({ where: { createdAt: { [Op.gt]: bookingsSince } } }) : Promise.resolve(0),
+    ]);
+
+    return sendSuccess(res, { counts: { users, hotels, vendors, bookings } }, 'Notification counts retrieved successfully');
+  }),
+
+  deleteVendor: asyncHandler(async (req, res) => {
+    const { vendorId } = req.params;
+    const vendor = await Vendor.findByPk(vendorId);
+    if (!vendor) {
+      const err = new Error('Vendor not found');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const bookingsCount = await Booking.count({ where: { vendor_id: vendor.id } });
+    if (bookingsCount > 0) {
+      const err = new Error('Cannot delete vendor with existing bookings. Please deactivate the vendor instead.');
+      err.statusCode = 409;
+      throw err;
+    }
+
+    await sequelize.transaction(async (t) => {
+      const hotels = await Hotel.findAll({
+        where: { vendor_id: vendor.id },
+        attributes: ['id'],
+        transaction: t
+      });
+      const hotelIds = hotels.map((h) => h.id).filter(Boolean);
+
+      if (hotelIds.length) {
+        await HotelImage.destroy({ where: { hotel_id: hotelIds }, transaction: t });
+        await Room.destroy({ where: { hotel_id: hotelIds }, transaction: t });
+        await Review.destroy({ where: { hotel_id: hotelIds }, transaction: t });
+        await Booking.destroy({ where: { hotel_id: hotelIds }, transaction: t });
+        await Hotel.destroy({ where: { id: hotelIds }, transaction: t });
+      }
+
+      await Vendor.destroy({ where: { id: vendor.id }, transaction: t });
+    });
+
+    return sendSuccess(res, null, 'Vendor deleted successfully');
+  }),
+
   /**
    * Get all hotels of a specific vendor
    */

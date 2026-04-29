@@ -4,45 +4,7 @@ import { FaFacebook, FaInstagram, FaTwitter, FaYoutube, FaGlobe, FaApple, FaGoog
 export default function Footer() {
   const year = new Date().getFullYear();
   return (
-    <footer className='mt-auto'>
-      {/* App download section */}
-      <div className='bg-gray-100 border-t border-gray-200'>
-        <div className='container mx-auto px-4 py-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6'>
-          <div>
-            <h4 className='text-xl font-bold text-gray-800'>Download the OYO app</h4>
-            <p className='text-sm text-gray-600'>Book stays faster with exclusive member deals and instant discounts</p>
-          </div>
-          <div className='flex gap-3'>
-            <a
-              className='bg-black text-white px-4 py-2 rounded-md text-sm font-semibold hover:bg-gray-800 flex items-center'
-              href='https://apps.apple.com/'
-              target='_blank'
-              rel='noopener noreferrer'
-              aria-label='Download on the App Store'
-            >
-              <FaApple className='mr-2 text-lg' />
-              <div className='flex flex-col items-start'>
-                <span className='text-xs'>Download on</span>
-                <span>App Store</span>
-              </div>
-            </a>
-            <a
-              className='bg-black text-white px-4 py-2 rounded-md text-sm font-semibold hover:bg-gray-800 flex items-center'
-              href='https://play.google.com/store'
-              target='_blank'
-              rel='noopener noreferrer'
-              aria-label='Get it on Google Play'
-            >
-              <FaGooglePlay className='mr-2 text-lg' />
-              <div className='flex flex-col items-start'>
-                <span className='text-xs'>Get it on</span>
-                <span>Google Play</span>
-              </div>
-            </a>
-          </div>
-        </div>
-      </div>
-      
+    <footer className='mt-auto'>  
       {/* Trust badges */}
       <div className='bg-white border-t border-gray-200'>
         <div className='container mx-auto px-4 py-6'>
@@ -77,13 +39,13 @@ export default function Footer() {
           <div className='col-span-2 md:col-span-1'>
             <div className='flex items-center gap-3 mb-3'>
               <img src='/oyo-logo.svg' alt='OYO' className='h-7 w-auto' />
-              <span className='text-white font-semibold'>OYO Hotels</span>
+              <span className='text-white font-semibold'>BookndStay</span>
             </div>
             <p className='text-xs text-gray-400 mb-4'>Great prices. Great locations. Great experiences.</p>
            
           </div>
           <div>
-            <h5 className='text-white font-semibold mb-3'>OYO Rooms</h5>
+            <h5 className='text-white font-semibold mb-3'>BookndStay Rooms</h5>
             <ul className='space-y-2'>
               <li>
                 <Link to='/hotels' className='hover:text-white transition-colors'>Hotels in Delhi</Link>
@@ -141,12 +103,12 @@ export default function Footer() {
         <div className='container mx-auto px-4 py-8 md:hidden text-sm'>
           <div className='flex items-center gap-3 mb-4'>
             <img src='/oyo-logo.svg' alt='OYO' className='h-6 w-auto' />
-            <span className='text-white font-semibold'>OYO Hotels</span>
+            <span className='text-white font-semibold'>BookndStay</span>
           </div>
           <p className='text-xs text-gray-400 mb-4'>Great prices. Great locations. Great experiences.</p>
           <div className='grid grid-cols-1 gap-3'>
             <details className='bg-gray-800/60 rounded-md p-3'>
-              <summary className='cursor-pointer text-white font-semibold'>OYO Rooms</summary>
+              <summary className='cursor-pointer text-white font-semibold'>BookndStay Rooms</summary>
               <ul className='mt-2 space-y-2 text-gray-300'>
                 <li><Link to='/hotels' className='hover:text-white transition-colors'>Hotels in Delhi</Link></li>
                 <li><Link to='/hotels' className='hover:text-white transition-colors'>Hotels in Mumbai</Link></li>
@@ -195,7 +157,7 @@ export default function Footer() {
         <div className='border-t border-gray-700 mt-8 pt-6 pb-4'>
           <div className='container mx-auto px-4 flex flex-col md:flex-row justify-between items-center gap-4'>
             <div className='text-xs text-gray-400'>
-              © {year} OYO Hotels. All rights reserved.
+              © {year} BookndStay. All rights reserved.
             </div>
             <div className='flex gap-4 text-lg'>
               <a href='https://facebook.com' target='_blank' rel='noopener noreferrer' aria-label='Facebook'>

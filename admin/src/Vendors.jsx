@@ -17,6 +17,7 @@ const Vendors = () => {
   const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
   const [statusConfirm, setStatusConfirm] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
 
   const [applications, setApplications] = useState([]);
   const [appQuery, setAppQuery] = useState('');
@@ -310,6 +311,25 @@ const Vendors = () => {
     }
   };
 
+  const apiDeleteVendor = async (vendorId) => {
+    if (!vendorId) throw new Error('Vendor ID is required for deletion.');
+    try {
+      const res = await adminVendors.remove(vendorId);
+      return res;
+    } catch (error) {
+      if (error?.response?.status === 404) {
+        throw new Error('Vendor not found. It may have been deleted.');
+      } else if (error?.response?.status === 409) {
+        throw new Error(error?.response?.data?.message || 'Cannot delete vendor with existing bookings. Please deactivate instead.');
+      } else if (error?.response?.status === 403) {
+        throw new Error('You do not have permission to delete this vendor.');
+      } else if (error?.response?.status === 401) {
+        throw new Error('Authentication failed. Please login again.');
+      }
+      throw new Error(error?.response?.data?.message || error?.message || 'Failed to delete vendor');
+    }
+  };
+
   // Handle status change (activate/deactivate)
   const handleStatusChange = async (vendor, action) => {
     if (!vendor) {
@@ -374,6 +394,44 @@ const Vendors = () => {
       
       setError(errorMsg);
       
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteVendor = async (vendor) => {
+    if (!vendor) {
+      setError('Cannot delete vendor: Invalid vendor data');
+      return;
+    }
+
+    const vendorId = vendor.id || vendor.vendor_id || vendor._id;
+    if (!vendorId) {
+      setError('Cannot delete vendor: Missing vendor ID');
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      setError('');
+      setSuccess('');
+
+      const token = localStorage.getItem('adminToken');
+      if (!token) {
+        setError('Your session has expired. Please login again.');
+        return;
+      }
+
+      await apiDeleteVendor(vendorId);
+      setVendors((prev) => prev.filter((v) => (v.id || v.vendor_id || v._id) !== vendorId));
+      setSuccess(`Vendor "${vendor.full_name || vendor.name || 'Unknown'}" deleted successfully`);
+      setDeleteConfirm(null);
+
+      setTimeout(() => {
+        fetchVendors();
+      }, 800);
+    } catch (error) {
+      setError(error?.message || 'Failed to delete vendor');
     } finally {
       setSubmitting(false);
     }
@@ -608,6 +666,16 @@ const Vendors = () => {
                                   <i className="fas fa-play"></i>
                                 </button>
                               )}
+                              {isSuperAdmin && (
+                                <button
+                                  className="btn btn-sm btn-outline-danger"
+                                  onClick={() => setDeleteConfirm({ vendor: v })}
+                                  disabled={submitting}
+                                  title="Delete Vendor"
+                                >
+                                  <i className="fas fa-trash"></i>
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -836,6 +904,58 @@ const Vendors = () => {
           </div>
         </div>
       )}
+
+      {deleteConfirm && (
+        <div className="modal d-block" tabIndex="-1" role="dialog" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-dialog-centered" role="document">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">Confirm Delete</h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => setDeleteConfirm(null)}
+                  disabled={submitting}
+                  aria-label="Close"
+                ></button>
+              </div>
+              <div className="modal-body">
+                <div className="text-center">
+                  <i className="fas fa-trash-alt text-danger fa-3x mb-3"></i>
+                  <h6>Are you sure you want to delete this vendor?</h6>
+                  <p className="text-muted">
+                    <strong>{deleteConfirm.vendor.full_name}</strong><br />
+                    {deleteConfirm.vendor.email}<br />
+                    {deleteConfirm.vendor.business_name}
+                  </p>
+                  <p className="small text-danger mb-0">
+                    This action cannot be undone. If the vendor has bookings, deletion will be blocked.
+                  </p>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-secondary" onClick={() => setDeleteConfirm(null)} disabled={submitting}>
+                  Cancel
+                </button>
+                <button className="btn btn-danger" onClick={() => handleDeleteVendor(deleteConfirm.vendor)} disabled={submitting}>
+                  {submitting ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                      Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <i className="fas fa-trash me-2"></i>
+                      Delete Vendor
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showHotelsModal && (
         <div className="modal d-block" onClick={() => setShowHotelsModal(false)} style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
           <div className="modal-dialog modal-xl" onClick={(e) => e.stopPropagation()}>

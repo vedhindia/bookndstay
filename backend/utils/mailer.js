@@ -268,8 +268,9 @@ const sendVendorCredentialsEmail = async (email, password) => {
     return { success: false, error: 'SMTP is not configured' };
   }
 
-  const vendorUrl = process.env.VENDOR_FRONTEND_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
-  const loginUrl = new URL('/vendor', vendorUrl).toString();
+  const explicitLoginUrl = process.env.VENDOR_LOGIN_URL || process.env.VENDOR_PANEL_LOGIN_URL;
+  const vendorBaseUrl = process.env.VENDOR_FRONTEND_URL || process.env.FRONTEND_URL || 'https://bookndstay.com';
+  const loginUrl = explicitLoginUrl ? String(explicitLoginUrl) : new URL('/vendor/', vendorBaseUrl).toString();
 
   const mailOptions = {
     from: `"Hotel Booking System" <${process.env.SMTP_USER || 'no-reply@example.com'}>`,
@@ -283,6 +284,10 @@ const sendVendorCredentialsEmail = async (email, password) => {
           <p style="margin: 0 0 8px;"><strong>Email:</strong> ${email}</p>
           <p style="margin: 0;"><strong>Password:</strong> ${password}</p>
         </div>
+        <p style="margin: 0 0 12px;">
+          <strong>Vendor Login URL:</strong>
+          <a href="${loginUrl}" target="_blank" rel="noopener noreferrer">${loginUrl}</a>
+        </p>
         <div style="text-align: center; margin: 24px 0;">
           <a href="${loginUrl}" style="background-color: #007bff; color: white; padding: 12px 22px; text-decoration: none; border-radius: 5px; display: inline-block;">
             Login to Vendor Panel

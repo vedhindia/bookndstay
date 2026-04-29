@@ -381,6 +381,33 @@ module.exports = {
     sendSuccess(res, booking, 'Booking status updated');
   }),
 
+  getNotificationCounts: asyncHandler(async (req, res) => {
+    const parseSince = (v) => {
+      if (!v) return null;
+      const d = new Date(String(v));
+      if (Number.isNaN(d.getTime())) return null;
+      return d;
+    };
+
+    const usersSince = parseSince(req.query.users_since);
+    const bookingsSince = parseSince(req.query.bookings_since);
+
+    const [bookings, users] = await Promise.all([
+      bookingsSince
+        ? Booking.count({ where: { vendor_id: req.user.id, createdAt: { [Op.gt]: bookingsSince } } })
+        : Promise.resolve(0),
+      usersSince
+        ? Booking.count({
+            distinct: true,
+            col: 'user_id',
+            where: { vendor_id: req.user.id, createdAt: { [Op.gt]: usersSince } }
+          })
+        : Promise.resolve(0)
+    ]);
+
+    return sendSuccess(res, { counts: { users, bookings } }, 'Notification counts retrieved successfully');
+  }),
+
   /* ===================== DASHBOARD ===================== */
 
   getDashboardStats: asyncHandler(async (req, res) => {
