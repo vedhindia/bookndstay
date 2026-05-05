@@ -1488,6 +1488,26 @@ module.exports = {
     const now = new Date();
     const wasConfirmed = booking.status === 'CONFIRMED';
     const mode = String(booking.booking_mode || 'NIGHTLY').toUpperCase();
+
+    // Hard-block cancellation after check-in starts (OYO-like)
+    try {
+      let checkInAt = null;
+      if (mode === 'HOURLY' && booking.check_in_at) {
+        const d = new Date(booking.check_in_at);
+        if (!Number.isNaN(d.getTime())) checkInAt = d;
+      } else {
+        const hotel = await Hotel.findByPk(booking.hotel_id);
+        const checkInTime = hotel?.check_in_time || '12:00 PM';
+        checkInAt = buildISTDateTimeFromDateOnly(booking.check_in, checkInTime);
+      }
+
+      if (checkInAt && !Number.isNaN(checkInAt.getTime()) && now.getTime() >= checkInAt.getTime()) {
+        throw createError('Cancellation is not allowed after check-in time has started. Please contact support.', 400);
+      }
+    } catch (e) {
+      if (e && e.statusCode) throw e;
+    }
+
     let refundPercent = 0;
     let refundAmount = 0;
     let refundAttempted = false;

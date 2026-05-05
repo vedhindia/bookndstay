@@ -152,6 +152,7 @@ export default function ViewBookingPage() {
               bookingMode,
               checkIn: bookingMode === 'HOURLY' ? (apiBooking.check_in_at || apiBooking.check_in) : apiBooking.check_in,
               checkOut: bookingMode === 'HOURLY' ? (apiBooking.check_out_at || apiBooking.check_out) : apiBooking.check_out,
+              hotelCheckInTime: apiBooking.hotel?.check_in_time || hotelFull?.check_in_time || '12:00 PM',
               guests: apiBooking.guests || 2,
               rooms: apiBooking.booked_room || apiBooking.rooms || apiBooking.no_of_rooms || 1,
               amount: apiBooking.amount,
@@ -186,11 +187,68 @@ export default function ViewBookingPage() {
     fetchBooking();
   }, [location.state, searchParams, navigate, apiUserBase]);
 
+  const parseTime12h = (value) => {
+    const s = String(value || '').trim();
+    if (!s) return null;
+    const m = s.match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/i);
+    if (!m) return null;
+    let hour = Number(m[1]);
+    const minute = Number(m[2] || 0);
+    const ampm = String(m[3] || '').toUpperCase();
+    if (hour < 1 || hour > 12 || minute < 0 || minute > 59) return null;
+    if (ampm === 'AM') {
+      if (hour === 12) hour = 0;
+    } else if (ampm === 'PM') {
+      if (hour !== 12) hour += 12;
+    } else {
+      return null;
+    }
+    return { hour24: hour, minute };
+  };
+
+  const buildISTDateTimeFromDateOnly = (dateOnly, time12h) => {
+    const d = String(dateOnly || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
+    const t = parseTime12h(time12h) || { hour24: 12, minute: 0 };
+    const [y, mo, day] = d.split('-').map(Number);
+    const utcMs = Date.UTC(y, mo - 1, day, t.hour24, t.minute) - (5.5 * 60 * 60 * 1000);
+    return new Date(utcMs);
+  };
+
+  const getCheckInAt = () => {
+    if (!booking) return null;
+    const m = String(booking.bookingMode || 'NIGHTLY').toUpperCase();
+    if (m === 'HOURLY') {
+      const d = new Date(booking.checkIn);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+    return buildISTDateTimeFromDateOnly(booking.checkIn, booking.hotelCheckInTime || '12:00 PM');
+  };
+
   const handleCancelBooking = async () => {
     if (!booking) return;
+    const bookingMode = String(booking.bookingMode || 'NIGHTLY').toUpperCase();
+    const checkInAt = getCheckInAt();
 
-    const confirmed = window.confirm('Are you sure you want to cancel this booking?');
-    if (!confirmed) return;
+    if (checkInAt && !Number.isNaN(checkInAt.getTime())) {
+      const msUntil = checkInAt.getTime() - Date.now();
+      if (msUntil <= 0) {
+        alert('Cancellation is not allowed after check-in time has started. Please contact support.');
+        return;
+      }
+      if (bookingMode === 'HOURLY' && msUntil < 30 * 60 * 1000) {
+        const ok = window.confirm('You are within 30 minutes of check-in. Refund amount will be ₹0. Do you want to cancel?');
+        if (!ok) return;
+      } else {
+        const confirmed = window.confirm('Are you sure you want to cancel this booking?');
+        if (!confirmed) return;
+      }
+    }
+
+    if (!checkInAt || Number.isNaN(checkInAt.getTime())) {
+      const confirmed = window.confirm('Are you sure you want to cancel this booking?');
+      if (!confirmed) return;
+    }
 
     const token = getToken();
     if (!token) {
@@ -255,9 +313,9 @@ export default function ViewBookingPage() {
   // Calculate if booking can be cancelled
   const canCancel = () => {
     if (booking.status !== 'confirmed' && booking.status !== 'pending') return false;
-    const checkOutDate = new Date(booking.checkOut);
-    checkOutDate.setHours(23, 59, 59);
-    return checkOutDate > new Date();
+    const checkInAt = getCheckInAt();
+    if (!checkInAt || Number.isNaN(checkInAt.getTime())) return true;
+    return Date.now() < checkInAt.getTime();
   };
 
   return (
@@ -374,7 +432,7 @@ export default function ViewBookingPage() {
               {!canCancel() && (booking.status === 'confirmed' || booking.status === 'pending') && (
                 <p className="text-sm text-gray-500 flex items-center px-4 py-2">
                   <FaClock className="mr-2" />
-                  Cancellation no longer available
+                  Cancellation is not allowed after check-in time has started
                 </p>
               )}
               {booking.status === 'completed' && (

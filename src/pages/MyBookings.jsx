@@ -165,6 +165,7 @@ export default function MyBookings() {
           latitude: booking.hotel?.latitude,
           longitude: booking.hotel?.longitude,
           city: booking.hotel?.city,
+          hotelCheckInTime: hotelFull?.check_in_time || booking.hotel?.check_in_time || '12:00 PM',
           bookingMode: String(booking.booking_mode || 'NIGHTLY').toUpperCase(),
           checkIn: String(booking.booking_mode || 'NIGHTLY').toUpperCase() === 'HOURLY' ? (booking.check_in_at || booking.check_in) : booking.check_in,
           checkOut: String(booking.booking_mode || 'NIGHTLY').toUpperCase() === 'HOURLY' ? (booking.check_out_at || booking.check_out) : booking.check_out,
@@ -215,6 +216,49 @@ export default function MyBookings() {
   const formatWhen = (booking, dateString) => {
     const mode = String(booking?.bookingMode || 'NIGHTLY').toUpperCase();
     return mode === 'HOURLY' ? formatDateTimeIST(dateString) : formatDateIST(dateString);
+  };
+
+  const parseTime12h = (value) => {
+    const s = String(value || '').trim();
+    if (!s) return null;
+    const m = s.match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/i);
+    if (!m) return null;
+    let hour = Number(m[1]);
+    const minute = Number(m[2] || 0);
+    const ampm = String(m[3] || '').toUpperCase();
+    if (hour < 1 || hour > 12 || minute < 0 || minute > 59) return null;
+    if (ampm === 'AM') {
+      if (hour === 12) hour = 0;
+    } else if (ampm === 'PM') {
+      if (hour !== 12) hour += 12;
+    } else {
+      return null;
+    }
+    return { hour24: hour, minute };
+  };
+
+  const buildISTDateTimeFromDateOnly = (dateOnly, time12h) => {
+    const d = String(dateOnly || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
+    const t = parseTime12h(time12h) || { hour24: 12, minute: 0 };
+    const [y, mo, day] = d.split('-').map(Number);
+    const utcMs = Date.UTC(y, mo - 1, day, t.hour24, t.minute) - (5.5 * 60 * 60 * 1000);
+    return new Date(utcMs);
+  };
+
+  const getBookingCheckInAt = (booking) => {
+    const mode = String(booking?.bookingMode || 'NIGHTLY').toUpperCase();
+    if (mode === 'HOURLY') {
+      const d = new Date(booking.checkIn);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+    return buildISTDateTimeFromDateOnly(booking.checkIn, booking.hotelCheckInTime || '12:00 PM');
+  };
+
+  const isCancellationBlocked = (booking) => {
+    const checkInAt = getBookingCheckInAt(booking);
+    if (!checkInAt) return false;
+    return Date.now() >= checkInAt.getTime();
   };
   
   // Get status color based on booking status
@@ -289,8 +333,31 @@ export default function MyBookings() {
   const pastBookings = bookings.filter(b => !isCurrentBooking(b) && !isUpcoming(b));
 
   const handleCancelBooking = async (bookingId) => {
-    const confirmed = window.confirm('Are you sure you want to cancel this booking?');
-    if (!confirmed) return;
+    const booking = bookings.find((b) => String(b.id) === String(bookingId));
+    if (booking && isCancellationBlocked(booking)) {
+      alert('Cancellation is not allowed after check-in time has started. Please contact support.');
+      return;
+    }
+
+    if (booking && String(booking.bookingMode || '').toUpperCase() === 'HOURLY') {
+      const checkInAt = getBookingCheckInAt(booking);
+      if (checkInAt) {
+        const msUntil = checkInAt.getTime() - Date.now();
+        if (msUntil > 0 && msUntil < 30 * 60 * 1000) {
+          const ok = window.confirm('You are within 30 minutes of check-in. Refund amount will be ₹0. Do you want to cancel?');
+          if (!ok) return;
+        } else {
+          const confirmed = window.confirm('Are you sure you want to cancel this booking?');
+          if (!confirmed) return;
+        }
+      } else {
+        const confirmed = window.confirm('Are you sure you want to cancel this booking?');
+        if (!confirmed) return;
+      }
+    } else {
+      const confirmed = window.confirm('Are you sure you want to cancel this booking?');
+      if (!confirmed) return;
+    }
 
     const token = getToken();
     if (!token) {
@@ -424,7 +491,7 @@ export default function MyBookings() {
                 Complete Payment
               </button>
             )}
-            {(booking.status === 'confirmed' || booking.status === 'pending') && (isUpcoming(booking) || isCurrentBooking(booking)) && (
+            {(booking.status === 'confirmed' || booking.status === 'pending') && (isUpcoming(booking) || isCurrentBooking(booking)) && !isCancellationBlocked(booking) && (
               <button 
                 className="border border-[#ee2e24] text-[#ee2e24] px-3 py-1.5 sm:px-4 sm:py-2 rounded text-xs sm:text-sm hover:bg-red-50"
                 onClick={(e) => {
@@ -434,6 +501,12 @@ export default function MyBookings() {
               >
                 Cancel Booking
               </button>
+            )}
+            {(booking.status === 'confirmed' || booking.status === 'pending') && (isUpcoming(booking) || isCurrentBooking(booking)) && isCancellationBlocked(booking) && (
+              <p className="text-xs sm:text-sm text-gray-500 flex items-center px-3 py-1.5 sm:px-4 sm:py-2">
+                <FaClock className="mr-2" />
+                Cancellation is not allowed after check-in time has started
+              </p>
             )}
             {booking.status === 'completed' && (
               <button
