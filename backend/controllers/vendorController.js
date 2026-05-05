@@ -7,11 +7,14 @@ const fs = require('fs');
 const path = require('path');
 const { Op } = require('sequelize');
 const { sequelize, Hotel, HotelImage, Room, Booking, User, Vendor, Review } = require('../models');
+const { Payment } = require('../models');
+const Razorpay = require('razorpay');
 const { sendSuccess, sendError, sendPaginatedResponse } = require('../utils/responseHelper');
 const { validateRequiredFields, validatePagination, isValidEmail } = require('../utils/validationHelper');
 const { getBookingIncludes, getPaginationOffset } = require('../utils/dbHelper');
 const { asyncHandler } = require('../middlewares/errorHandler');
 const { fn, col } = require('sequelize');
+const { addVendorClient, removeVendorClient, writeEvent, notifyAdmins } = require('../utils/notificationHub');
 
 /* ===================== HELPERS ===================== */
 
@@ -21,11 +24,44 @@ const createError = (message, statusCode = 400) => {
   return error;
 };
 
+const getRazorpay = () => {
+  const key_id = process.env.RZP_KEY_ID || process.env.RAZORPAY_KEY_ID;
+  const key_secret = process.env.RZP_KEY_SECRET || process.env.RAZORPAY_KEY_SECRET;
+  if (!key_id || !key_secret) return null;
+  try {
+    return new Razorpay({ key_id, key_secret });
+  } catch {
+    return null;
+  }
+};
+
 const buildDateRangeFilter = (startDate, endDate) => {
   const filter = {};
   if (startDate) filter.createdAt = { [Op.gte]: new Date(startDate) };
   if (endDate) filter.createdAt = { ...filter.createdAt, [Op.lte]: new Date(endDate) };
   return filter;
+};
+
+const parseDateTimeInputAsIST = (value) => {
+  if (!value) return null;
+  const s = String(value).trim();
+  if (!s) return null;
+  if (/[zZ]$/.test(s) || /[+\-]\d{2}:\d{2}$/.test(s)) {
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})/);
+  if (!m) {
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const y = Number(m[1]);
+  const mo = Number(m[2]) - 1;
+  const day = Number(m[3]);
+  const hh = Number(m[4]);
+  const mm = Number(m[5]);
+  const utcMs = Date.UTC(y, mo, day, hh, mm) - (5.5 * 60 * 60 * 1000);
+  return new Date(utcMs);
 };
 
 const normalizeArray = (val) => {
@@ -50,13 +86,15 @@ const parseStrictNumber = (val) => {
   return n;
 };
 
-const assertRoomsValid = ({ totalRooms, acRooms, nonAcRooms }) => {
+const assertRoomsValid = ({ totalRooms, availableRooms, acRooms, nonAcRooms }) => {
   if (!Number.isInteger(totalRooms) || totalRooms <= 0) throw createError('total_rooms must be a positive integer');
+  if (!Number.isInteger(availableRooms) || availableRooms < 0) throw createError('available_rooms must be an integer 0 or more');
+  if (availableRooms > totalRooms) throw createError('available_rooms must be less than or equal to total_rooms');
   if (!Number.isInteger(acRooms) || acRooms < 0) throw createError('ac_rooms must be an integer 0 or more');
   if (!Number.isInteger(nonAcRooms) || nonAcRooms < 0) throw createError('non_ac_rooms must be an integer 0 or more');
-  if (acRooms > totalRooms) throw createError('ac_rooms must be less than or equal to total_rooms');
-  if (nonAcRooms > totalRooms) throw createError('non_ac_rooms must be less than or equal to total_rooms');
-  if (acRooms + nonAcRooms !== totalRooms) throw createError('ac_rooms + non_ac_rooms must be equal to total_rooms');
+  if (acRooms > availableRooms) throw createError('ac_rooms must be less than or equal to available_rooms');
+  if (nonAcRooms > availableRooms) throw createError('non_ac_rooms must be less than or equal to available_rooms');
+  if (acRooms + nonAcRooms !== availableRooms) throw createError('ac_rooms + non_ac_rooms must be equal to available_rooms');
 };
 
 const assertPricesValid = ({ basePrice, acRoomPrice, nonAcRoomPrice }) => {
@@ -71,6 +109,31 @@ const assertPricesValid = ({ basePrice, acRoomPrice, nonAcRoomPrice }) => {
 /* ===================== CONTROLLER ===================== */
 
 module.exports = {
+  notificationsStream: asyncHandler(async (req, res) => {
+    res.status(200);
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+    writeEvent(res, 'ready', { ok: true, ts: new Date().toISOString() });
+    addVendorClient(req.user.id, res);
+
+    const heartbeat = setInterval(() => {
+      writeEvent(res, 'ping', { ts: new Date().toISOString() });
+    }, 25000);
+
+    req.on('close', () => {
+      clearInterval(heartbeat);
+      removeVendorClient(req.user.id, res);
+      try {
+        res.end();
+      } catch {
+        void 0;
+      }
+    });
+  }),
 
   /* ===================== HOTEL MANAGEMENT ===================== */
 
@@ -92,9 +155,12 @@ module.exports = {
     }
 
     const totalRooms = parseStrictInt(body.total_rooms);
+    const availableRooms = Object.prototype.hasOwnProperty.call(body, 'available_rooms')
+      ? parseStrictInt(body.available_rooms)
+      : totalRooms;
     const acRooms = parseStrictInt(body.ac_rooms);
     const nonAcRooms = parseStrictInt(body.non_ac_rooms);
-    assertRoomsValid({ totalRooms, acRooms, nonAcRooms });
+    assertRoomsValid({ totalRooms, availableRooms, acRooms, nonAcRooms });
 
     const basePrice = parseStrictNumber(body.base_price);
     const acRoomPrice = parseStrictNumber(body.ac_room_price);
@@ -120,7 +186,7 @@ module.exports = {
 
       total_rooms: totalRooms,
       booked_room: 0,
-      available_rooms: totalRooms,
+      available_rooms: availableRooms,
       base_price: basePrice,
       featured: String(body.featured).toLowerCase() === 'true',
       ac_room_price: acRoomPrice,
@@ -133,6 +199,12 @@ module.exports = {
       gst_number: body.gst_number || null,
       status: 'PENDING'
     });
+
+    try {
+      notifyAdmins({ section: 'hotels', id: hotel.id });
+    } catch {
+      void 0;
+    }
 
     sendSuccess(res, { hotel }, 'Hotel created successfully', 201);
   }),
@@ -150,10 +222,78 @@ module.exports = {
       order: [['createdAt', 'DESC']]
     });
 
-    const rows = hotels.rows.map(h => {
+    const { check_in, check_out } = req.query;
+    const activePendingSince = new Date(Date.now() - 10 * 60 * 1000);
+    const statusWhere = {
+      [Op.or]: [
+        { status: 'CONFIRMED' },
+        { status: 'PENDING', createdAt: { [Op.gte]: activePendingSince } }
+      ]
+    };
+
+    let rangeStartDate = null;
+    let rangeEndDate = null;
+    let rangeStartAt = null;
+    let rangeEndAt = null;
+
+    if (check_in) {
+      rangeStartDate = String(check_in).slice(0, 10);
+      const fallbackEnd = check_out ? String(check_out).slice(0, 10) : null;
+      rangeEndDate = fallbackEnd;
+      if (!rangeEndDate) {
+        const d = new Date(`${rangeStartDate}T00:00:00`);
+        d.setDate(d.getDate() + 1);
+        rangeEndDate = d.toISOString().slice(0, 10);
+      }
+      rangeStartAt = new Date(`${rangeStartDate}T00:00:00`);
+      rangeEndAt = new Date(`${rangeEndDate}T00:00:00`);
+    }
+
+    const rows = await Promise.all(hotels.rows.map(async (h) => {
       h.images = (h.images || []).filter(img => img.url?.startsWith('/uploads/'));
+      if (rangeStartDate && rangeEndDate) {
+        const nightlyModeWhere = { [Op.or]: [{ booking_mode: 'NIGHTLY' }, { booking_mode: null }] };
+        const hourlyModeWhere = { booking_mode: 'HOURLY' };
+
+        const nightlyOverlapWhere = {
+          hotel_id: h.id,
+          ...statusWhere,
+          ...nightlyModeWhere,
+          [Op.and]: [
+            { check_in: { [Op.lt]: rangeEndDate } },
+            { check_out: { [Op.gt]: rangeStartDate } }
+          ]
+        };
+
+        const hourlyOverlapWhere = {
+          hotel_id: h.id,
+          ...statusWhere,
+          ...hourlyModeWhere,
+          [Op.and]: [
+            { check_in_at: { [Op.lt]: rangeEndAt } },
+            { check_out_at: { [Op.gt]: rangeStartAt } }
+          ]
+        };
+
+        const [nightlyBookedRaw, hourlyBookedRaw] = await Promise.all([
+          Booking.sum('booked_room', { where: nightlyOverlapWhere }),
+          Booking.sum('booked_room', { where: hourlyOverlapWhere })
+        ]);
+        const bookedTotal = Number(nightlyBookedRaw || 0) + Number(hourlyBookedRaw || 0);
+        const capacityTotal = parseInt(h.available_rooms || 0);
+        const computedAvailable = Math.max(0, capacityTotal - bookedTotal);
+        h.setDataValue('availability', {
+          mode: 'NIGHTLY',
+          from: rangeStartDate,
+          to: rangeEndDate,
+          capacity_total: capacityTotal,
+          booked_total: bookedTotal,
+          available_total: computedAvailable
+        });
+        h.setDataValue('available_rooms', computedAvailable);
+      }
       return h;
-    });
+    }));
 
     sendPaginatedResponse(res, rows, {
       page,
@@ -179,6 +319,104 @@ module.exports = {
 
     if (!hotel) throw createError('Hotel not found', 404);
 
+    const { check_in, check_out, check_in_at, check_out_at } = req.query;
+    if (check_in || check_in_at) {
+      const activePendingSince = new Date(Date.now() - 10 * 60 * 1000);
+      const statusWhere = {
+        [Op.or]: [
+          { status: 'CONFIRMED' },
+          { status: 'PENDING', createdAt: { [Op.gte]: activePendingSince } }
+        ]
+      };
+
+      const isHourly = Boolean(check_in_at || check_out_at);
+      let rangeStartAt;
+      let rangeEndAt;
+      let rangeStartDate;
+      let rangeEndDate;
+
+      if (isHourly) {
+        rangeStartAt = parseDateTimeInputAsIST(check_in_at) || parseDateTimeInputAsIST(check_in);
+        rangeEndAt = parseDateTimeInputAsIST(check_out_at) || parseDateTimeInputAsIST(check_out);
+        if (!rangeStartAt || !rangeEndAt) throw createError('check_in_at and check_out_at are required for HOURLY availability', 400);
+      } else {
+        rangeStartDate = String(check_in).slice(0, 10);
+        const fallbackEnd = check_out ? String(check_out).slice(0, 10) : null;
+        if (!rangeStartDate) throw createError('check_in is required', 400);
+        rangeEndDate = fallbackEnd;
+        if (!rangeEndDate) {
+          const d = new Date(`${rangeStartDate}T00:00:00`);
+          d.setDate(d.getDate() + 1);
+          rangeEndDate = d.toISOString().slice(0, 10);
+        }
+        rangeStartAt = new Date(`${rangeStartDate}T00:00:00`);
+        rangeEndAt = new Date(`${rangeEndDate}T00:00:00`);
+      }
+
+      const nightlyModeWhere = { [Op.or]: [{ booking_mode: 'NIGHTLY' }, { booking_mode: null }] };
+      const hourlyModeWhere = { booking_mode: 'HOURLY' };
+      const nonAcRoomTypeValues = ['NON_AC', 'Non AC', 'NON-AC', 'Non-AC', 'NON AC'];
+
+      const nightlyOverlapWhere = {
+        hotel_id: hotel.id,
+        ...statusWhere,
+        ...nightlyModeWhere,
+        [Op.and]: [
+          { check_in: { [Op.lt]: rangeEndDate || rangeEndAt.toISOString().slice(0, 10) } },
+          { check_out: { [Op.gt]: rangeStartDate || rangeStartAt.toISOString().slice(0, 10) } }
+        ]
+      };
+
+      const hourlyOverlapWhere = {
+        hotel_id: hotel.id,
+        ...statusWhere,
+        ...hourlyModeWhere,
+        [Op.and]: [
+          { check_in_at: { [Op.lt]: rangeEndAt } },
+          { check_out_at: { [Op.gt]: rangeStartAt } }
+        ]
+      };
+
+      const [
+        nightlyBookedRaw,
+        hourlyBookedRaw,
+        acNightlyBookedRaw,
+        acHourlyBookedRaw,
+        nonAcNightlyBookedRaw,
+        nonAcHourlyBookedRaw
+      ] = await Promise.all([
+        Booking.sum('booked_room', { where: nightlyOverlapWhere }),
+        Booking.sum('booked_room', { where: hourlyOverlapWhere }),
+        Booking.sum('booked_room', { where: { ...nightlyOverlapWhere, room_type: 'AC' } }),
+        Booking.sum('booked_room', { where: { ...hourlyOverlapWhere, room_type: 'AC' } }),
+        Booking.sum('booked_room', { where: { ...nightlyOverlapWhere, room_type: { [Op.in]: nonAcRoomTypeValues } } }),
+        Booking.sum('booked_room', { where: { ...hourlyOverlapWhere, room_type: { [Op.in]: nonAcRoomTypeValues } } })
+      ]);
+
+      const bookedTotal = Number(nightlyBookedRaw || 0) + Number(hourlyBookedRaw || 0);
+      const bookedAc = Number(acNightlyBookedRaw || 0) + Number(acHourlyBookedRaw || 0);
+      const bookedNonAc = Number(nonAcNightlyBookedRaw || 0) + Number(nonAcHourlyBookedRaw || 0);
+
+      const capacityTotal = parseInt(hotel.available_rooms || 0);
+      const capacityAc = parseInt(hotel.ac_rooms || 0);
+      const capacityNonAc = parseInt(hotel.non_ac_rooms || 0);
+
+      hotel.setDataValue('availability', {
+        mode: isHourly ? 'HOURLY' : 'NIGHTLY',
+        from: isHourly ? rangeStartAt.toISOString() : rangeStartDate,
+        to: isHourly ? rangeEndAt.toISOString() : rangeEndDate,
+        capacity_total: capacityTotal,
+        capacity_ac: capacityAc,
+        capacity_non_ac: capacityNonAc,
+        booked_total: bookedTotal,
+        booked_ac: bookedAc,
+        booked_non_ac: bookedNonAc,
+        available_total: Math.max(0, capacityTotal - bookedTotal),
+        available_ac: Math.max(0, capacityAc - bookedAc),
+        available_non_ac: Math.max(0, capacityNonAc - bookedNonAc)
+      });
+    }
+
     sendSuccess(res, { hotel }, 'Hotel details retrieved');
   }),
 
@@ -203,6 +441,9 @@ module.exports = {
       const nextTotalRooms = Object.prototype.hasOwnProperty.call(updates, 'total_rooms')
         ? parseStrictInt(updates.total_rooms)
         : hotel.total_rooms;
+      const nextAvailableRooms = Object.prototype.hasOwnProperty.call(updates, 'available_rooms')
+        ? parseStrictInt(updates.available_rooms)
+        : hotel.available_rooms;
       const nextAcRooms = Object.prototype.hasOwnProperty.call(updates, 'ac_rooms')
         ? parseStrictInt(updates.ac_rooms)
         : hotel.ac_rooms;
@@ -210,9 +451,9 @@ module.exports = {
         ? parseStrictInt(updates.non_ac_rooms)
         : hotel.non_ac_rooms;
 
-      assertRoomsValid({ totalRooms: nextTotalRooms, acRooms: nextAcRooms, nonAcRooms: nextNonAcRooms });
+      assertRoomsValid({ totalRooms: nextTotalRooms, availableRooms: nextAvailableRooms, acRooms: nextAcRooms, nonAcRooms: nextNonAcRooms });
       updates.total_rooms = nextTotalRooms;
-      updates.available_rooms = nextTotalRooms;
+      updates.available_rooms = nextAvailableRooms;
       updates.ac_rooms = nextAcRooms;
       updates.non_ac_rooms = nextNonAcRooms;
     }
@@ -376,7 +617,39 @@ module.exports = {
 
     if (!booking) throw createError('Booking not found', 404);
     
-    await booking.update({ status: status.toUpperCase() });
+    const nextStatus = status.toUpperCase();
+    const prevStatus = booking.status;
+
+    if (nextStatus === 'CANCELLED' && prevStatus !== 'CANCELLED') {
+      const isPayAtHotel = String(booking.payment_method || '').toUpperCase() === 'PAY_AT_HOTEL';
+      if (!isPayAtHotel) {
+        const payment = await Payment.findOne({ where: { booking_id: booking.id } });
+        if (payment && payment.status === 'SUCCESS' && String(payment.gateway || '').toUpperCase() === 'RAZORPAY' && payment.gateway_payment_id) {
+          const razorpay = getRazorpay();
+          if (razorpay) {
+            try {
+              const amountPaise = Math.max(1, Math.round((Number(payment.amount) || 0) * 100));
+              await razorpay.payments.refund(payment.gateway_payment_id, { amount: amountPaise });
+              booking.refund_percent = 100;
+              booking.refund_amount = Number(payment.amount) || 0;
+              booking.refund_status = 'REFUNDED_FULL';
+            } catch {
+              booking.refund_percent = 100;
+              booking.refund_amount = Number(payment.amount) || 0;
+              booking.refund_status = 'REFUND_FAILED';
+            }
+          } else {
+            booking.refund_percent = 100;
+            booking.refund_amount = Number(payment.amount) || 0;
+            booking.refund_status = 'REFUND_PENDING_MANUAL';
+          }
+        }
+      }
+      booking.status = 'CANCELLED';
+      await booking.save();
+    } else {
+      await booking.update({ status: nextStatus });
+    }
 
     sendSuccess(res, booking, 'Booking status updated');
   }),

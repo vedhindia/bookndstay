@@ -31,6 +31,55 @@ const Hotels = ({ vendorId }) => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
+  const [seenHotelIds, setSeenHotelIds] = useState(() => new Set());
+  const [availabilityFrom, setAvailabilityFrom] = useState(() => new Date().toISOString().slice(0, 10));
+  const [availabilityTo, setAvailabilityTo] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  });
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('admin_seen_hotels_ids_v1');
+      const parsed = raw ? JSON.parse(raw) : [];
+      setSeenHotelIds(new Set(Array.isArray(parsed) ? parsed.map((v) => String(v)) : []));
+    } catch {
+      setSeenHotelIds(new Set());
+    }
+  }, []);
+
+  const saveSeenHotelIds = (set) => {
+    try {
+      localStorage.setItem('admin_seen_hotels_ids_v1', JSON.stringify(Array.from(set)));
+    } catch {
+      void 0;
+    }
+  };
+
+  const markHotelAsSeen = (hotelId) => {
+    if (!hotelId) return;
+    setSeenHotelIds((prev) => {
+      const next = new Set(prev instanceof Set ? Array.from(prev) : []);
+      const id = String(hotelId);
+      if (!next.has(id)) {
+        next.add(id);
+        saveSeenHotelIds(next);
+        try {
+          window.dispatchEvent(new CustomEvent('admin_item_seen', { detail: { section: 'hotels', id } }));
+        } catch {
+          void 0;
+        }
+      }
+      return next;
+    });
+  };
+
+  const isNewHotel = (h) => {
+    const id = h?.id;
+    if (!id) return false;
+    return !(seenHotelIds instanceof Set ? seenHotelIds.has(String(id)) : false);
+  };
 
   const fetchHotels = async () => {
     setLoading(true);
@@ -105,7 +154,14 @@ const Hotels = ({ vendorId }) => {
     setSelected(hotel);
     setLoadingDetails(true);
     try {
-      const res = await adminHotels.getById(hotel.id);
+      const from = new Date().toISOString().slice(0, 10);
+      const toDate = new Date();
+      toDate.setDate(toDate.getDate() + 1);
+      const to = toDate.toISOString().slice(0, 10);
+      setAvailabilityFrom(from);
+      setAvailabilityTo(to);
+
+      const res = await adminHotels.getById(hotel.id, { check_in: from, check_out: to });
       
       // Unwrap the response to find the hotel object
       // Robust unwrapping to handle {data: {hotel: ...}} or {hotel: ...} structure
@@ -146,11 +202,12 @@ const Hotels = ({ vendorId }) => {
         latitude: data.latitude || hotel.latitude || null,
         longitude: data.longitude || hotel.longitude || null,
         map_url: data.map_url || hotel.map_url || null,
-        
-        booked_room: data.booked_room || hotel.booked_room || 0,
-        available_rooms: data.available_rooms || hotel.available_rooms || 0,
-        ac_rooms: data.ac_rooms || hotel.ac_rooms || 0,
-        non_ac_rooms: data.non_ac_rooms || hotel.non_ac_rooms || 0,
+
+        capacity_total_rooms: data.total_rooms ?? hotel.total_rooms ?? hotel.rooms ?? 0,
+        capacity_sellable_total: data.available_rooms ?? hotel.available_rooms ?? 0,
+        capacity_ac: data.ac_rooms ?? hotel.ac_rooms ?? 0,
+        capacity_non_ac: data.non_ac_rooms ?? hotel.non_ac_rooms ?? 0,
+        availability: data.availability || null,
         
         ac_room_price: data.ac_room_price || hotel.ac_room_price || "N/A",
         non_ac_room_price: data.non_ac_room_price || hotel.non_ac_room_price || "N/A",
@@ -187,10 +244,11 @@ const Hotels = ({ vendorId }) => {
         pincode: hotel.pincode || "N/A",
         country: hotel.country || "India",
         map_url: hotel.map_url || null,
-        booked_room: hotel.booked_room || 0,
-        available_rooms: hotel.available_rooms || 0,
-        ac_rooms: hotel.ac_rooms || 0,
-        non_ac_rooms: hotel.non_ac_rooms || 0,
+        capacity_total_rooms: hotel.total_rooms || hotel.rooms || 0,
+        capacity_sellable_total: hotel.available_rooms || 0,
+        capacity_ac: hotel.ac_rooms || 0,
+        capacity_non_ac: hotel.non_ac_rooms || 0,
+        availability: null,
         ac_room_price: hotel.ac_room_price || "N/A",
         non_ac_room_price: hotel.non_ac_room_price || "N/A",
         base_price: hotel.base_price || "N/A",
@@ -202,6 +260,39 @@ const Hotels = ({ vendorId }) => {
         updatedAt: hotel.updatedAt || null,
       };
       setSelected(fallbackDetails);
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
+
+  const refreshAvailability = async () => {
+    if (!selected?.id) return;
+    if (!availabilityFrom || !availabilityTo) return;
+    setLoadingDetails(true);
+    try {
+      const res = await adminHotels.getById(selected.id, { check_in: availabilityFrom, check_out: availabilityTo });
+      let data = {};
+      if (res.data && res.data.hotel) {
+        data = res.data.hotel;
+      } else if (res.hotel) {
+        data = res.hotel;
+      } else if (res.data) {
+        data = res.data;
+      } else {
+        data = res;
+      }
+
+      setSelected((prev) => ({
+        ...(prev || {}),
+        ...data,
+        capacity_total_rooms: prev?.capacity_total_rooms ?? data.total_rooms ?? prev?.rooms ?? 0,
+        capacity_sellable_total: prev?.capacity_sellable_total ?? data.available_rooms ?? 0,
+        capacity_ac: prev?.capacity_ac ?? data.ac_rooms ?? 0,
+        capacity_non_ac: prev?.capacity_non_ac ?? data.non_ac_rooms ?? 0,
+        availability: data.availability || null
+      }));
+    } catch {
+      void 0;
     } finally {
       setLoadingDetails(false);
     }
@@ -317,7 +408,12 @@ const Hotels = ({ vendorId }) => {
                 ) : filtered.map((h, index) => (
                   <tr key={h.id}>
                     <td>{(page - 1) * pageSize + index + 1}</td>
-                    <td>{h.name}</td>
+                    <td>
+                      <div className="d-flex align-items-center gap-2">
+                        <span>{h.name}</span>
+                        {isNewHotel(h) && <span className="badge bg-danger">New</span>}
+                      </div>
+                    </td>
                     <td>{h.city}</td>
                     <td>{h.vendor}</td>
                     <td>{h.rooms}</td>
@@ -327,7 +423,10 @@ const Hotels = ({ vendorId }) => {
                       <div className="btn-group">
                         <button
                           className="btn btn-sm btn-outline-primary"
-                                 onClick={() => setSelected(h)}
+                          onClick={() => {
+                            markHotelAsSeen(h.id);
+                            setSelected(h);
+                          }}
                           title="View Details"
                         >
                           <i className="fas fa-eye"></i> View
@@ -467,41 +566,104 @@ const Hotels = ({ vendorId }) => {
                   </div>
                 </div>
 
-                {/* Room Statistics */}
+                {/* Room Capacity */}
                 <div className="col-12">
-                  <h6 className="border-bottom pb-2 mb-3 text-primary"><i className="fas fa-bed me-2"></i>Room Statistics</h6>
+                  <h6 className="border-bottom pb-2 mb-3 text-primary"><i className="fas fa-bed me-2"></i>Room Capacity</h6>
                   <div className="row g-3">
-                    <div className="col-4 text-center">
+                    <div className="col-3 text-center">
                       <div className="border rounded p-2">
-                        <small className="text-muted d-block">Total</small>
-                        <strong className="h5 mb-0">{selected.total_rooms || selected.rooms}</strong>
+                        <small className="text-muted d-block">Total Rooms</small>
+                        <strong className="h5 mb-0">{selected.capacity_total_rooms ?? selected.total_rooms ?? selected.rooms}</strong>
                       </div>
                     </div>
-                    <div className="col-4 text-center">
-                      <div className="border rounded p-2 bg-success-subtle">
-                        <small className="text-muted d-block">Available</small>
-                        <strong className="h5 mb-0 text-success">{selected.available_rooms}</strong>
+                    <div className="col-3 text-center">
+                      <div className="border rounded p-2">
+                        <small className="text-muted d-block">Sellable Total</small>
+                        <strong className="h5 mb-0">{selected.capacity_sellable_total ?? 0}</strong>
                       </div>
                     </div>
-                    <div className="col-4 text-center">
-                      <div className="border rounded p-2 bg-warning-subtle">
-                        <small className="text-muted d-block">Booked</small>
-                        <strong className="h5 mb-0 text-warning">{selected.booked_room}</strong>
+                    <div className="col-3 text-center">
+                      <div className="border rounded p-2">
+                        <small className="text-muted d-block">AC Capacity</small>
+                        <strong className="h5 mb-0">{selected.capacity_ac ?? 0}</strong>
                       </div>
                     </div>
-                    <div className="col-6">
-                      <div className="d-flex justify-content-between border-bottom pb-1">
-                        <small>AC Rooms:</small>
-                        <strong>{selected.ac_rooms}</strong>
-                      </div>
-                    </div>
-                    <div className="col-6">
-                      <div className="d-flex justify-content-between border-bottom pb-1">
-                        <small>Non-AC Rooms:</small>
-                        <strong>{selected.non_ac_rooms}</strong>
+                    <div className="col-3 text-center">
+                      <div className="border rounded p-2">
+                        <small className="text-muted d-block">Non-AC Capacity</small>
+                        <strong className="h5 mb-0">{selected.capacity_non_ac ?? 0}</strong>
                       </div>
                     </div>
                   </div>
+                </div>
+
+                {/* Availability (Date Based) */}
+                <div className="col-12">
+                  <h6 className="border-bottom pb-2 mb-3 text-primary"><i className="fas fa-calendar-alt me-2"></i>Availability (Date Based)</h6>
+                  <div className="d-flex flex-wrap gap-2 align-items-end mb-3">
+                    <div>
+                      <small className="text-muted d-block">Check-in</small>
+                      <input
+                        type="date"
+                        className="form-control form-control-sm"
+                        value={availabilityFrom}
+                        onChange={(e) => setAvailabilityFrom(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <small className="text-muted d-block">Check-out</small>
+                      <input
+                        type="date"
+                        className="form-control form-control-sm"
+                        value={availabilityTo}
+                        onChange={(e) => setAvailabilityTo(e.target.value)}
+                      />
+                    </div>
+                    <button
+                      className="btn btn-sm btn-outline-primary"
+                      onClick={refreshAvailability}
+                      disabled={loadingDetails}
+                    >
+                      Check Availability
+                    </button>
+                  </div>
+
+                  {selected.availability ? (
+                    <div className="row g-3">
+                      <div className="col-4 text-center">
+                        <div className="border rounded p-2 bg-success-subtle">
+                          <small className="text-muted d-block">Available</small>
+                          <strong className="h5 mb-0 text-success">{selected.availability.available_total}</strong>
+                        </div>
+                      </div>
+                      <div className="col-4 text-center">
+                        <div className="border rounded p-2 bg-warning-subtle">
+                          <small className="text-muted d-block">Booked</small>
+                          <strong className="h5 mb-0 text-warning">{selected.availability.booked_total}</strong>
+                        </div>
+                      </div>
+                      <div className="col-4 text-center">
+                        <div className="border rounded p-2">
+                          <small className="text-muted d-block">Mode</small>
+                          <strong className="h5 mb-0">{selected.availability.mode}</strong>
+                        </div>
+                      </div>
+                      <div className="col-6">
+                        <div className="d-flex justify-content-between border-bottom pb-1">
+                          <small>AC Available:</small>
+                          <strong>{selected.availability.available_ac}</strong>
+                        </div>
+                      </div>
+                      <div className="col-6">
+                        <div className="d-flex justify-content-between border-bottom pb-1">
+                          <small>Non-AC Available:</small>
+                          <strong>{selected.availability.available_non_ac}</strong>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-muted small">Select dates and click “Check Availability”.</div>
+                  )}
                 </div>
 
                 {/* Pricing Details */}

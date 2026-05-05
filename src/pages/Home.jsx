@@ -2,6 +2,7 @@ import { FaMapMarkerAlt, FaCalendarAlt, FaSearch, FaTag, FaPercent, FaWallet, Fa
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import images from '../assets';
+import { buildHotelMap } from '../utils/maps';
 
 const Home = ({ state, actions }) => {
   const [homeHotels, setHomeHotels] = useState([]);
@@ -575,20 +576,21 @@ const Home = ({ state, actions }) => {
                 >
                   <div className='relative h-44 overflow-hidden'>
                     {showMap ? (
-                      <iframe
-                        title={`${h.name} Location`}
-                        width="100%"
-                        height="100%"
-                        frameBorder="0"
-                        style={{ border: 0 }}
-                        src={`https://maps.google.com/maps?q=${
-                          h.latitude && h.longitude 
-                            ? `${h.latitude},${h.longitude}` 
-                            : encodeURIComponent((h.address || '') + ' ' + (h.city || h.location || ''))
-                        }&z=15&output=embed`}
-                        allowFullScreen
-                        onClick={(e) => e.stopPropagation()}
-                      ></iframe>
+                      (() => {
+                        const map = buildHotelMap(h);
+                        return (
+                          <iframe
+                            title={`${h.name} Location`}
+                            width="100%"
+                            height="100%"
+                            frameBorder="0"
+                            style={{ border: 0 }}
+                            src={map.embedSrc}
+                            allowFullScreen
+                            onClick={(e) => e.stopPropagation()}
+                          ></iframe>
+                        );
+                      })()
                     ) : (
                       <>
                         <img 

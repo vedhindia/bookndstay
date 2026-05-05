@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FaHotel, FaCalendarAlt, FaUsers, FaRupeeSign, FaCheckCircle, FaTimesCircle, FaSearch } from 'react-icons/fa';
+import { FaHotel, FaCalendarAlt, FaUsers, FaRupeeSign, FaCheckCircle, FaTimesCircle, FaSearch, FaClock } from 'react-icons/fa';
 import { getToken } from '../api/auth';
 
 export default function BookingHistoryPage() {
@@ -10,6 +10,20 @@ export default function BookingHistoryPage() {
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [hiddenIds, setHiddenIds] = useState(() => new Set());
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('booking_history_hidden_ids_v1');
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setHiddenIds(new Set(parsed.map((v) => String(v))));
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   // Fixed API base URL construction
   const apiUserBase = (() => {
@@ -203,6 +217,7 @@ export default function BookingHistoryPage() {
   // Apply search and status filters
   const filtered = useMemo(() => {
     return onlyHistory.filter(b => {
+      if (hiddenIds && hiddenIds.has(String(b.id))) return false;
       const statusOk = statusFilter === 'all' ? true : b.status === statusFilter;
       const queryLower = query.trim().toLowerCase();
       
@@ -215,11 +230,52 @@ export default function BookingHistoryPage() {
       );
       return statusOk && textOk;
     });
-  }, [onlyHistory, query, statusFilter]);
+  }, [onlyHistory, query, statusFilter, hiddenIds]);
 
-  const formatDate = (dateString) => {
-    const options = { year: 'numeric', month: 'short', day: 'numeric' };
-    return new Date(dateString).toLocaleDateString('en-US', options);
+  const clearHistory = () => {
+    const toHide = onlyHistory
+      .filter((b) => b?.status === 'cancelled' || b?.status === 'completed')
+      .map((b) => String(b.id));
+    if (toHide.length === 0) return;
+
+    const ok = window.confirm('Clear booking history (completed/cancelled) from this device?');
+    if (!ok) return;
+
+    const next = new Set(hiddenIds || []);
+    for (const id of toHide) next.add(id);
+    setHiddenIds(next);
+    try {
+      localStorage.setItem('booking_history_hidden_ids_v1', JSON.stringify(Array.from(next)));
+    } catch {
+      // ignore
+    }
+  };
+
+  const formatDateIST = (dateString) => {
+    if (!dateString) return 'N/A';
+    const d = new Date(dateString);
+    if (Number.isNaN(d.getTime())) return 'N/A';
+    return d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
+  const formatDateTimeIST = (dateString) => {
+    if (!dateString) return 'N/A';
+    const d = new Date(dateString);
+    if (Number.isNaN(d.getTime())) return 'N/A';
+    return d.toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+  };
+
+  const formatWhen = (booking, dateString) => {
+    const mode = String(booking?.bookingMode || 'NIGHTLY').toUpperCase();
+    return mode === 'HOURLY' ? formatDateTimeIST(dateString) : formatDateIST(dateString);
   };
 
   const getStatusColor = (status) => {
@@ -308,6 +364,13 @@ export default function BookingHistoryPage() {
               <option value="cancelled">Cancelled</option>
             </select>
           </div>
+          <button
+            type="button"
+            className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50"
+            onClick={clearHistory}
+          >
+            Clear History
+          </button>
         </div>
       </div>
 
@@ -355,11 +418,11 @@ export default function BookingHistoryPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4 mb-3 sm:mb-4">
                     <div className="flex items-center text-gray-600 text-xs sm:text-sm">
                       <FaCalendarAlt className="mr-2 text-[#ee2e24]" />
-                      <span>Check-in: {formatDate(booking.checkIn)}</span>
+                      <span>Check-in: {formatWhen(booking, booking.checkIn)}</span>
                     </div>
                     <div className="flex items-center text-gray-600 text-xs sm:text-sm">
                       <FaCalendarAlt className="mr-2 text-[#ee2e24]" />
-                      <span>Check-out: {formatDate(booking.checkOut)}</span>
+                      <span>Check-out: {formatWhen(booking, booking.checkOut)}</span>
                     </div>
                     <div className="flex items-center text-gray-600 text-xs sm:text-sm">
                       <FaUsers className="mr-2 text-[#ee2e24]" />

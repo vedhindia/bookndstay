@@ -1,8 +1,9 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { adminVendors, adminVendorApplications } from './services/adminApi';
+import { adminNotifications, adminVendors, adminVendorApplications } from './services/adminApi';
 import Pagination from './components/Pagination';
 import { useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from './config';
 
 const Vendors = () => {
   const navigate = useNavigate();
@@ -18,6 +19,7 @@ const Vendors = () => {
   const [total, setTotal] = useState(0);
   const [statusConfirm, setStatusConfirm] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [seenVendorIds, setSeenVendorIds] = useState(() => new Set());
 
   const [applications, setApplications] = useState([]);
   const [appQuery, setAppQuery] = useState('');
@@ -27,6 +29,7 @@ const Vendors = () => {
   const [appTotal, setAppTotal] = useState(0);
   const [appLoading, setAppLoading] = useState(false);
   const [appSubmitting, setAppSubmitting] = useState(false);
+  const [newApplicationsCount, setNewApplicationsCount] = useState(0);
 
   // Vendor Hotels State
   const [vendorHotels, setVendorHotels] = useState([]);
@@ -41,6 +44,48 @@ const Vendors = () => {
     try { return JSON.parse(localStorage.getItem('adminUser') || 'null'); } catch { return null; }
   })();
   const isSuperAdmin = (adminUser?.role || '').toUpperCase() === 'SUPER_ADMIN';
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('admin_seen_vendors_ids_v1');
+      const parsed = raw ? JSON.parse(raw) : [];
+      setSeenVendorIds(new Set(Array.isArray(parsed) ? parsed.map((v) => String(v)) : []));
+    } catch {
+      setSeenVendorIds(new Set());
+    }
+  }, []);
+
+  const saveSeenVendorIds = (set) => {
+    try {
+      localStorage.setItem('admin_seen_vendors_ids_v1', JSON.stringify(Array.from(set)));
+    } catch {
+      void 0;
+    }
+  };
+
+  const markVendorAsSeen = (vendorId) => {
+    if (!vendorId) return;
+    setSeenVendorIds((prev) => {
+      const next = new Set(prev instanceof Set ? Array.from(prev) : []);
+      const id = String(vendorId);
+      if (!next.has(id)) {
+        next.add(id);
+        saveSeenVendorIds(next);
+        try {
+          window.dispatchEvent(new CustomEvent('admin_item_seen', { detail: { section: 'vendors', id } }));
+        } catch {
+          void 0;
+        }
+      }
+      return next;
+    });
+  };
+
+  const isNewVendor = (v) => {
+    const id = v?.id || v?.vendor_id || v?._id;
+    if (!id) return false;
+    return !(seenVendorIds instanceof Set ? seenVendorIds.has(String(id)) : false);
+  };
 
   // Clear messages after timeout
   useEffect(() => {
@@ -190,6 +235,74 @@ const Vendors = () => {
     return () => clearTimeout(delayedFetch);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, appPage, appPageSize, appStatus, appQuery]);
+
+  const ensureVendorAppsLastSeenInitialized = () => {
+    try {
+      const k = 'admin_last_seen_vendor_applications';
+      const v = localStorage.getItem(k);
+      if (!v) localStorage.setItem(k, new Date(0).toISOString());
+    } catch {}
+  };
+
+  const fetchNewApplicationsCount = async () => {
+    try {
+      ensureVendorAppsLastSeenInitialized();
+      const since = localStorage.getItem('admin_last_seen_vendor_applications') || undefined;
+      const res = await adminNotifications.counts({ vendor_applications_since: since });
+      const c = res?.data?.counts || res?.counts || res?.data || {};
+      setNewApplicationsCount(Number(c.vendor_applications) || 0);
+    } catch {
+      void 0;
+    }
+  };
+
+  useEffect(() => {
+    fetchNewApplicationsCount();
+    const interval = setInterval(() => {
+      fetchNewApplicationsCount();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    let es;
+    try {
+      const token = localStorage.getItem('adminToken');
+      if (!token) return;
+      const url = `${API_BASE_URL}/admin/notifications/stream?token=${encodeURIComponent(token)}`;
+      es = new EventSource(url);
+      const onInvalidate = (evt) => {
+        try {
+          const payload = evt?.data ? JSON.parse(evt.data) : null;
+          if (!payload || payload.section === 'vendor_applications') {
+            fetchNewApplicationsCount();
+          }
+        } catch {
+          fetchNewApplicationsCount();
+        }
+      };
+      es.addEventListener('invalidate', onInvalidate);
+      es.addEventListener('ready', () => fetchNewApplicationsCount());
+    } catch {
+      void 0;
+    }
+    return () => {
+      try {
+        if (es) es.close();
+      } catch {
+        void 0;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'applications') return;
+    try {
+      localStorage.setItem('admin_last_seen_vendor_applications', new Date().toISOString());
+    } catch {}
+    setNewApplicationsCount(0);
+    fetchNewApplicationsCount();
+  }, [activeTab]);
 
   const filtered = useMemo(() => {
     if (!query.trim()) return vendors;
@@ -513,7 +626,12 @@ const Vendors = () => {
               onClick={() => setActiveTab('applications')}
               disabled={submitting || loading || appSubmitting || appLoading}
             >
-              Applications
+              <span className="d-inline-flex align-items-center gap-2">
+                Applications
+                {newApplicationsCount > 0 && (
+                  <span className="badge bg-danger">{newApplicationsCount > 99 ? '99+' : newApplicationsCount}</span>
+                )}
+              </span>
             </button>
           </div>
 
@@ -617,7 +735,12 @@ const Vendors = () => {
                       filtered.map((v, index) => (
                         <tr key={`${v.id || v.vendor_id || v._id}-${v.email}`}>
                           <td className="text-muted fw-semibold">{getSerialNumber(index)}</td>
-                          <td>{v.full_name}</td>
+                          <td>
+                            <div className="d-flex align-items-center gap-2">
+                              <span>{v.full_name}</span>
+                              {isNewVendor(v) && <span className="badge bg-danger">New</span>}
+                            </div>
+                          </td>
                           <td>{v.email}</td>
                           <td>{v.phone}</td>
                           <td>{v.business_name}</td>
@@ -641,7 +764,11 @@ const Vendors = () => {
                             <div className="btn-group">
                               <button
                                 className="btn btn-sm btn-outline-info"
-                                onClick={() => handleViewHotels(v.id || v.vendor_id || v._id)}
+                                onClick={() => {
+                                  const vid = v.id || v.vendor_id || v._id;
+                                  if (vid) markVendorAsSeen(vid);
+                                  handleViewHotels(vid);
+                                }}
                                 disabled={submitting}
                                 title="View Hotels"
                               >

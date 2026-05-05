@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { FaCheckCircle, FaShieldAlt, FaTag, FaChevronLeft, FaChevronRight, FaTimes, FaMapMarkerAlt, FaStar, FaPlus, FaMinus, FaTrash } from 'react-icons/fa';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { getToken, getUser, clearToken } from '../api/auth';
+import { buildHotelMap } from '../utils/maps';
 
 const RoomDetailsPage = ({ state = {}, actions = {} }) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
@@ -46,6 +47,39 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
     return new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   };
 
+  const parseDateTimeLocalParts = (value) => {
+    const s = String(value || '').trim();
+    const m = s.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})/);
+    if (!m) return null;
+    return { date: m[1], hour24: Number(m[2]), minute: Number(m[3]) };
+  };
+
+  const hour24To12 = (hour24) => {
+    const h = Number(hour24);
+    if (!Number.isFinite(h)) return { hour12: 12, ampm: 'AM' };
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const hour12 = ((h + 11) % 12) + 1;
+    return { hour12, ampm };
+  };
+
+  const hour12To24 = (hour12, ampm) => {
+    const h = Number(hour12);
+    if (!Number.isFinite(h)) return 0;
+    const isPm = String(ampm || 'AM').toUpperCase() === 'PM';
+    if (h === 12) return isPm ? 12 : 0;
+    return isPm ? h + 12 : h;
+  };
+
+  const buildDateTimeLocal = (date, hour12, minute, ampm) => {
+    const d = String(date || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return '';
+    const hh = hour12To24(hour12, ampm);
+    const mm = Number(minute);
+    const hStr = String(Math.max(0, Math.min(23, hh))).padStart(2, '0');
+    const mStr = String(Number.isFinite(mm) ? Math.max(0, Math.min(59, mm)) : 0).padStart(2, '0');
+    return `${d}T${hStr}:${mStr}`;
+  };
+
   const [checkInAt, setCheckInAt] = useState(() => {
     try {
       if (state?.checkInAt) return String(state.checkInAt).slice(0, 16);
@@ -65,6 +99,21 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
     base.setHours(base.getHours() + 2);
     return toDateTimeLocal(base);
   });
+
+  useEffect(() => {
+    if (bookingMode !== 'HOURLY') return;
+    try {
+      const ci = new Date(checkInAt);
+      const co = new Date(checkOutAt);
+      if (Number.isNaN(ci.getTime()) || Number.isNaN(co.getTime())) return;
+      if (co <= ci) {
+        const next = new Date(ci.getTime() + 60 * 60 * 1000);
+        setCheckOutAt(toDateTimeLocal(next));
+      }
+    } catch {
+      void 0;
+    }
+  }, [bookingMode, checkInAt, checkOutAt]);
   
   const [selectedRoomPrice, setSelectedRoomPrice] = useState(() => {
     const p = state.selectedRoom?.price ?? 799;
@@ -535,18 +584,19 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
   useEffect(() => {
     const fetchCoupons = async () => {
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_BASE ? import.meta.env.VITE_API_BASE.replace('/auth', '') : 'https://bookndstay.com/api'}/public/coupons`);
+        const res = await fetch('/api/public/coupons', { headers: { Accept: 'application/json' } });
         if (res.ok) {
           const data = await res.json();
           // The API response structure is { success: true, data: { coupons: [...] } }
-          const couponsList = data.data?.coupons || data.data || [];
+          const couponsList = data?.data?.coupons || data?.coupons || data?.data || [];
           
           const apiCoupons = couponsList.map(c => ({
             code: c.code,
-            description: c.description || `Get ${c.value}${c.type === 'PERCENT' ? '%' : ' FLAT'} OFF`,
+            value: Number(c.value) || 0,
+            description: `Get ${c.value}${c.type === 'PERCENT' ? '%' : ' FLAT'} OFF`,
             discount: `${c.value}${c.type === 'PERCENT' ? '%' : ' FLAT'} OFF`,
-            rate: c.type === 'PERCENT' ? c.value / 100 : 0,
-            flatAmount: c.type === 'FLAT' ? c.value : 0,
+            rate: c.type === 'PERCENT' ? (Number(c.value) || 0) / 100 : 0,
+            flatAmount: c.type === 'FLAT' ? (Number(c.value) || 0) : 0,
             type: c.type
           }));
           
@@ -568,22 +618,62 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
     }
     const code = codeToUse.trim().toUpperCase();
     const base = Math.round(unitPrice * unitCount * totalRooms);
-    
-    // Coupon logic
+
+    const token = getToken();
+    if (token) {
+      fetch('/api/user/coupons/apply', {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ code, amount: base })
+      })
+        .then(async (r) => {
+          const payload = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(payload?.message || 'Invalid coupon code');
+          const discount = payload?.data?.discount?.discount_amount;
+          const computed = Math.round(Number(discount) || 0);
+          const actualDiscount = Math.min(computed, base);
+          setDiscountAmount(actualDiscount);
+          setAppliedCoupon(code);
+          setCouponCode(code);
+        })
+        .catch(() => {
+          const coupon = availableCoupons.find(c => c.code === code);
+          if (coupon) {
+            let discount = 0;
+            if (coupon.type === 'FLAT') {
+              discount = coupon.flatAmount;
+            } else {
+              discount = Math.round(base * coupon.rate);
+            }
+            const actualDiscount = Math.min(discount, base);
+            setDiscountAmount(actualDiscount);
+            setAppliedCoupon(code);
+            setCouponCode(code);
+          } else {
+            alert('Invalid coupon code');
+            setDiscountAmount(0);
+            setAppliedCoupon('');
+          }
+        });
+      return;
+    }
+
     const coupon = availableCoupons.find(c => c.code === code);
-    
     if (coupon) {
       let discount = 0;
       if (coupon.type === 'FLAT') {
-         discount = coupon.flatAmount;
+        discount = coupon.flatAmount;
       } else {
-         discount = Math.round(base * coupon.rate);
+        discount = Math.round(base * coupon.rate);
       }
-      
       const actualDiscount = Math.min(discount, base);
       setDiscountAmount(actualDiscount);
       setAppliedCoupon(code);
-      if (typeof codeOverride === 'string') setCouponCode(code);
+      setCouponCode(code);
     } else {
       alert('Invalid coupon code');
       setDiscountAmount(0);
@@ -615,10 +705,6 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
       }
       if (co <= ci) {
         alert('Check-out time must be after check-in time');
-        return;
-      }
-      if (ci < new Date()) {
-        alert('Check-in time cannot be in the past');
         return;
       }
     } else {
@@ -1087,24 +1173,25 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
               )}
             </div>
 
-            {/* Map Location */}
-            {(detail?.latitude && detail?.longitude) || detail?.address ? (
+              {/* Location Map */}
+            {(detail?.latitude && detail?.longitude) || detail?.map_url || detail?.address || detail?.location ? (
               <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-6">
                 <h3 className="font-semibold text-base sm:text-lg mb-3">Location</h3>
                 <div className="h-64 rounded-lg overflow-hidden">
+                    {(() => {
+                      const map = buildHotelMap(detail || {});
+                      return (
                   <iframe
                     title="Hotel Location"
                     width="100%"
                     height="100%"
                     frameBorder="0"
                     style={{ border: 0 }}
-                    src={`https://maps.google.com/maps?q=${
-                      detail.latitude && detail.longitude 
-                        ? `${detail.latitude},${detail.longitude}` 
-                        : encodeURIComponent(detail.address || detail.name)
-                    }&z=15&output=embed`}
+                      src={map.embedSrc}
                     allowFullScreen
                   ></iframe>
+                      );
+                    })()}
                 </div>
               </div>
             ) : null}
@@ -1190,26 +1277,99 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
               </div>
 
               {bookingMode === 'HOURLY' ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                <div className="grid grid-cols-1 sm:grid-cols-1 gap-3 mb-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Check-in time</label>
-                    <input
-                      type="datetime-local"
-                      value={checkInAt}
-                      onChange={(e) => setCheckInAt(e.target.value)}
-                      min={toDateTimeLocal(new Date())}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#ee2e24] focus:outline-none"
-                    />
+                    {(() => {
+                      const parts = parseDateTimeLocalParts(checkInAt) || { date: toDateTimeLocal(new Date()).slice(0, 10), hour24: 6, minute: 0 };
+                      const h12 = hour24To12(parts.hour24);
+                      return (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <input
+                            type="date"
+                            value={parts.date}
+                            min={new Date().toISOString().split('T')[0]}
+                            onChange={(e) => setCheckInAt(buildDateTimeLocal(e.target.value, h12.hour12, parts.minute, h12.ampm))}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#ee2e24] focus:outline-none"
+                          />
+                          <div className="grid grid-cols-3 gap-2">
+                            <select
+                              value={String(h12.hour12)}
+                              onChange={(e) => setCheckInAt(buildDateTimeLocal(parts.date, e.target.value, parts.minute, h12.ampm))}
+                              className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-[#ee2e24] focus:outline-none"
+                            >
+                              {Array.from({ length: 12 }, (_, i) => i + 1).map((v) => (
+                                <option key={v} value={String(v)}>{String(v).padStart(2, '0')}</option>
+                              ))}
+                            </select>
+                            <select
+                              value={String(parts.minute).padStart(2, '0')}
+                              onChange={(e) => setCheckInAt(buildDateTimeLocal(parts.date, h12.hour12, e.target.value, h12.ampm))}
+                              className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-[#ee2e24] focus:outline-none"
+                            >
+                              {['00', '15', '30', '45'].map((m) => (
+                                <option key={m} value={m}>{m}</option>
+                              ))}
+                            </select>
+                            <select
+                              value={h12.ampm}
+                              onChange={(e) => setCheckInAt(buildDateTimeLocal(parts.date, h12.hour12, parts.minute, e.target.value))}
+                              className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-[#ee2e24] focus:outline-none"
+                            >
+                              <option value="AM">AM</option>
+                              <option value="PM">PM</option>
+                            </select>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Check-out time</label>
-                    <input
-                      type="datetime-local"
-                      value={checkOutAt}
-                      onChange={(e) => setCheckOutAt(e.target.value)}
-                      min={checkInAt || toDateTimeLocal(new Date())}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#ee2e24] focus:outline-none"
-                    />
+                    {(() => {
+                      const parts = parseDateTimeLocalParts(checkOutAt) || { date: toDateTimeLocal(new Date()).slice(0, 10), hour24: 8, minute: 0 };
+                      const h12 = hour24To12(parts.hour24);
+                      const minDate = (parseDateTimeLocalParts(checkInAt)?.date) || new Date().toISOString().split('T')[0];
+                      return (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <input
+                            type="date"
+                            value={parts.date}
+                            min={minDate}
+                            onChange={(e) => setCheckOutAt(buildDateTimeLocal(e.target.value, h12.hour12, parts.minute, h12.ampm))}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#ee2e24] focus:outline-none"
+                          />
+                          <div className="grid grid-cols-3 gap-2">
+                            <select
+                              value={String(h12.hour12)}
+                              onChange={(e) => setCheckOutAt(buildDateTimeLocal(parts.date, e.target.value, parts.minute, h12.ampm))}
+                              className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-[#ee2e24] focus:outline-none"
+                            >
+                              {Array.from({ length: 12 }, (_, i) => i + 1).map((v) => (
+                                <option key={v} value={String(v)}>{String(v).padStart(2, '0')}</option>
+                              ))}
+                            </select>
+                            <select
+                              value={String(parts.minute).padStart(2, '0')}
+                              onChange={(e) => setCheckOutAt(buildDateTimeLocal(parts.date, h12.hour12, e.target.value, h12.ampm))}
+                              className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-[#ee2e24] focus:outline-none"
+                            >
+                              {['00', '15', '30', '45'].map((m) => (
+                                <option key={m} value={m}>{m}</option>
+                              ))}
+                            </select>
+                            <select
+                              value={h12.ampm}
+                              onChange={(e) => setCheckOutAt(buildDateTimeLocal(parts.date, h12.hour12, parts.minute, e.target.value))}
+                              className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-[#ee2e24] focus:outline-none"
+                            >
+                              <option value="AM">AM</option>
+                              <option value="PM">PM</option>
+                            </select>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               ) : (

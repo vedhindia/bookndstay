@@ -38,6 +38,7 @@ const Bookings = () => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
+  const [seenBookingIds, setSeenBookingIds] = useState(() => new Set());
   
   // Payment State
   const [paymentDetails, setPaymentDetails] = useState(null);
@@ -45,6 +46,83 @@ const Bookings = () => {
   const [loadingPayment, setLoadingPayment] = useState(false);
 
   const hotels = ['All', 'Grand Plaza', 'Beach Resort', 'Mountain View'];
+
+  const formatDateIST = (dateString) => {
+    if (!dateString) return 'N/A';
+    const d = new Date(dateString);
+    if (Number.isNaN(d.getTime())) return 'N/A';
+    return d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
+  const formatDateTimeIST = (dateString) => {
+    if (!dateString) return 'N/A';
+    const d = new Date(dateString);
+    if (Number.isNaN(d.getTime())) return 'N/A';
+    return d.toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+  };
+
+  const formatWhen = (booking, dateString) => {
+    const mode = String(booking?.bookingMode || booking?.booking_mode || 'NIGHTLY').toUpperCase();
+    return mode === 'HOURLY' ? formatDateTimeIST(dateString) : formatDateIST(dateString);
+  };
+
+  const formatRoomType = (value) => {
+    const v = String(value || '').trim().toUpperCase();
+    if (!v) return 'N/A';
+    if (v === 'AC') return 'AC';
+    if (v === 'NON_AC' || v === 'NON-AC' || v === 'NON AC') return 'Non-AC';
+    return v;
+  };
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('admin_seen_bookings_ids_v1');
+      const parsed = raw ? JSON.parse(raw) : [];
+      setSeenBookingIds(new Set(Array.isArray(parsed) ? parsed.map((v) => String(v)) : []));
+    } catch {
+      setSeenBookingIds(new Set());
+    }
+  }, []);
+
+  const saveSeenBookingIds = (set) => {
+    try {
+      localStorage.setItem('admin_seen_bookings_ids_v1', JSON.stringify(Array.from(set)));
+    } catch {
+      void 0;
+    }
+  };
+
+  const markBookingAsSeen = (bookingId) => {
+    if (!bookingId) return;
+    setSeenBookingIds((prev) => {
+      const next = new Set(prev instanceof Set ? Array.from(prev) : []);
+      const id = String(bookingId);
+      if (!next.has(id)) {
+        next.add(id);
+        saveSeenBookingIds(next);
+        try {
+          window.dispatchEvent(new CustomEvent('admin_item_seen', { detail: { section: 'bookings', id } }));
+        } catch {
+          void 0;
+        }
+      }
+      return next;
+    });
+  };
+
+  const isNewBooking = (b) => {
+    const id = b?.id;
+    if (!id) return false;
+    return !(seenBookingIds instanceof Set ? seenBookingIds.has(String(id)) : false);
+  };
 
   const fetchBookings = async () => {
     setLoading(true);
@@ -79,8 +157,16 @@ const Bookings = () => {
         user: b.user?.full_name || b.user?.name || b.userName || '',
         userEmail: b.user?.email || b.userEmail || '',
         hotel: b.hotel?.name || b.hotelName || '',
-        checkIn: b.checkInDate || b.check_in || b.checkIn || '',
-        checkOut: b.checkOutDate || b.check_out || b.checkOut || '',
+        roomType: b.room_type || b.roomType || b.room || b.type || '',
+        bookingMode: String(b.booking_mode || b.bookingMode || 'NIGHTLY').toUpperCase(),
+        checkIn:
+          String(b.booking_mode || b.bookingMode || 'NIGHTLY').toUpperCase() === 'HOURLY'
+            ? (b.check_in_at || b.checkInAt || b.check_in || b.checkInDate || b.checkIn || '')
+            : (b.check_in || b.checkInDate || b.checkIn || ''),
+        checkOut:
+          String(b.booking_mode || b.bookingMode || 'NIGHTLY').toUpperCase() === 'HOURLY'
+            ? (b.check_out_at || b.checkOutAt || b.check_out || b.checkOutDate || b.checkOut || '')
+            : (b.check_out || b.checkOutDate || b.checkOut || ''),
         guests: b.guests || b.noOfGuests || 0,
         price: b.amount || b.finalAmount || 0,
         status: (b.status || 'PENDING').toString().charAt(0).toUpperCase() + (b.status || 'PENDING').toString().slice(1).toLowerCase(),
@@ -290,6 +376,7 @@ const Bookings = () => {
               >
                 <option>All</option>
                 <option>Confirmed</option>
+                <option>Completed</option>
                 <option>Pending</option>
                 <option>Cancelled</option>
               </select>
@@ -381,6 +468,7 @@ const Bookings = () => {
                       <td className="px-3 text-muted fw-semibold">{getSerialNumber(index)}</td>
                       <td>
                         <span className="badge bg-secondary">{b.id}</span>
+                        {isNewBooking(b) && <span className="badge bg-danger ms-2">New</span>}
                       </td>
                       <td>
                         <div className="d-flex flex-column">
@@ -392,10 +480,10 @@ const Bookings = () => {
                       </td>
                       <td>{b.hotel}</td>
                       <td>
-                        <small>{b.checkIn ? new Date(b.checkIn).toLocaleDateString() : 'N/A'}</small>
+                        <small>{formatWhen(b, b.checkIn)}</small>
                       </td>
                       <td>
-                        <small>{b.checkOut ? new Date(b.checkOut).toLocaleDateString() : 'N/A'}</small>
+                        <small>{formatWhen(b, b.checkOut)}</small>
                       </td>
                       <td className="text-center">
                         <span className="badge bg-light text-dark">{b.guests}</span>
@@ -407,7 +495,10 @@ const Bookings = () => {
                       <td className="text-end px-3">
                         <button 
                           className="btn btn-sm btn-outline-primary" 
-                          onClick={() => setSelected(b)}
+                          onClick={() => {
+                            markBookingAsSeen(b.id);
+                            setSelected(b);
+                          }}
                           title="View Details"
                         >
                           <i className="fas fa-eye"></i>
@@ -497,6 +588,10 @@ const Bookings = () => {
                     <input className="form-control" value={selected.hotel} readOnly />
                   </div>
                   <div className="col-md-6">
+                    <label className="form-label fw-bold small text-muted">Room Type</label>
+                    <input className="form-control" value={formatRoomType(selected.roomType)} readOnly />
+                  </div>
+                  <div className="col-md-6">
                     <label className="form-label fw-bold small text-muted">Status</label>
                     <div className="form-control d-flex align-items-center">
                       <StatusBadge status={selected.status} />
@@ -506,7 +601,7 @@ const Bookings = () => {
                     <label className="form-label fw-bold small text-muted">Check-in Date</label>
                     <input 
                       className="form-control" 
-                      value={selected.checkIn ? new Date(selected.checkIn).toLocaleDateString() : 'N/A'} 
+                      value={formatWhen(selected, selected.checkIn)} 
                       readOnly 
                     />
                   </div>
@@ -514,7 +609,7 @@ const Bookings = () => {
                     <label className="form-label fw-bold small text-muted">Check-out Date</label>
                     <input 
                       className="form-control" 
-                      value={selected.checkOut ? new Date(selected.checkOut).toLocaleDateString() : 'N/A'} 
+                      value={formatWhen(selected, selected.checkOut)} 
                       readOnly 
                     />
                   </div>

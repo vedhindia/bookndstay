@@ -16,6 +16,7 @@ const Users = () => {
   const [users, setUsers] = useState([]);
   const [filteredUsers, setFilteredUsers] = useState([]);
   const [selected, setSelected] = useState(null);
+  const [seenUserIds, setSeenUserIds] = useState(() => new Set());
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -34,8 +35,49 @@ const Users = () => {
   const [totalUsers, setTotalUsers] = useState(0);
   const usersPerPage = 10;
 
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('admin_seen_users_ids_v1');
+      const parsed = raw ? JSON.parse(raw) : [];
+      setSeenUserIds(new Set(Array.isArray(parsed) ? parsed.map((v) => String(v)) : []));
+    } catch {
+      setSeenUserIds(new Set());
+    }
+  }, []);
+
+  const saveSeenUserIds = (set) => {
+    try {
+      localStorage.setItem('admin_seen_users_ids_v1', JSON.stringify(Array.from(set)));
+    } catch {
+      void 0;
+    }
+  };
+
+  const markUserAsSeen = (userId) => {
+    if (!userId) return;
+    setSeenUserIds((prev) => {
+      const next = new Set(prev instanceof Set ? Array.from(prev) : []);
+      const id = String(userId);
+      if (!next.has(id)) {
+        next.add(id);
+        saveSeenUserIds(next);
+        try {
+          window.dispatchEvent(new CustomEvent('admin_item_seen', { detail: { section: 'users', id } }));
+        } catch {
+          void 0;
+        }
+      }
+      return next;
+    });
+  };
+
   // Helpers
   const getUserId = (u) => u?.id || u?._id || u?.userId || u?.uuid;
+  const isNewUser = (u) => {
+    const id = getUserId(u);
+    if (!id) return false;
+    return !(seenUserIds instanceof Set ? seenUserIds.has(String(id)) : false);
+  };
   const getUserStatus = (u) => {
     if (typeof u?.status === 'string') {
       const s = u.status.toLowerCase();
@@ -198,6 +240,9 @@ const Users = () => {
     const targetUser = user || selectedUserForBookings;
     if (!targetUser) return;
 
+    const uid = getUserId(targetUser);
+    if (uid) markUserAsSeen(uid);
+
     if (user) {
       setSelectedUserForBookings(user);
       setShowBookingsModal(true);
@@ -307,7 +352,12 @@ const Users = () => {
                     <tr key={u.id}>
                       {/* Serial number */}
                       <td>{(currentPage - 1) * usersPerPage + index + 1}</td>
-                      <td>{u.name}</td>
+                      <td>
+                        <div className="d-flex align-items-center gap-2">
+                          <span>{u.name}</span>
+                          {isNewUser(u) && <span className="badge bg-danger">New</span>}
+                        </div>
+                      </td>
                       <td>{u.email}</td>
                       <td>{u.phone}</td>
                       <td>{u.role}</td>
@@ -317,7 +367,11 @@ const Users = () => {
                         <div className="btn-group">
                           <button
                             className="btn btn-sm btn-outline-primary"
-                            onClick={() => setSelected(u)}
+                            onClick={() => {
+                              const uid = getUserId(u);
+                              if (uid) markUserAsSeen(uid);
+                              setSelected(u);
+                            }}
                             title="View Profile"
                           >
                             <i className="fas fa-user"></i>
@@ -518,8 +572,26 @@ const Users = () => {
                             <td>
                               {booking.hotel?.name || booking.hotel_name || 'N/A'}
                             </td>
-                            <td>{booking.check_in ? new Date(booking.check_in).toLocaleDateString() : 'N/A'}</td>
-                            <td>{booking.check_out ? new Date(booking.check_out).toLocaleDateString() : 'N/A'}</td>
+                            <td>{(() => {
+                              const mode = String(booking.booking_mode || 'NIGHTLY').toUpperCase();
+                              const raw = mode === 'HOURLY' ? (booking.check_in_at || booking.check_in) : booking.check_in;
+                              if (!raw) return 'N/A';
+                              const d = new Date(raw);
+                              if (Number.isNaN(d.getTime())) return 'N/A';
+                              return mode === 'HOURLY'
+                                ? d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })
+                                : d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'short', day: 'numeric' });
+                            })()}</td>
+                            <td>{(() => {
+                              const mode = String(booking.booking_mode || 'NIGHTLY').toUpperCase();
+                              const raw = mode === 'HOURLY' ? (booking.check_out_at || booking.check_out) : booking.check_out;
+                              if (!raw) return 'N/A';
+                              const d = new Date(raw);
+                              if (Number.isNaN(d.getTime())) return 'N/A';
+                              return mode === 'HOURLY'
+                                ? d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })
+                                : d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'short', day: 'numeric' });
+                            })()}</td>
                             <td>₹{booking.amount || booking.total_amount || 0}</td>
                             <td>
                               <span className={`badge ${

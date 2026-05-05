@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { userService } from "./services/userService";
+import api from "./services/apiClient";
 
 const StatusBadge = ({ status }) => (
   <span
@@ -19,6 +20,8 @@ const Users = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [statusUpdatingId, setStatusUpdatingId] = useState(null);
+  const [seenUserIds, setSeenUserIds] = useState(() => new Set());
+  const [newUserIds, setNewUserIds] = useState(() => new Set());
 
   // Pagination
   const [page, setPage] = useState(1);
@@ -76,6 +79,72 @@ const Users = () => {
     }
   };
 
+  const loadSeenUserIds = () => {
+    try {
+      const raw = localStorage.getItem("vendor_seen_user_ids_v1");
+      const parsed = raw ? JSON.parse(raw) : [];
+      return new Set(Array.isArray(parsed) ? parsed.map((v) => String(v)) : []);
+    } catch {
+      return new Set();
+    }
+  };
+
+  const saveSeenUserIds = (set) => {
+    try {
+      localStorage.setItem("vendor_seen_user_ids_v1", JSON.stringify(Array.from(set)));
+    } catch {
+      void 0;
+    }
+  };
+
+  const markUserAsSeen = (userId) => {
+    if (!userId) return;
+    setSeenUserIds((prev) => {
+      const next = new Set(prev instanceof Set ? Array.from(prev) : []);
+      next.add(String(userId));
+      saveSeenUserIds(next);
+      return next;
+    });
+  };
+
+  const computeNewUsersFromBookings = async (currentUsers) => {
+    try {
+      const rawSeenBookings = localStorage.getItem("vendor_seen_booking_ids_v1");
+      const parsedSeenBookings = rawSeenBookings ? JSON.parse(rawSeenBookings) : [];
+      const seenBookings = new Set(Array.isArray(parsedSeenBookings) ? parsedSeenBookings.map((v) => String(v)) : []);
+
+      const resResp = await api.get("/vendor/bookings", { params: { page: 1, limit: 200 } });
+      const res = resResp?.data;
+      const list = Array.isArray(res?.data)
+        ? res.data
+        : Array.isArray(res?.bookings)
+        ? res.bookings
+        : Array.isArray(res?.results)
+        ? res.results
+        : Array.isArray(res)
+        ? res
+        : [];
+
+      const set = new Set();
+      for (const b of list) {
+        const id = b?.id ?? b?.booking_id ?? b?._id;
+        if (!id) continue;
+        const st = String(b?.status || "").toUpperCase();
+        if (st !== "CONFIRMED" && st !== "COMPLETED") continue;
+        if (seenBookings.has(String(id))) continue;
+        const uid = b?.user_id ?? b?.user?.id ?? b?.user?.user_id ?? b?.userId;
+        if (!uid) continue;
+        set.add(String(uid));
+      }
+
+      const existing = new Set((currentUsers || []).map((u) => String(u.id)).filter(Boolean));
+      const filteredSet = new Set(Array.from(set).filter((id) => existing.has(String(id))));
+      setNewUserIds(filteredSet);
+    } catch {
+      setNewUserIds(new Set());
+    }
+  };
+
   // Filter + Paginate
   const filterAndPaginate = (list, q, st, currentPage) => {
     let f = [...list];
@@ -105,6 +174,16 @@ const Users = () => {
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  useEffect(() => {
+    setSeenUserIds(loadSeenUserIds());
+  }, []);
+
+  useEffect(() => {
+    if (users.length > 0) {
+      computeNewUsersFromBookings(users);
+    }
+  }, [users]);
 
   // Pagination change
   const handlePageChange = (newPage) => {
@@ -140,6 +219,7 @@ const Users = () => {
 
   // Bookings
   const handleViewBookings = (user) => {
+    markUserAsSeen(getUserId(user));
     navigate("/dashboard/bookings", {
       state: {
         userId: getUserId(user),
@@ -218,7 +298,14 @@ const Users = () => {
                   filtered.map((u, index) => (
                     <tr key={u.id}>
                       <td>{(page - 1) * pageSize + index + 1}</td>
-                      <td>{u.name}</td>
+                      <td>
+                        <div className="d-flex align-items-center gap-2">
+                          <span>{u.name}</span>
+                          {newUserIds.has(String(u.id)) && !seenUserIds.has(String(u.id)) && (
+                            <span className="badge bg-danger">New</span>
+                          )}
+                        </div>
+                      </td>
                       <td>{u.email}</td>
                       <td>{u.phone}</td>
                       <td>{u.role}</td>

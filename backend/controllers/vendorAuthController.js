@@ -2,6 +2,7 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { Vendor, BlacklistedToken } = require('../models');
+const { notifyAdmins } = require('../utils/notificationHub');
 require('dotenv').config();
 
 const generateToken = (vendor) => {
@@ -32,6 +33,12 @@ module.exports = {
         business_address,
         status: 'PENDING' // Requires admin approval
       });
+
+      try {
+        notifyAdmins({ section: 'vendors', id: vendor.id });
+      } catch {
+        void 0;
+      }
 
       const token = generateToken(vendor);
       res.status(201).json({ 

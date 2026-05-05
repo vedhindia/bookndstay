@@ -26,14 +26,32 @@ const swaggerSpec = require('./swagger/swaggerDef');
 
 const app = express();
 
+const corsOriginsRaw = String(process.env.CORS_ORIGINS || '').trim();
+const corsOrigins = corsOriginsRaw
+  ? corsOriginsRaw.split(',').map((s) => s.trim()).filter(Boolean)
+  : null;
+
 app.use(cors({
-  origin: true, // Allow all origins in development
+  origin: corsOrigins
+    ? (origin, cb) => {
+        if (!origin) return cb(null, true);
+        return cb(null, corsOrigins.includes(origin));
+      }
+    : true,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+
+app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
+app.use((req, res, next) => {
+  if (req.originalUrl && req.originalUrl.startsWith('/api/payments/webhook')) return next();
+  return bodyParser.json()(req, res, next);
+});
+app.use((req, res, next) => {
+  if (req.originalUrl && req.originalUrl.startsWith('/api/payments/webhook')) return next();
+  return bodyParser.urlencoded({ extended: true })(req, res, next);
+});
 
 // serve uploads
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));

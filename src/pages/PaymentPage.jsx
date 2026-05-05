@@ -490,11 +490,19 @@ export default function PaymentPage() {
             });
 
             if (!completeResponse.ok) {
-              throw new Error('Failed to complete payment');
+              let message = 'Failed to complete payment';
+              try {
+                const errData = await completeResponse.json();
+                message = errData?.message || errData?.error || message;
+              } catch {}
+              throw new Error(message);
             }
 
             const completeData = await completeResponse.json();
             const confirmedBooking = completeData?.booking || completeData?.data?.booking;
+            if (!confirmedBooking) {
+              throw new Error('Payment confirmed but booking details not received');
+            }
 
             // Prepare confirmation data
             const confirmationData = {
@@ -527,8 +535,9 @@ export default function PaymentPage() {
 
             navigate('/booking');
           } catch (error) {
-            alert('Payment completed but confirmation failed. Please contact support.');
+            alert(error?.message || 'Payment completed but confirmation failed. Please contact support.');
             console.error('Payment completion error:', error);
+            setProcessing(false);
           }
         },
         prefill: {
@@ -650,8 +659,8 @@ export default function PaymentPage() {
             <p className="font-semibold">
               {summary?.checkIn
                 ? (String(summary?.bookingMode || breakdown?.booking_mode || '').toUpperCase() === 'HOURLY'
-                    ? new Date(summary.checkIn).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-                    : new Date(summary.checkIn).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }))
+                    ? new Date(summary.checkIn).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })
+                    : new Date(summary.checkIn).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'short', day: 'numeric' }))
                 : 'N/A'}
             </p>
           </div>
@@ -660,8 +669,8 @@ export default function PaymentPage() {
             <p className="font-semibold">
               {summary?.checkOut
                 ? (String(summary?.bookingMode || breakdown?.booking_mode || '').toUpperCase() === 'HOURLY'
-                    ? new Date(summary.checkOut).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-                    : new Date(summary.checkOut).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }))
+                    ? new Date(summary.checkOut).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })
+                    : new Date(summary.checkOut).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'short', day: 'numeric' }))
                 : 'N/A'}
             </p>
           </div>

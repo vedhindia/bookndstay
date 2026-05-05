@@ -154,8 +154,11 @@ const sendBookingConfirmationEmail = async (email, bookingDetails) => {
     userName,
     hotelName,
     hotelAddress,
+    bookingMode,
     checkIn,
     checkOut,
+    checkInAt,
+    checkOutAt,
     roomType,
     totalAmount,
     bookingId,
@@ -164,6 +167,30 @@ const sendBookingConfirmationEmail = async (email, bookingDetails) => {
     discountAmount,
     couponCode
   } = bookingDetails;
+
+  const isHourly = String(bookingMode || '').toUpperCase() === 'HOURLY';
+  const formatDateIST = (v) => {
+    if (!v) return '';
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'short', day: 'numeric' });
+  };
+  const formatDateTimeIST = (v) => {
+    if (!v) return '';
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+  };
+  const checkInText = isHourly ? formatDateTimeIST(checkInAt || checkIn) : formatDateIST(checkIn);
+  const checkOutText = isHourly ? formatDateTimeIST(checkOutAt || checkOut) : formatDateIST(checkOut);
 
   const mailOptions = {
     from: `"Hotel Booking System" <${process.env.SMTP_USER || 'no-reply@example.com'}>`,
@@ -193,11 +220,11 @@ const sendBookingConfirmationEmail = async (email, bookingDetails) => {
               </tr>
               <tr>
                 <td style="padding: 8px 0; color: #666;">Check-in:</td>
-                <td style="padding: 8px 0; font-weight: bold;">${new Date(checkIn).toLocaleDateString()}</td>
+                <td style="padding: 8px 0; font-weight: bold;">${checkInText || ''}</td>
               </tr>
               <tr>
                 <td style="padding: 8px 0; color: #666;">Check-out:</td>
-                <td style="padding: 8px 0; font-weight: bold;">${new Date(checkOut).toLocaleDateString()}</td>
+                <td style="padding: 8px 0; font-weight: bold;">${checkOutText || ''}</td>
               </tr>
               <tr>
                 <td style="padding: 8px 0; color: #666;">Room Type:</td>

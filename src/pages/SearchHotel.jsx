@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaCrosshairs } from 'react-icons/fa';
 import { getToken } from '../api/auth';
+import { buildHotelMap } from '../utils/maps';
  
 const SearchHotel = ({ state, actions }) => {
   const [hotels, setHotels] = useState([]);
@@ -452,19 +453,20 @@ const SearchHotel = ({ state, actions }) => {
                 <div className="col-md-4">
                   <div className="position-relative" style={{ height: '250px' }}>
                     {showMap ? (
-                      <iframe
-                        title={`${hotel.name} Location`}
-                        width="100%"
-                        height="100%"
-                        frameBorder="0"
-                        style={{ border: 0 }}
-                        src={`https://maps.google.com/maps?q=${
-                          hotel.latitude && hotel.longitude 
-                            ? `${hotel.latitude},${hotel.longitude}` 
-                            : encodeURIComponent(hotel.location || hotel.name)
-                        }&z=15&output=embed`}
-                        allowFullScreen
-                      ></iframe>
+                      (() => {
+                        const map = buildHotelMap(hotel);
+                        return (
+                          <iframe
+                            title={`${hotel.name} Location`}
+                            width="100%"
+                            height="100%"
+                            frameBorder="0"
+                            style={{ border: 0 }}
+                            src={map.embedSrc}
+                            allowFullScreen
+                          ></iframe>
+                        );
+                      })()
                     ) : (
                       <>
                         <img 

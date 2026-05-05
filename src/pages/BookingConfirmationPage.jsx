@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { FaCheckCircle, FaMapMarkerAlt, FaCalendarAlt, FaUsers, FaPrint, FaHome } from 'react-icons/fa';
+import { buildHotelMap } from '../utils/maps';
 
 const BookingConfirmationPage = () => {
   const navigate = useNavigate();
@@ -26,9 +27,11 @@ const BookingConfirmationPage = () => {
   const latitude = roomDetails?.latitude;
   const longitude = roomDetails?.longitude;
   const city = roomDetails?.city;
+  const mapUrl = roomDetails?.map_url || roomDetails?.mapUrl || roomDetails?.mapURL;
   const bookingId = roomDetails?.id || 'N/A';
   const checkIn = roomDetails?.checkIn;
   const checkOut = roomDetails?.checkOut;
+  const bookingMode = String(roomDetails?.bookingMode || roomDetails?.booking_mode || 'NIGHTLY').toUpperCase();
   const guests = roomDetails?.guests || 2;
   const rooms = roomDetails?.rooms || 1;
   const paymentMethod = roomDetails?.paymentMethod || roomDetails?.payment_method;
@@ -101,17 +104,25 @@ const BookingConfirmationPage = () => {
                   <p className="text-sm text-gray-500">Check-in</p>
                   <p className="font-semibold flex items-center">
                     <FaCalendarAlt className="text-[#ee2e24] mr-2" />
-                    {checkIn ? new Date(checkIn).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
+                    {checkIn
+                      ? (bookingMode === 'HOURLY'
+                          ? new Date(checkIn).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })
+                          : new Date(checkIn).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short', day: 'numeric', year: 'numeric' }))
+                      : 'N/A'}
                   </p>
-                  <p className="text-sm text-gray-500">From 12:00 PM</p>
+                  {bookingMode !== 'HOURLY' && <p className="text-sm text-gray-500">From 12:00 PM</p>}
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Check-out</p>
                   <p className="font-semibold flex items-center">
                     <FaCalendarAlt className="text-[#ee2e24] mr-2" />
-                    {checkOut ? new Date(checkOut).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
+                    {checkOut
+                      ? (bookingMode === 'HOURLY'
+                          ? new Date(checkOut).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })
+                          : new Date(checkOut).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short', day: 'numeric', year: 'numeric' }))
+                      : 'N/A'}
                   </p>
-                  <p className="text-sm text-gray-500">Until 11:00 AM</p>
+                  {bookingMode !== 'HOURLY' && <p className="text-sm text-gray-500">Until 11:00 AM</p>}
                 </div>
               </div>
               
@@ -165,23 +176,24 @@ const BookingConfirmationPage = () => {
         </div>
 
         {/* Map View */}
-        {(latitude && longitude) || address ? (
+        {(latitude && longitude) || mapUrl || address || city ? (
           <div className="bg-white rounded-lg shadow-sm p-6 mb-6 print:hidden">
             <h3 className="text-xl font-bold text-gray-800 mb-4 pb-2 border-b">Hotel Location</h3>
             <div className="h-[300px] w-full rounded-lg overflow-hidden bg-gray-100 border border-gray-200">
+              {(() => {
+                const map = buildHotelMap({ name: hotelName, latitude, longitude, address, city, map_url: mapUrl });
+                return (
               <iframe
                 title={`${hotelName} Location`}
                 width="100%"
                 height="100%"
                 frameBorder="0"
                 style={{ border: 0 }}
-                src={`https://maps.google.com/maps?q=${
-                  latitude && longitude 
-                    ? `${latitude},${longitude}` 
-                    : encodeURIComponent((address || '') + ' ' + (city || hotelName || ''))
-                }&z=15&output=embed`}
+                src={map.embedSrc}
                 allowFullScreen
               ></iframe>
+                );
+              })()}
             </div>
           </div>
         ) : null}

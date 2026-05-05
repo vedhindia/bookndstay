@@ -123,6 +123,12 @@ const Hotels = () => {
   const [status, setStatus] = useState('All');
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
+  const [availabilityFilterFrom, setAvailabilityFilterFrom] = useState(() => new Date().toISOString().slice(0, 10));
+  const [availabilityFilterTo, setAvailabilityFilterTo] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  });
 
   // UI state
   const [loading, setLoading] = useState(false);
@@ -140,6 +146,16 @@ const Hotels = () => {
   const [form, setForm] = useState(initialForm);
   const [deleting, setDeleting] = useState(false);
   const [toDelete, setToDelete] = useState(null);
+  const [showAvailability, setShowAvailability] = useState(false);
+  const [availabilityHotel, setAvailabilityHotel] = useState(null);
+  const [availabilityFrom, setAvailabilityFrom] = useState(() => new Date().toISOString().slice(0, 10));
+  const [availabilityTo, setAvailabilityTo] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  });
+  const [availabilityData, setAvailabilityData] = useState(null);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
 
   // Images modal state
   const [showImages, setShowImages] = useState(false);
@@ -208,6 +224,8 @@ const Hotels = () => {
           page,
           limit: pageSize,
           status: status !== 'All' ? status : undefined,
+          check_in: availabilityFilterFrom || undefined,
+          check_out: availabilityFilterTo || undefined,
         },
       });
       const res = resResp?.data;
@@ -230,7 +248,7 @@ const Hotels = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, status]);
+  }, [page, pageSize, status, availabilityFilterFrom, availabilityFilterTo]);
 
   useEffect(() => {
     fetchHotels();
@@ -428,8 +446,8 @@ const Hotels = () => {
     const nonAcRooms = Number(f.non_ac_rooms);
 
     if (!Number.isInteger(totalRooms) || totalRooms <= 0) return 'Total Rooms must be a positive integer';
-    if (!Number.isInteger(availableRooms) || availableRooms <= 0) return 'Available Rooms must be a positive integer';
-    if (availableRooms !== totalRooms) return 'Available Rooms must be equal to Total Rooms';
+    if (!Number.isInteger(availableRooms) || availableRooms < 0) return 'Available Rooms must be 0 or more';
+    if (availableRooms > totalRooms) return 'Available Rooms must be less than or equal to Total Rooms';
 
     if (!Number.isInteger(acRooms) || acRooms < 0) return 'AC Rooms must be 0 or more';
     if (!Number.isInteger(nonAcRooms) || nonAcRooms < 0) return 'Non-AC Rooms must be 0 or more';
@@ -661,6 +679,46 @@ const Hotels = () => {
     }
   };
 
+  const fetchAvailability = useCallback(async (hotelId, from, to) => {
+    if (!hotelId || !from || !to) return;
+    setAvailabilityLoading(true);
+    try {
+      const resp = await api.get(`/vendor/hotels/${hotelId}`, { params: { check_in: from, check_out: to } });
+      const payload = resp?.data;
+      const hotel =
+        payload?.data?.hotel ??
+        payload?.hotel ??
+        payload?.data ??
+        payload;
+      setAvailabilityData(hotel?.availability || null);
+    } catch (e) {
+      setAvailabilityData(null);
+      setError(e?.response?.data?.message || e?.message || 'Failed to load availability');
+      setTimeout(() => setError(''), 3000);
+    } finally {
+      setAvailabilityLoading(false);
+    }
+  }, []);
+
+  const openAvailability = async (h) => {
+    const from = new Date().toISOString().slice(0, 10);
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    const to = d.toISOString().slice(0, 10);
+    setAvailabilityHotel(h);
+    setAvailabilityFrom(from);
+    setAvailabilityTo(to);
+    setAvailabilityData(null);
+    setShowAvailability(true);
+    await fetchAvailability(h?.id, from, to);
+  };
+
+  const closeAvailability = () => {
+    setShowAvailability(false);
+    setAvailabilityHotel(null);
+    setAvailabilityData(null);
+  };
+
   return (
     <div className="container-fluid p-3 p-md-4">
       <div className="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
@@ -677,6 +735,26 @@ const Hotels = () => {
               setQuery(e.target.value);
               setPage(1);
             }}
+          />
+          <input
+            type="date"
+            className="form-control form-control-sm"
+            value={availabilityFilterFrom}
+            onChange={(e) => {
+              setAvailabilityFilterFrom(e.target.value);
+              setPage(1);
+            }}
+            title="Availability check-in date"
+          />
+          <input
+            type="date"
+            className="form-control form-control-sm"
+            value={availabilityFilterTo}
+            onChange={(e) => {
+              setAvailabilityFilterTo(e.target.value);
+              setPage(1);
+            }}
+            title="Availability check-out date"
           />
           <select
             className="form-select form-select-sm"
@@ -795,6 +873,13 @@ const Hotels = () => {
                   title="Images"
                 >
                   <i className="fas fa-image"></i>
+                </button>
+                <button
+                  className="btn btn-sm btn-outline-success"
+                  onClick={() => openAvailability(h)}
+                  title="Availability"
+                >
+                  <i className="fas fa-calendar-alt"></i>
                 </button>
                 <button
                   className="btn btn-sm btn-outline-danger"
@@ -1006,7 +1091,7 @@ const Hotels = () => {
                       step="1"
                       placeholder="50"
                       value={form.total_rooms}
-                      onChange={(e) => setForm({ ...form, total_rooms: e.target.value, available_rooms: e.target.value })}
+                      onChange={(e) => setForm({ ...form, total_rooms: e.target.value })}
                       required
                     />
                   </div>
@@ -1015,9 +1100,11 @@ const Hotels = () => {
                     <input
                       className="form-control"
                       type="number"
+                      min="0"
+                      step="1"
                       placeholder="50"
                       value={form.available_rooms}
-                      readOnly
+                      onChange={(e) => setForm({ ...form, available_rooms: e.target.value })}
                       required
                     />
                   </div>
@@ -1321,7 +1408,7 @@ const Hotels = () => {
                       step="1"
                       placeholder="50"
                       value={form.total_rooms}
-                      onChange={(e) => setForm({ ...form, total_rooms: e.target.value, available_rooms: e.target.value })}
+                      onChange={(e) => setForm({ ...form, total_rooms: e.target.value })}
                       required
                     />
                   </div>
@@ -1330,9 +1417,11 @@ const Hotels = () => {
                     <input
                       className="form-control"
                       type="number"
+                      min="0"
+                      step="1"
                       placeholder="50"
                       value={form.available_rooms}
-                      readOnly
+                      onChange={(e) => setForm({ ...form, available_rooms: e.target.value })}
                       required
                     />
                   </div>
@@ -1535,6 +1624,95 @@ const Hotels = () => {
                 </button>
                 <button className="btn btn-primary" onClick={uploadImages} disabled={uploading || files.length === 0}>
                   {uploading ? 'Uploading...' : 'Upload Selected'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAvailability && (
+        <div className="modal d-block" tabIndex="-1" onClick={closeAvailability}>
+          <div className="modal-dialog modal-lg" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">Availability: {availabilityHotel?.name}</h5>
+                <button className="btn-close" onClick={closeAvailability}></button>
+              </div>
+              <div className="modal-body">
+                <div className="d-flex flex-wrap gap-2 align-items-end mb-3">
+                  <div>
+                    <label className="form-label mb-1">Check-in</label>
+                    <input
+                      type="date"
+                      className="form-control form-control-sm"
+                      value={availabilityFrom}
+                      onChange={(e) => setAvailabilityFrom(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label mb-1">Check-out</label>
+                    <input
+                      type="date"
+                      className="form-control form-control-sm"
+                      value={availabilityTo}
+                      onChange={(e) => setAvailabilityTo(e.target.value)}
+                    />
+                  </div>
+                  <button
+                    className="btn btn-sm btn-outline-primary"
+                    onClick={() => fetchAvailability(availabilityHotel?.id, availabilityFrom, availabilityTo)}
+                    disabled={availabilityLoading}
+                  >
+                    {availabilityLoading ? 'Checking...' : 'Check Availability'}
+                  </button>
+                </div>
+
+                {availabilityData ? (
+                  <div className="row g-3">
+                    <div className="col-4 text-center">
+                      <div className="border rounded p-2 bg-success-subtle">
+                        <small className="text-muted d-block">Available</small>
+                        <strong className="h5 mb-0 text-success">{availabilityData.available_total}</strong>
+                      </div>
+                    </div>
+                    <div className="col-4 text-center">
+                      <div className="border rounded p-2 bg-warning-subtle">
+                        <small className="text-muted d-block">Booked</small>
+                        <strong className="h5 mb-0 text-warning">{availabilityData.booked_total}</strong>
+                      </div>
+                    </div>
+                    <div className="col-4 text-center">
+                      <div className="border rounded p-2">
+                        <small className="text-muted d-block">Mode</small>
+                        <strong className="h5 mb-0">{availabilityData.mode}</strong>
+                      </div>
+                    </div>
+                    <div className="col-6">
+                      <div className="d-flex justify-content-between border-bottom pb-1">
+                        <small>AC Available:</small>
+                        <strong>{availabilityData.available_ac}</strong>
+                      </div>
+                    </div>
+                    <div className="col-6">
+                      <div className="d-flex justify-content-between border-bottom pb-1">
+                        <small>Non-AC Available:</small>
+                        <strong>{availabilityData.available_non_ac}</strong>
+                      </div>
+                    </div>
+                    <div className="col-12">
+                      <div className="small text-muted">
+                        Capacity: Total {availabilityData.capacity_total}, AC {availabilityData.capacity_ac}, Non-AC {availabilityData.capacity_non_ac}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-muted">Select dates and click “Check Availability”.</div>
+                )}
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-secondary" onClick={closeAvailability}>
+                  Close
                 </button>
               </div>
             </div>

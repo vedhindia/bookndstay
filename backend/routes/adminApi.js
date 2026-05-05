@@ -9,6 +9,13 @@ const upload = require('../middlewares/upload');
 const adminAuthRoutes = require('./adminAuth');
 router.use('/auth', adminAuthRoutes);
 
+router.get('/notifications/stream', (req, res, next) => {
+  if (!req.headers.authorization && req.query && req.query.token) {
+    req.headers.authorization = `Bearer ${String(req.query.token)}`;
+  }
+  next();
+}, authenticate, requireRole(['ADMIN', 'SUPER_ADMIN']), adminCtrl.notificationsStream);
+
 // Authenticate all admin routes
 router.use(authenticate);
 

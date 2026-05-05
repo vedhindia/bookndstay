@@ -106,6 +106,13 @@ router.get('/public/hotels/:hotelId', (req, res, next) => {
 const vendorAuthRoutes = require('./vendorAuth');
 router.use('/auth', vendorAuthRoutes);
 
+router.get('/notifications/stream', (req, res, next) => {
+  if (!req.headers.authorization && req.query && req.query.token) {
+    req.headers.authorization = `Bearer ${String(req.query.token)}`;
+  }
+  next();
+}, authenticate, requireRole(['OWNER', 'VENDOR', 'ADMIN']), vendorCtrl.notificationsStream);
+
 // All vendor routes require OWNER/VENDOR role
 router.use(authenticate, requireRole(['OWNER', 'VENDOR', 'ADMIN']));
 

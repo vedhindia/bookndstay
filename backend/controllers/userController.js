@@ -3,7 +3,7 @@
  * Handles user operations - hotel search, booking management, reviews
  */
 
-const { Hotel, HotelImage, Room, Booking, Review, User, Vendor, Payment } = require('../models');
+const { sequelize, Hotel, HotelImage, Room, Booking, Review, User, Vendor, Payment } = require('../models');
 const { Op, literal } = require('sequelize');
 const Razorpay = require('razorpay');
 require('dotenv').config();
@@ -28,6 +28,50 @@ const getRazorpay = () => {
   return new Razorpay({ key_id, key_secret });
 };
 
+const parseTime12h = (value) => {
+  const s = String(value || '').trim();
+  if (!s) return null;
+  const m = s.match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/i);
+  if (!m) return null;
+  let hour = Number(m[1]);
+  const minute = Number(m[2] || 0);
+  const ampm = String(m[3] || '').toUpperCase();
+  if (hour < 1 || hour > 12 || minute < 0 || minute > 59) return null;
+  if (ampm === 'AM') {
+    if (hour === 12) hour = 0;
+  } else if (ampm === 'PM') {
+    if (hour !== 12) hour += 12;
+  } else {
+    return null;
+  }
+  return { hour24: hour, minute };
+};
+
+const buildISTDateTimeFromDateOnly = (dateOnly, time12h) => {
+  if (!dateOnly) return null;
+  const d = String(dateOnly).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
+  const parsed = parseTime12h(time12h) || { hour24: 12, minute: 0 };
+  const [y, mo, day] = d.split('-').map(Number);
+  const utcMs = Date.UTC(y, mo - 1, day, parsed.hour24, parsed.minute) - (5.5 * 60 * 60 * 1000);
+  return new Date(utcMs);
+};
+
+const computeRefundPercent = ({ bookingMode, msUntilCheckIn }) => {
+  const mode = String(bookingMode || 'NIGHTLY').toUpperCase();
+  if (!Number.isFinite(msUntilCheckIn) || msUntilCheckIn <= 0) return 0;
+  if (mode === 'HOURLY') {
+    const minutes = msUntilCheckIn / (60 * 1000);
+    if (minutes > 120) return 100;
+    if (minutes >= 30) return 50;
+    return 0;
+  }
+  const hours = msUntilCheckIn / (60 * 60 * 1000);
+  if (hours > 24) return 100;
+  if (hours >= 12) return 50;
+  return 0;
+};
+
 const { sendSuccess, sendError, sendPaginatedResponse } = require('../utils/responseHelper');
 const { validateRequiredFields, validateDateRange, isValidRating, validatePagination } = require('../utils/validationHelper');
 const { 
@@ -40,12 +84,44 @@ const {
 } = require('../utils/dbHelper');
 const { sendBookingConfirmationEmail } = require('../utils/mailer');
 const { asyncHandler } = require('../middlewares/errorHandler');
+const { notifyAdmins, notifyVendor } = require('../utils/notificationHub');
 
 // Helper function to create error
 const createError = (message, statusCode = 400) => {
   const error = new Error(message);
   error.statusCode = statusCode;
   return error;
+};
+
+const parseDateTimeInput = (value) => {
+  if (!value) return null;
+  if (value instanceof Date) {
+    return Number.isFinite(value.getTime()) ? new Date(value.getTime()) : null;
+  }
+
+  const s = String(value).trim();
+  if (!s) return null;
+
+  if (/([zZ]|[+-]\d{2}:\d{2})$/.test(s)) {
+    const d = new Date(s);
+    return Number.isFinite(d.getTime()) ? d : null;
+  }
+
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (m) {
+    const year = Number(m[1]);
+    const month = Number(m[2]);
+    const day = Number(m[3]);
+    const hour = Number(m[4]);
+    const minute = Number(m[5]);
+    const second = Number(m[6] || 0);
+    const utcMs = Date.UTC(year, month - 1, day, hour, minute, second) - (5.5 * 60 * 60 * 1000);
+    const d = new Date(utcMs);
+    return Number.isFinite(d.getTime()) ? d : null;
+  }
+
+  const d = new Date(s);
+  return Number.isFinite(d.getTime()) ? d : null;
 };
 
 // Helper function to update hotel average rating
@@ -75,6 +151,168 @@ const updateHotelAverageRating = async (hotelId) => {
   }
 };
 
+const resolveBookingCheckoutAt = (booking) => {
+  const mode = String(booking?.booking_mode || 'NIGHTLY').toUpperCase();
+  const toDate = (v) => {
+    if (!v) return null;
+    const d = v instanceof Date ? new Date(v.getTime()) : new Date(v);
+    return Number.isFinite(d.getTime()) ? d : null;
+  };
+
+  if (mode === 'HOURLY') {
+    return toDate(booking?.check_out_at || booking?.check_out);
+  }
+
+  const raw = booking?.check_out;
+  const d = toDate(raw);
+  if (!d) return null;
+
+  const isDateOnly =
+    typeof raw === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.trim());
+
+  if (isDateOnly) {
+    d.setUTCHours(5, 30, 0, 0);
+  }
+  return d;
+};
+
+const autoCompleteExpiredConfirmedHourlyBookingsForHotel = async (hotelId) => {
+  if (!hotelId) return;
+  const now = new Date();
+
+  const bookings = await Booking.findAll({
+    where: {
+      hotel_id: hotelId,
+      status: 'CONFIRMED',
+      booking_mode: 'HOURLY',
+      check_out_at: { [Op.lte]: now }
+    },
+    attributes: ['id']
+  });
+
+  if (!bookings.length) return;
+
+  const ids = bookings.map((b) => b.id);
+  await Booking.update(
+    { status: 'COMPLETED' },
+    { where: { id: { [Op.in]: ids }, status: 'CONFIRMED' } }
+  );
+};
+
+const autoCompleteExpiredConfirmedNightlyBookingsForHotel = async (hotelId) => {
+  if (!hotelId) return;
+  const now = new Date();
+
+  const candidates = await Booking.findAll({
+    where: {
+      hotel_id: hotelId,
+      status: 'CONFIRMED',
+      [Op.or]: [{ booking_mode: 'NIGHTLY' }, { booking_mode: null }]
+    },
+    attributes: ['id', 'room_type', 'booked_room', 'check_out', 'booking_mode']
+  });
+
+  if (!candidates.length) return;
+
+  const expired = candidates.filter((b) => {
+    const checkoutAt = resolveBookingCheckoutAt(b);
+    return checkoutAt && now.getTime() >= checkoutAt.getTime();
+  });
+
+  if (!expired.length) return;
+
+  const ids = expired.map((b) => b.id);
+  await Booking.update(
+    { status: 'COMPLETED' },
+    { where: { id: { [Op.in]: ids }, status: 'CONFIRMED' } }
+  );
+};
+
+const autoCompleteConfirmedBookingsForUser = async (userId) => {
+  const candidates = await Booking.findAll({
+    where: { user_id: userId, status: 'CONFIRMED' },
+    attributes: ['id', 'hotel_id', 'booking_mode', 'check_out', 'check_out_at']
+  });
+
+  const now = new Date();
+  const idsToComplete = [];
+  for (const b of candidates) {
+    const checkoutAt = resolveBookingCheckoutAt(b);
+    if (checkoutAt && now.getTime() >= checkoutAt.getTime()) {
+      idsToComplete.push(b.id);
+    }
+  }
+
+  if (!idsToComplete.length) return;
+  await Booking.update(
+    { status: 'COMPLETED' },
+    { where: { id: { [Op.in]: idsToComplete }, status: 'CONFIRMED' } }
+  );
+};
+
+const autoCancelExpiredPendingBookingsForUser = async (userId) => {
+  const expireTime = new Date(Date.now() - 10 * 60 * 1000);
+  await Booking.update(
+    { status: 'CANCELLED' },
+    {
+      where: {
+        user_id: userId,
+        status: 'PENDING',
+        createdAt: { [Op.lt]: expireTime }
+      }
+    }
+  );
+};
+
+const autoConfirmPendingBookingsWithSuccessfulPaymentsForUser = async (userId) => {
+  const pendingBookings = await Booking.findAll({
+    where: { user_id: userId, status: 'PENDING' },
+    attributes: ['id', 'hotel_id', 'room_type', 'booked_room', 'createdAt', 'payment_id', 'payment_method', 'vendor_id']
+  });
+
+  if (!pendingBookings.length) return;
+
+  const tenMinutes = 10 * 60 * 1000;
+  const nowMs = Date.now();
+
+  for (const booking of pendingBookings) {
+    if (!booking?.id || !booking?.hotel_id) continue;
+    if (booking.payment_id) continue;
+    if (booking.payment_method && String(booking.payment_method).toUpperCase() === 'PAY_AT_HOTEL') continue;
+
+    const createdAtMs = new Date(booking.createdAt).getTime();
+    if (Number.isFinite(createdAtMs) && nowMs - createdAtMs > tenMinutes) continue;
+
+    const payment = await Payment.findOne({ where: { booking_id: booking.id, status: 'SUCCESS' } });
+    if (!payment) continue;
+
+    await sequelize.transaction(async (t) => {
+      const fresh = await Booking.findByPk(booking.id, { transaction: t, lock: t.LOCK.UPDATE });
+      if (!fresh) return;
+      if (fresh.status !== 'PENDING') return;
+
+      const createdAtMsInner = new Date(fresh.createdAt).getTime();
+      if (Number.isFinite(createdAtMsInner) && nowMs - createdAtMsInner > tenMinutes) return;
+
+      fresh.status = 'CONFIRMED';
+      fresh.payment_id = payment.gateway_payment_id || fresh.payment_id;
+      fresh.payment_method = fresh.payment_method || 'ONLINE';
+      await fresh.save({ transaction: t });
+    });
+
+    try {
+      notifyAdmins({ section: 'bookings', id: booking.id });
+    } catch {
+      void 0;
+    }
+    try {
+      if (booking.vendor_id) notifyVendor(booking.vendor_id, { section: 'bookings', id: booking.id });
+    } catch {
+      void 0;
+    }
+  }
+};
+
 module.exports = {
   // ============ HOTEL BROWSING ============
 
@@ -82,14 +320,13 @@ module.exports = {
    * Get hotel by ID with full details
    */
   getHotelById: asyncHandler(async (req, res) => {
-    const hotel = await Hotel.findByPk(req.params.hotelId, {
-      where: { status: 'APPROVED' },
+    const hotel = await Hotel.findOne({
+      where: { id: req.params.hotelId, status: 'APPROVED' },
       include: [
         { model: HotelImage, as: 'images' },
-        // { model: Room, as: 'rooms' },
         { model: Vendor, as: 'vendor', attributes: ['id', 'full_name', 'business_name'] },
-        { 
-          model: Review, 
+        {
+          model: Review,
           as: 'reviews',
           include: [{ model: User, as: 'user', attributes: ['full_name'] }]
         }
@@ -125,6 +362,14 @@ module.exports = {
       // Continue execution even if cleanup fails
     }
 
+    try {
+      await autoCompleteExpiredConfirmedHourlyBookingsForHotel(hotel.id);
+      await autoCompleteExpiredConfirmedNightlyBookingsForHotel(hotel.id);
+      await hotel.reload();
+    } catch {
+      void 0;
+    }
+
     // Calculate real-time availability
     const { check_in, check_out, check_in_at, check_out_at } = req.query;
 
@@ -141,13 +386,18 @@ module.exports = {
     let reqEndAt = null;
 
     if (check_in_at && check_out_at) {
-      const ciAt = new Date(check_in_at);
-      const coAt = new Date(check_out_at);
-      if (!Number.isNaN(ciAt.getTime()) && !Number.isNaN(coAt.getTime()) && coAt > ciAt) {
+      const ciAt = parseDateTimeInput(check_in_at);
+      const coAt = parseDateTimeInput(check_out_at);
+      if (ciAt && coAt && !Number.isNaN(ciAt.getTime()) && !Number.isNaN(coAt.getTime()) && coAt > ciAt) {
         reqStartAt = ciAt;
         reqEndAt = coAt;
         targetCheckIn = toDateOnly(ciAt) || targetCheckIn;
         targetCheckOut = toDateOnly(coAt) || targetCheckOut;
+        if (targetCheckOut && targetCheckIn && String(targetCheckOut) <= String(targetCheckIn)) {
+          const d = new Date(`${targetCheckIn}T00:00:00`);
+          d.setDate(d.getDate() + 1);
+          targetCheckOut = d.toISOString().split('T')[0];
+        }
       }
     }
 
@@ -162,26 +412,15 @@ module.exports = {
       reqEndAt = new Date(`${targetCheckOut}T00:00:00`);
     }
 
-    // 1. Calculate Bookings (PENDING + CONFIRMED) to subtract from available inventory
-    // We count both PENDING and CONFIRMED bookings because we treat the Hotel table's inventory as TOTAL CAPACITY.
-    const bookingCondition = { 
-      status: { [Op.in]: ['PENDING', 'CONFIRMED'] }
+    // Availability shown to users should reflect current inventory minus temporary holds (PENDING bookings).
+    // CONFIRMED bookings already decrement hotel availability at confirmation time.
+    const activePendingSince = new Date(Date.now() - 10 * 60 * 1000);
+    const statusWhere = {
+      [Op.or]: [
+        { status: 'CONFIRMED' },
+        { status: 'PENDING', createdAt: { [Op.gte]: activePendingSince } }
+      ]
     };
-    
-    // Only exclude current user's PENDING bookings if authenticated (so they don't block themselves?)
-    // Actually, if a user has a PENDING booking, they ARE blocking the room.
-    // But if they are viewing the hotel again, maybe they want to book another room?
-    // The original logic excluded current user's PENDING bookings. Let's keep that for PENDING only.
-    if (req.user && req.user.id) {
-        // This is tricky with Op.or. Let's simplify:
-        // We want: (Status=CONFIRMED) OR (Status=PENDING AND User!=Me)
-        // But for simplicity, let's just count ALL bookings.
-        // If I have a pending booking, I am using a room.
-        // If I want to book ANOTHER room, I need to know if there are OTHERS available.
-        // So I should count my own pending booking as "used".
-    }
-
-    const statusWhere = { [Op.in]: ['PENDING', 'CONFIRMED'] };
     const nightlyModeWhere = { [Op.or]: [{ booking_mode: 'NIGHTLY' }, { booking_mode: null }] };
     const hourlyModeWhere = { booking_mode: 'HOURLY' };
 
@@ -189,7 +428,7 @@ module.exports = {
       Booking.sum('booked_room', {
         where: {
           hotel_id: hotel.id,
-          status: statusWhere,
+          ...statusWhere,
           ...nightlyModeWhere,
           [Op.and]: [
             { check_in: { [Op.lt]: targetCheckOut } },
@@ -200,7 +439,7 @@ module.exports = {
       Booking.sum('booked_room', {
         where: {
           hotel_id: hotel.id,
-          status: statusWhere,
+          ...statusWhere,
           ...hourlyModeWhere,
           [Op.and]: [
             { check_in_at: { [Op.lt]: reqEndAt } },
@@ -217,7 +456,7 @@ module.exports = {
         where: {
           hotel_id: hotel.id,
           room_type: 'AC',
-          status: statusWhere,
+          ...statusWhere,
           ...nightlyModeWhere,
           [Op.and]: [
             { check_in: { [Op.lt]: targetCheckOut } },
@@ -229,7 +468,7 @@ module.exports = {
         where: {
           hotel_id: hotel.id,
           room_type: 'AC',
-          status: statusWhere,
+          ...statusWhere,
           ...hourlyModeWhere,
           [Op.and]: [
             { check_in_at: { [Op.lt]: reqEndAt } },
@@ -247,7 +486,7 @@ module.exports = {
         where: {
           hotel_id: hotel.id,
           room_type: { [Op.in]: nonAcRoomTypeValues },
-          status: statusWhere,
+          ...statusWhere,
           ...nightlyModeWhere,
           [Op.and]: [
             { check_in: { [Op.lt]: targetCheckOut } },
@@ -259,7 +498,7 @@ module.exports = {
         where: {
           hotel_id: hotel.id,
           room_type: { [Op.in]: nonAcRoomTypeValues },
-          status: statusWhere,
+          ...statusWhere,
           ...hourlyModeWhere,
           [Op.and]: [
             { check_in_at: { [Op.lt]: reqEndAt } },
@@ -270,17 +509,15 @@ module.exports = {
     ]);
     const nonAcBookedCount = Number(nonAcNightlyBookedRaw || 0) + Number(nonAcHourlyBookedRaw || 0);
 
-    // Overwrite the fields with AVAILABLE count
-    // The DB values (ac_rooms, non_ac_rooms, available_rooms) represent "Total Capacity".
-    const acTotalCapacity = parseInt(hotel.ac_rooms || 0);
-    const nonAcTotalCapacity = parseInt(hotel.non_ac_rooms || 0);
-    const totalCapacity = parseInt(hotel.available_rooms || 0);
+    // Overwrite response fields with computed available counts (without persisting).
+    const acCapacity = parseInt(hotel.ac_rooms || 0);
+    const nonAcCapacity = parseInt(hotel.non_ac_rooms || 0);
+    const capacity = parseInt(hotel.available_rooms || 0);
     
-    hotel.setDataValue('ac_rooms', Math.max(0, acTotalCapacity - acBookedCount));
-    hotel.setDataValue('non_ac_rooms', Math.max(0, nonAcTotalCapacity - nonAcBookedCount));
+    hotel.setDataValue('ac_rooms', Math.max(0, acCapacity - acBookedCount));
+    hotel.setDataValue('non_ac_rooms', Math.max(0, nonAcCapacity - nonAcBookedCount));
     
-    // Set total available rooms based on TotalInventory - Booked
-    hotel.setDataValue('available_rooms', Math.max(0, totalCapacity - bookedCount));
+    hotel.setDataValue('available_rooms', Math.max(0, capacity - bookedCount));
 
     hotel.images = (hotel.images || []).filter(img => img.url && img.url.startsWith('/uploads/') && !img.url.includes('/src/assets/'));
     sendSuccess(res, { hotel }, 'Hotel details retrieved successfully');
@@ -426,9 +663,9 @@ module.exports = {
     let reqEndAt = null;
 
     if (check_in_at && check_out_at) {
-      const ciAt = new Date(check_in_at);
-      const coAt = new Date(check_out_at);
-      if (!Number.isNaN(ciAt.getTime()) && !Number.isNaN(coAt.getTime()) && coAt > ciAt) {
+      const ciAt = parseDateTimeInput(check_in_at);
+      const coAt = parseDateTimeInput(check_out_at);
+      if (ciAt && coAt && !Number.isNaN(ciAt.getTime()) && !Number.isNaN(coAt.getTime()) && coAt > ciAt) {
         reqStartAt = ciAt;
         reqEndAt = coAt;
         targetCheckIn = toDateOnly(ciAt) || targetCheckIn;
@@ -447,7 +684,13 @@ module.exports = {
       reqEndAt = new Date(`${targetCheckOut}T00:00:00`);
     }
 
-    const statusWhere = { [Op.in]: ['PENDING', 'CONFIRMED'] };
+    const activePendingSince = new Date(Date.now() - 10 * 60 * 1000);
+    const statusWhere = {
+      [Op.or]: [
+        { status: 'CONFIRMED' },
+        { status: 'PENDING', createdAt: { [Op.gte]: activePendingSince } }
+      ]
+    };
     const nightlyModeWhere = { [Op.or]: [{ booking_mode: 'NIGHTLY' }, { booking_mode: null }] };
     const hourlyModeWhere = { booking_mode: 'HOURLY' };
     const nonAcRoomTypeValues = ['NON_AC', 'Non AC', 'NON-AC', 'Non-AC', 'NON AC'];
@@ -462,7 +705,7 @@ module.exports = {
         where: {
           hotel_id: hotel.id,
           room_type: 'AC',
-          status: statusWhere,
+          ...statusWhere,
           ...nightlyModeWhere,
           [Op.and]: [
             { check_in: { [Op.lt]: targetCheckOut } },
@@ -474,7 +717,7 @@ module.exports = {
         where: {
           hotel_id: hotel.id,
           room_type: 'AC',
-          status: statusWhere,
+          ...statusWhere,
           ...hourlyModeWhere,
           [Op.and]: [
             { check_in_at: { [Op.lt]: reqEndAt } },
@@ -486,7 +729,7 @@ module.exports = {
         where: {
           hotel_id: hotel.id,
           room_type: { [Op.in]: nonAcRoomTypeValues },
-          status: statusWhere,
+          ...statusWhere,
           ...nightlyModeWhere,
           [Op.and]: [
             { check_in: { [Op.lt]: targetCheckOut } },
@@ -498,7 +741,7 @@ module.exports = {
         where: {
           hotel_id: hotel.id,
           room_type: { [Op.in]: nonAcRoomTypeValues },
-          status: statusWhere,
+          ...statusWhere,
           ...hourlyModeWhere,
           [Op.and]: [
             { check_in_at: { [Op.lt]: reqEndAt } },
@@ -588,17 +831,13 @@ module.exports = {
       if (!check_in_at || !check_out_at) {
         throw createError('Missing required fields: check_in_at, check_out_at', 400);
       }
-      ciAt = new Date(check_in_at);
-      coAt = new Date(check_out_at);
-      if (Number.isNaN(ciAt.getTime()) || Number.isNaN(coAt.getTime())) {
+      ciAt = parseDateTimeInput(check_in_at);
+      coAt = parseDateTimeInput(check_out_at);
+      if (!ciAt || !coAt || Number.isNaN(ciAt.getTime()) || Number.isNaN(coAt.getTime())) {
         throw createError('Invalid datetime format for check_in_at/check_out_at', 400);
       }
       if (coAt <= ciAt) {
         throw createError('check_out_at must be after check_in_at', 400);
-      }
-      const now = new Date();
-      if (ciAt < now) {
-        throw createError('Check-in time cannot be in the past', 400);
       }
       durationHours = Math.max(1, Math.ceil((coAt - ciAt) / (1000 * 60 * 60)));
       effectiveCheckIn = toDateOnly(ciAt);
@@ -623,191 +862,176 @@ module.exports = {
       throw createError('Invalid room type. Must be AC or NON_AC', 400);
     }
 
-    // Get hotel details
-    const hotel = await Hotel.findByPk(hotel_id, {
-      where: { status: 'APPROVED' }
-    });
-
-    if (!hotel) {
-      throw createError('Hotel not found or not approved', 404);
-    }
-
-    // AUTO-CANCEL: Cancel previous PENDING bookings for this user at this hotel to prevent inventory locking
-    try {
-      const previousPending = await Booking.findAll({
-        where: {
-          user_id: req.user.id,
-          hotel_id,
-          status: 'PENDING'
-        }
-      });
-
-      if (previousPending.length > 0) {
-        for (const prevBooking of previousPending) {
-          prevBooking.status = 'CANCELLED';
-          await prevBooking.save();
-          // Note: We do NOT restore inventory because PENDING bookings do not decrement Hotel inventory.
-        }
-      }
-    } catch (err) {
-      console.error('Error auto-cancelling previous bookings:', err);
-    }
-
-    // Determine price and capacity
-    let pricePerNight = 0;
-    let totalCapacity = 0;
-
-    if (normalizedRoomType === 'AC') {
-      pricePerNight = parseFloat(hotel.ac_room_price || 0);
-      totalCapacity = Number(hotel.ac_rooms || 0);
-    } else {
-      pricePerNight = parseFloat(hotel.non_ac_room_price || 0);
-      totalCapacity = Number(hotel.non_ac_rooms || 0);
-    }
-    if (!pricePerNight) {
-      pricePerNight = parseFloat(hotel.base_price || 0);
-    }
-    if (totalCapacity <= 0) {
-      totalCapacity = Number(hotel.available_rooms || hotel.total_rooms || 0);
-    }
-    if (!pricePerNight || totalCapacity <= 0) {
-      throw createError(`Selected room type (${normalizedRoomType}) is not available at this hotel`, 400);
-    }
-
-    // Check availability
-    const statusWhere = { [Op.in]: ['PENDING', 'CONFIRMED'] };
-    const nightlyModeWhere = { [Op.or]: [{ booking_mode: 'NIGHTLY' }, { booking_mode: null }] };
-    const hourlyModeWhere = { booking_mode: 'HOURLY' };
-
-    const nightlyOverlapWhere = {
-      hotel_id,
-      room_type: normalizedRoomType,
-      status: statusWhere,
-      ...nightlyModeWhere,
-      [Op.and]: [
-        { check_in: { [Op.lt]: effectiveCheckOut } },
-        { check_out: { [Op.gt]: effectiveCheckIn } }
+    const activePendingSince = new Date(Date.now() - 10 * 60 * 1000);
+    const activeStatusWhere = {
+      [Op.or]: [
+        { status: 'CONFIRMED' },
+        { status: 'PENDING', createdAt: { [Op.gte]: activePendingSince } }
       ]
     };
 
-    const hourlyOverlapWhere = (() => {
-      const reqStartAt = bookingMode === 'HOURLY' ? ciAt : new Date(`${effectiveCheckIn}T00:00:00`);
-      const reqEndAt = bookingMode === 'HOURLY' ? coAt : new Date(`${effectiveCheckOut}T00:00:00`);
-      return {
+    let createdBooking = null;
+    let computed = null;
+
+    await sequelize.transaction(async (t) => {
+      const hotel = await Hotel.findOne({ where: { id: hotel_id, status: 'APPROVED' }, transaction: t, lock: t.LOCK.UPDATE });
+      if (!hotel) throw createError('Hotel not found or not approved', 404);
+
+      await Booking.update(
+        { status: 'CANCELLED' },
+        { where: { user_id: req.user.id, hotel_id, status: 'PENDING' }, transaction: t }
+      );
+
+      let pricePerNight = 0;
+      let typeCapacity = 0;
+
+      if (normalizedRoomType === 'AC') {
+        pricePerNight = parseFloat(hotel.ac_room_price || 0);
+        typeCapacity = Number(hotel.ac_rooms || 0);
+      } else {
+        pricePerNight = parseFloat(hotel.non_ac_room_price || 0);
+        typeCapacity = Number(hotel.non_ac_rooms || 0);
+      }
+      if (!pricePerNight) {
+        pricePerNight = parseFloat(hotel.base_price || 0);
+      }
+      const totalCapacity = Number(hotel.available_rooms || 0);
+
+      if (!pricePerNight || typeCapacity <= 0 || totalCapacity <= 0) {
+        throw createError(`Selected room type (${normalizedRoomType}) is not available at this hotel`, 400);
+      }
+      if (Number(rooms) > typeCapacity || Number(rooms) > totalCapacity) {
+        throw createError('Not enough rooms available for the selected dates', 400);
+      }
+
+      const nightlyModeWhere = { [Op.or]: [{ booking_mode: 'NIGHTLY' }, { booking_mode: null }] };
+      const hourlyModeWhere = { booking_mode: 'HOURLY' };
+
+      const nightlyOverlapWhere = {
         hotel_id,
         room_type: normalizedRoomType,
-        status: statusWhere,
-        ...hourlyModeWhere,
+        ...activeStatusWhere,
+        ...nightlyModeWhere,
         [Op.and]: [
-          { check_in_at: { [Op.lt]: reqEndAt } },
-          { check_out_at: { [Op.gt]: reqStartAt } }
+          { check_in: { [Op.lt]: effectiveCheckOut } },
+          { check_out: { [Op.gt]: effectiveCheckIn } }
         ]
       };
-    })();
 
-    const [nightlyBookedRoomsRaw, hourlyBookedRoomsRaw] = await Promise.all([
-      Booking.sum('booked_room', { where: nightlyOverlapWhere }),
-      Booking.sum('booked_room', { where: hourlyOverlapWhere })
-    ]);
-    const overlappingBookedRooms = Number(nightlyBookedRoomsRaw || 0) + Number(hourlyBookedRoomsRaw || 0);
+      const hourlyOverlapWhere = (() => {
+        const reqStartAt = bookingMode === 'HOURLY' ? ciAt : new Date(`${effectiveCheckIn}T00:00:00`);
+        const reqEndAt = bookingMode === 'HOURLY' ? coAt : new Date(`${effectiveCheckOut}T00:00:00`);
+        return {
+          hotel_id,
+          room_type: normalizedRoomType,
+          ...activeStatusWhere,
+          ...hourlyModeWhere,
+          [Op.and]: [
+            { check_in_at: { [Op.lt]: reqEndAt } },
+            { check_out_at: { [Op.gt]: reqStartAt } }
+          ]
+        };
+      })();
 
-    // Check if enough rooms are available
-    if (overlappingBookedRooms + Number(rooms) > totalCapacity) {
-      throw createError('Not enough rooms available for the selected dates', 400);
-    }
+      const [nightlyBookedRoomsRaw, hourlyBookedRoomsRaw] = await Promise.all([
+        Booking.sum('booked_room', { where: nightlyOverlapWhere, transaction: t }),
+        Booking.sum('booked_room', { where: hourlyOverlapWhere, transaction: t })
+      ]);
 
-    // Calculate base booking amount
-    let baseAmount = 0;
-    let nights = null;
-    let pricePerHour = null;
-
-    if (bookingMode === 'HOURLY') {
-      const explicitPricePerHour =
-        normalizedRoomType === 'AC'
-          ? parseFloat(hotel.ac_price_per_hour || 0)
-          : parseFloat(hotel.non_ac_price_per_hour || 0);
-      const derived = parseFloat((pricePerNight / 24).toFixed(2));
-      pricePerHour = explicitPricePerHour > 0 ? explicitPricePerHour : derived;
-      baseAmount = pricePerHour * Number(durationHours) * Number(rooms);
-    } else {
-      const calculated = calculateBookingAmount(pricePerNight, effectiveCheckIn, effectiveCheckOut);
-      nights = calculated.nights;
-      baseAmount = calculated.amount * Number(rooms);
-    }
-    
-    let finalAmount = baseAmount;
-    let discountAmount = 0;
-    let appliedCouponCode = null;
-
-    // Coupon logic
-    if (coupon_code) {
-      const { Coupon } = require('../models');
-      const now = new Date();
-      
-      const coupon = await Coupon.findOne({
-          where: {
-              code: coupon_code,
-              active: true,
-              expiry: { [Op.or]: [{ [Op.gt]: now }, null] },
-              used_count: { [Op.lt]: literal('usage_limit') }
-          }
-      });
-
-      if (coupon) {
-        if (coupon.type === 'PERCENT') {
-          discountAmount = (baseAmount * coupon.value) / 100;
-        } else {
-          discountAmount = coupon.value;
-        }
-        discountAmount = Math.min(discountAmount, baseAmount);
-        finalAmount = Math.max(0, baseAmount - discountAmount);
-        appliedCouponCode = coupon.code;
+      const overlappingBookedRooms = Number(nightlyBookedRoomsRaw || 0) + Number(hourlyBookedRoomsRaw || 0);
+      if (overlappingBookedRooms + Number(rooms) > typeCapacity) {
+        throw createError('Not enough rooms available for the selected dates', 400);
       }
-    }
 
-    // Create booking
-    const booking = await Booking.create({
-      user_id: req.user.id,
-      vendor_id: hotel.vendor_id,
-      hotel_id,
-      room_type: normalizedRoomType,
-      // room_id is null
-      booking_mode: bookingMode,
-      check_in: effectiveCheckIn,
-      check_out: effectiveCheckOut,
-      check_in_at: ciAt,
-      check_out_at: coAt,
-      duration_hours: durationHours,
-      guests,
-      booked_room: rooms,
-      amount: finalAmount,
-      price_per_night: pricePerNight,
-      price_per_hour: pricePerHour,
-      base_amount: baseAmount,
-      discount_amount: discountAmount,
-      nights,
-      coupon_applied: appliedCouponCode,
-      coupon_code: appliedCouponCode,
-      status: 'PENDING',
-      payment_method: null // Ensure this is not set until payment is completed
+      let baseAmount = 0;
+      let nights = null;
+      let pricePerHour = null;
+
+      if (bookingMode === 'HOURLY') {
+        const explicitPricePerHour =
+          normalizedRoomType === 'AC'
+            ? parseFloat(hotel.ac_price_per_hour || 0)
+            : parseFloat(hotel.non_ac_price_per_hour || 0);
+        const derived = parseFloat((pricePerNight / 24).toFixed(2));
+        pricePerHour = explicitPricePerHour > 0 ? explicitPricePerHour : derived;
+        baseAmount = pricePerHour * Number(durationHours) * Number(rooms);
+      } else {
+        const calculated = calculateBookingAmount(pricePerNight, effectiveCheckIn, effectiveCheckOut);
+        nights = calculated.nights;
+        baseAmount = calculated.amount * Number(rooms);
+      }
+
+      let finalAmount = baseAmount;
+      let discountAmount = 0;
+      let appliedCouponCode = null;
+
+      if (coupon_code) {
+        const { Coupon } = require('../models');
+        const now = new Date();
+        const coupon = await Coupon.findOne({
+          where: {
+            code: coupon_code,
+            active: true,
+            expiry: { [Op.or]: [{ [Op.gt]: now }, null] },
+            used_count: { [Op.lt]: literal('usage_limit') }
+          },
+          transaction: t
+        });
+
+        if (coupon) {
+          if (coupon.type === 'PERCENT') {
+            discountAmount = (baseAmount * coupon.value) / 100;
+          } else {
+            discountAmount = coupon.value;
+          }
+          discountAmount = Math.min(discountAmount, baseAmount);
+          finalAmount = Math.max(0, baseAmount - discountAmount);
+          appliedCouponCode = coupon.code;
+        }
+      }
+
+      createdBooking = await Booking.create(
+        {
+          user_id: req.user.id,
+          vendor_id: hotel.vendor_id,
+          hotel_id,
+          room_type: normalizedRoomType,
+          booking_mode: bookingMode,
+          check_in: effectiveCheckIn,
+          check_out: effectiveCheckOut,
+          check_in_at: ciAt,
+          check_out_at: coAt,
+          duration_hours: durationHours,
+          guests,
+          booked_room: rooms,
+          amount: finalAmount,
+          price_per_night: pricePerNight,
+          price_per_hour: pricePerHour,
+          base_amount: baseAmount,
+          discount_amount: discountAmount,
+          nights,
+          coupon_applied: appliedCouponCode,
+          coupon_code: appliedCouponCode,
+          status: 'PENDING',
+          payment_method: null
+        },
+        { transaction: t }
+      );
+
+      computed = {
+        amount: finalAmount,
+        price_per_night: pricePerNight,
+        price_per_hour: pricePerHour,
+        base_amount: baseAmount,
+        discount_amount: discountAmount,
+        nights,
+        duration_hours: durationHours,
+        booking_mode: bookingMode,
+        coupon_applied: appliedCouponCode
+      };
     });
 
-    // NOTE: We do NOT update Hotel table inventory (ac_rooms, available_rooms, booked_room) here.
-    // Inventory is only permanently deducted when status becomes CONFIRMED.
-    // Availability for new bookings is calculated dynamically in getHotelById by checking PENDING + CONFIRMED bookings.
-
-    sendSuccess(res, { 
-      booking, 
-      amount: finalAmount, 
-      price_per_night: pricePerNight,
-      price_per_hour: pricePerHour,
-      base_amount: baseAmount,
-      discount_amount: discountAmount,
-      nights,
-      duration_hours: durationHours,
-      booking_mode: bookingMode,
-      coupon_applied: appliedCouponCode 
-    }, 'Booking created successfully', 201);
+    sendSuccess(res, { booking: createdBooking, ...computed }, 'Booking created successfully', 201);
   }),
 
   /**
@@ -818,6 +1042,10 @@ module.exports = {
     
     // Validate pagination
     const { page, limit } = validatePagination(queryPage, queryLimit);
+
+    await autoCancelExpiredPendingBookingsForUser(req.user.id);
+    await autoConfirmPendingBookingsWithSuccessfulPaymentsForUser(req.user.id);
+    await autoCompleteConfirmedBookingsForUser(req.user.id);
 
     // Build where conditions
     const where = { user_id: req.user.id };
@@ -861,6 +1089,31 @@ module.exports = {
 
     if (!booking) {
       throw createError('Booking not found', 404);
+    }
+
+    if (booking.status === 'PENDING') {
+      const createdAt = new Date(booking.createdAt).getTime();
+      if (Number.isFinite(createdAt) && Date.now() - createdAt > 10 * 60 * 1000) {
+        booking.status = 'CANCELLED';
+        await booking.save();
+      }
+    }
+
+    if (booking.status === 'CONFIRMED') {
+      const checkoutAt = resolveBookingCheckoutAt(booking);
+      if (checkoutAt && Date.now() >= checkoutAt.getTime()) {
+        const mode = String(booking?.booking_mode || 'NIGHTLY').toUpperCase();
+        if (mode === 'HOURLY' && booking.hotel_id) {
+          await autoCompleteExpiredConfirmedHourlyBookingsForHotel(booking.hotel_id);
+          await booking.reload({ include: getBookingIncludes() });
+        } else if (booking.hotel_id) {
+          await autoCompleteExpiredConfirmedNightlyBookingsForHotel(booking.hotel_id);
+          await booking.reload({ include: getBookingIncludes() });
+        } else {
+          booking.status = 'COMPLETED';
+          await booking.save();
+        }
+      }
     }
 
     sendSuccess(res, { booking }, 'Booking details retrieved successfully');
@@ -1093,7 +1346,10 @@ module.exports = {
         if (payment_method === 'ONLINE' && gateway_payment_id) {
           try {
             // Attempt auto-refund via Razorpay
-            await razorpay.payments.refund(gateway_payment_id);
+            const razorpay = getRazorpay();
+            if (razorpay) {
+              await razorpay.payments.refund(gateway_payment_id);
+            }
             console.log(`Refunded late payment: ${gateway_payment_id}`);
           } catch (e) {
             console.error('Refund failed:', e);
@@ -1108,7 +1364,7 @@ module.exports = {
         const payment = await Payment.findOne({ where: { booking_id: booking.id } });
         if (payment) {
           payment.gateway_payment_id = gateway_payment_id || payment.gateway_payment_id;
-          payment.status = 'REFUNDED'; // Or FAILED if refund logic isn't fully integrated
+          payment.status = 'FAILED';
           await payment.save();
         }
 
@@ -1125,27 +1381,30 @@ module.exports = {
     await payment.save();
     
     if (payment.status === 'SUCCESS') {
-      booking.status = 'CONFIRMED';
-      booking.payment_id = payment.gateway_payment_id;
-      if (payment_method) {
-        booking.payment_method = payment_method;
+      if (booking.status === 'CANCELLED') {
+        throw createError('Booking is cancelled/expired. Please create a new booking.', 400);
       }
-      await booking.save();
 
-      // UPDATE HOTEL INVENTORY: 
-      // We do NOT deduct rooms from the Hotel table anymore.
-      // The Hotel table fields (ac_rooms, non_ac_rooms, available_rooms) represent TOTAL CAPACITY.
-      // Availability is calculated dynamically in getHotelById and createBooking based on overlapping bookings.
-      /*
-      if (booking.hotel) {
-        const hotel = booking.hotel;
-        const roomsToBook = Number(booking.booked_room) || 1;
-        
-        // We might want to track total bookings count for analytics, but not for availability.
-        // hotel.booked_room = (Number(hotel.booked_room) || 0) + roomsToBook;
-        // await hotel.save();
+      if (booking.status !== 'CONFIRMED') {
+        booking.status = 'CONFIRMED';
+        booking.payment_id = payment.gateway_payment_id || booking.payment_id;
+        if (payment_method) booking.payment_method = payment_method;
+        await booking.save();
+
+        try {
+          notifyAdmins({ section: 'bookings', id: booking.id });
+        } catch {
+          void 0;
+        }
+        try {
+          if (booking.vendor_id) notifyVendor(booking.vendor_id, { section: 'bookings', id: booking.id });
+        } catch {
+          void 0;
+        }
+      } else if (payment_method && !booking.payment_method) {
+        booking.payment_method = payment_method;
+        await booking.save();
       }
-      */
 
       // Send confirmation email
       console.log('Attempting to send confirmation email for booking:', booking.id);
@@ -1156,8 +1415,11 @@ module.exports = {
             userName: booking.user.full_name || 'Valued Guest',
             hotelName: booking.hotel ? booking.hotel.name : 'Hotel',
             hotelAddress: booking.hotel ? booking.hotel.address : '',
+            bookingMode: booking.booking_mode,
             checkIn: booking.check_in,
             checkOut: booking.check_out,
+            checkInAt: booking.check_in_at,
+            checkOutAt: booking.check_out_at,
             roomType: booking.room_type,
             totalAmount: booking.amount,
             bookingId: booking.id,
@@ -1219,53 +1481,78 @@ module.exports = {
       throw createError('Booking already cancelled', 400);
     }
 
-    // Check cancellation policy for confirmed bookings
-    if (booking.status === 'CONFIRMED') {
-      const checkInDate = new Date(booking.check_in);
-      const now = new Date();
-      
-      // Policy: 
-      // - Cancel before 12:00 AM (midnight) of check-in day: Full Refund
-      // - Cancel on booking day (after midnight): Penalty applied
-      
-      const checkInMidnight = new Date(checkInDate);
-      checkInMidnight.setHours(0, 0, 0, 0);
-      
-      if (now < checkInMidnight) {
-        // Full Refund
-        booking.refund_status = 'FULL_REFUND';
-      } else {
-        // Penalty Applied
-        booking.refund_status = 'PENALTY_APPLIED';
+    if (booking.status === 'COMPLETED') {
+      throw createError('Completed bookings cannot be cancelled', 400);
+    }
+
+    const now = new Date();
+    const wasConfirmed = booking.status === 'CONFIRMED';
+    const mode = String(booking.booking_mode || 'NIGHTLY').toUpperCase();
+    let refundPercent = 0;
+    let refundAmount = 0;
+    let refundAttempted = false;
+    let refundSucceeded = false;
+    let refundError = null;
+
+    if (wasConfirmed) {
+      if (String(booking.payment_method || '').toUpperCase() !== 'PAY_AT_HOTEL') {
+        const payment = await Payment.findOne({ where: { booking_id: booking.id } });
+        if (payment && payment.status === 'SUCCESS' && String(payment.gateway || '').toUpperCase() === 'RAZORPAY') {
+          let checkInAt = null;
+          if (mode === 'HOURLY' && booking.check_in_at) {
+            checkInAt = new Date(booking.check_in_at);
+          } else {
+            const hotel = await Hotel.findByPk(booking.hotel_id);
+            const checkInTime = hotel?.check_in_time || '12:00 PM';
+            checkInAt = buildISTDateTimeFromDateOnly(booking.check_in, checkInTime);
+          }
+
+          if (checkInAt && !Number.isNaN(checkInAt.getTime())) {
+            refundPercent = computeRefundPercent({ bookingMode: mode, msUntilCheckIn: checkInAt.getTime() - now.getTime() });
+          } else {
+            refundPercent = 0;
+          }
+
+          refundAmount = Math.max(0, (Number(payment.amount) || 0) * (refundPercent / 100));
+          refundAmount = Math.round(refundAmount * 100) / 100;
+
+          if (refundPercent > 0 && payment.gateway_payment_id) {
+            const razorpay = getRazorpay();
+            if (razorpay) {
+              refundAttempted = true;
+              try {
+                const amountPaise = Math.max(1, Math.round(refundAmount * 100));
+                await razorpay.payments.refund(payment.gateway_payment_id, { amount: amountPaise });
+                refundSucceeded = true;
+              } catch (e) {
+                refundError = e?.error?.description || e?.message || 'Refund failed';
+              }
+            }
+          }
+        }
       }
     }
 
-    // Capture original status to decide if we need to restore inventory
-    const originalStatus = booking.status;
-
-    // Cancel booking and restore room availability
     booking.status = 'CANCELLED';
+    booking.refund_percent = wasConfirmed ? (refundPercent || 0) : null;
+    booking.refund_amount = wasConfirmed ? (refundAmount || 0) : 0;
+
+    if (!wasConfirmed) {
+      booking.refund_status = null;
+    } else if (String(booking.payment_method || '').toUpperCase() === 'PAY_AT_HOTEL') {
+      booking.refund_status = 'NOT_APPLICABLE_PAY_AT_HOTEL';
+    } else if (!refundPercent) {
+      booking.refund_status = 'NO_REFUND';
+    } else if (refundSucceeded) {
+      booking.refund_status = refundPercent === 100 ? 'REFUNDED_FULL' : 'REFUNDED_PARTIAL';
+    } else if (refundAttempted) {
+      booking.refund_status = 'REFUND_FAILED';
+    } else {
+      booking.refund_status = 'REFUND_PENDING_MANUAL';
+    }
     await booking.save();
-    
-    // Restore counts on Hotel model ONLY IF original status was CONFIRMED
-    // However, since we now treat Hotel fields as TOTAL CAPACITY, we do NOT restore them.
-    /*
-    if (originalStatus === 'CONFIRMED') {
-      const hotel = await Hotel.findByPk(booking.hotel_id);
-      if (hotel) {
-        // ... restore logic ...
-        // await hotel.save();
-      }
-    }
-    */
 
-    // Restore legacy Room model (deprecated but kept for backward compatibility if needed)
-    const room = await Room.findByPk(booking.room_id);
-    if (room) {
-      await room.update({ available_rooms: room.available_rooms + 1 });
-    }
-
-    sendSuccess(res, { booking }, 'Booking cancelled successfully');
+    sendSuccess(res, { booking, refund: { refundPercent, refundAmount, refundAttempted, refundSucceeded, refundError } }, 'Booking cancelled successfully');
   }),
 
   // ============ REVIEW MANAGEMENT ============

@@ -1,13 +1,16 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { logoutVendor } from "./utils/auth";
+import { getAuthToken, logoutVendor } from "./utils/auth";
 import api from "./services/apiClient";
+import { API_BASE_URL } from "./config";
 
 const Sidebar = ({ isCollapsed, onClose }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [expandedItems, setExpandedItems] = useState({});
-  const [badgeCounts, setBadgeCounts] = useState({ users: 0, bookings: 0 });
+  const [badgeCounts, setBadgeCounts] = useState({ bookings: 0 });
+  const [seenBookingIds, setSeenBookingIds] = useState(() => new Set());
+  const [unseenBookingIds, setUnseenBookingIds] = useState(() => new Set());
 
   const menuItems = [
     { title: 'Dashboard', icon: 'fas fa-tachometer-alt', path: '/dashboard', exact: true },
@@ -23,41 +26,80 @@ const Sidebar = ({ isCollapsed, onClose }) => {
     return exact ? location.pathname === path : location.pathname.startsWith(path);
   };
 
-  const lastSeenKeyForPath = (path) => {
-    if (path.startsWith('/dashboard/users')) return 'vendor_last_seen_users';
-    if (path.startsWith('/dashboard/bookings')) return 'vendor_last_seen_bookings';
-    return null;
-  };
-
   const sectionKeyForPath = (path) => {
-    if (path.startsWith('/dashboard/users')) return 'users';
     if (path.startsWith('/dashboard/bookings')) return 'bookings';
     return null;
   };
 
-  const ensureLastSeenInitialized = () => {
-    const now = new Date().toISOString();
-    const keys = ['vendor_last_seen_users', 'vendor_last_seen_bookings'];
-    keys.forEach((k) => {
-      try {
-        const v = localStorage.getItem(k);
-        if (!v) localStorage.setItem(k, now);
-      } catch {}
-    });
+  const loadSeenBookingIds = () => {
+    try {
+      const raw = localStorage.getItem('vendor_seen_booking_ids_v1');
+      if (!raw) return new Set();
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return new Set();
+      return new Set(parsed.map((v) => String(v)));
+    } catch {
+      return new Set();
+    }
+  };
+
+  const loadUnseenBookingIds = () => {
+    try {
+      const raw = localStorage.getItem('vendor_unseen_booking_ids_v1');
+      if (!raw) return new Set();
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return new Set();
+      return new Set(parsed.map((v) => String(v)));
+    } catch {
+      return new Set();
+    }
+  };
+
+  const saveUnseenBookingIds = (set) => {
+    try {
+      localStorage.setItem('vendor_unseen_booking_ids_v1', JSON.stringify(Array.from(set)));
+    } catch {
+      void 0;
+    }
   };
 
   const fetchBadges = async () => {
     try {
-      ensureLastSeenInitialized();
-      const params = {
-        users_since: localStorage.getItem('vendor_last_seen_users') || undefined,
-        bookings_since: localStorage.getItem('vendor_last_seen_bookings') || undefined,
+      const resResp = await api.get('/vendor/bookings', { params: { page: 1, limit: 200 } });
+      const res = resResp?.data;
+      const list = Array.isArray(res?.data)
+        ? res.data
+        : Array.isArray(res?.bookings)
+        ? res.bookings
+        : Array.isArray(res?.results)
+        ? res.results
+        : Array.isArray(res)
+        ? res
+        : [];
+
+      const seen = seenBookingIds instanceof Set ? seenBookingIds : new Set();
+      const isBookingNew = (b) => {
+        const st = String(b?.status || '').toUpperCase();
+        if (st !== 'CONFIRMED' && st !== 'COMPLETED') return false;
+        const id = b?.id ?? b?.booking_id ?? b?._id;
+        if (!id) return false;
+        return !seen.has(String(id));
       };
-      const res = await api.get('/vendor/notifications/counts', { params });
-      const c = res?.data?.data?.counts || res?.data?.counts || {};
+
+      const unseen = new Set();
+      for (const b of list) {
+        const st = String(b?.status || '').toUpperCase();
+        if (st !== 'CONFIRMED' && st !== 'COMPLETED') continue;
+        const id = b?.id ?? b?.booking_id ?? b?._id;
+        if (!id) continue;
+        const sid = String(id);
+        if (!seen.has(sid)) unseen.add(sid);
+      }
+      saveUnseenBookingIds(unseen);
+      setUnseenBookingIds(unseen);
+      const bookings = unseen.size;
       setBadgeCounts({
-        users: Number(c.users) || 0,
-        bookings: Number(c.bookings) || 0,
+        bookings: Number(bookings) || 0,
       });
     } catch {
       void 0;
@@ -89,12 +131,6 @@ const Sidebar = ({ isCollapsed, onClose }) => {
   };
 
   const handleLinkClick = (targetPath) => {
-    const key = targetPath ? lastSeenKeyForPath(targetPath) : null;
-    if (key) {
-      try {
-        localStorage.setItem(key, new Date().toISOString());
-      } catch {}
-    }
     // Close mobile sidebar when a link is clicked
     if (onClose && window.innerWidth < 992) {
       onClose();
@@ -103,24 +139,98 @@ const Sidebar = ({ isCollapsed, onClose }) => {
 
   useEffect(() => {
     setExpandedItems({});
-    const key = lastSeenKeyForPath(location.pathname);
-    const section = sectionKeyForPath(location.pathname);
-    if (key && section) {
-      try {
-        localStorage.setItem(key, new Date().toISOString());
-      } catch {}
-      setBadgeCounts((prev) => ({ ...prev, [section]: 0 }));
-      fetchBadges();
-    }
   }, [location.pathname]);
 
   useEffect(() => {
-    ensureLastSeenInitialized();
+    setSeenBookingIds(loadSeenBookingIds());
+    setUnseenBookingIds(loadUnseenBookingIds());
     fetchBadges();
     const interval = setInterval(() => {
       fetchBadges();
-    }, 30000);
+    }, 60000);
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    fetchBadges();
+  }, [seenBookingIds]);
+
+  useEffect(() => {
+    let es;
+    let refreshTimer;
+    try {
+      const token = getAuthToken();
+      if (!token) return;
+      const url = `${API_BASE_URL}/vendor/notifications/stream?token=${encodeURIComponent(token)}`;
+      es = new EventSource(url);
+      const onInvalidate = (evt) => {
+        try {
+          const payload = evt?.data ? JSON.parse(evt.data) : null;
+          const id = payload?.id;
+          const section = payload?.section;
+          if (section === 'bookings' && id) {
+            const sid = String(id);
+            const seen = loadSeenBookingIds();
+            if (!(seen instanceof Set) || !seen.has(sid)) {
+              setUnseenBookingIds((prev) => {
+                const next = new Set(prev instanceof Set ? Array.from(prev) : []);
+                if (!next.has(sid)) {
+                  next.add(sid);
+                  saveUnseenBookingIds(next);
+                  setBadgeCounts((bc) => ({ ...bc, bookings: (Number(bc?.bookings) || 0) + 1 }));
+                }
+                return next;
+              });
+            }
+          }
+        } catch {
+          void 0;
+        }
+        clearTimeout(refreshTimer);
+        refreshTimer = setTimeout(() => {
+          fetchBadges();
+        }, 300);
+      };
+      es.addEventListener('invalidate', onInvalidate);
+      es.addEventListener('ready', () => fetchBadges());
+    } catch {
+      void 0;
+    }
+    return () => {
+      try {
+        clearTimeout(refreshTimer);
+        if (es) es.close();
+      } catch {
+        void 0;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const onSeen = (e) => {
+      const id = e?.detail?.bookingId;
+      if (!id) {
+        setSeenBookingIds(loadSeenBookingIds());
+        return;
+      }
+      setSeenBookingIds((prev) => {
+        const next = new Set(prev instanceof Set ? Array.from(prev) : []);
+        next.add(String(id));
+        return next;
+      });
+      setUnseenBookingIds((prev) => {
+        const next = new Set(prev instanceof Set ? Array.from(prev) : []);
+        const sid = String(id);
+        if (next.has(sid)) {
+          next.delete(sid);
+          saveUnseenBookingIds(next);
+          setBadgeCounts((bc) => ({ ...bc, bookings: Math.max(0, (Number(bc?.bookings) || 0) - 1) }));
+        }
+        return next;
+      });
+    };
+    window.addEventListener('vendor_booking_seen', onSeen);
+    return () => window.removeEventListener('vendor_booking_seen', onSeen);
   }, []);
 
   return (

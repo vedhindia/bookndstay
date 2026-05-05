@@ -161,8 +161,9 @@ export const adminHotels = {
     const res = await api.get(url);
     return res.data;
   },
-  getById: async (hotelId) => {
-    const res = await api.get(`/admin/hotels/${hotelId}`);
+  getById: async (hotelId, params = {}) => {
+    const url = `/admin/hotels/${hotelId}${buildQuery(params)}`;
+    const res = await api.get(url);
     return res.data;
   },
   update: async (hotelId, payload) => {

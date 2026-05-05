@@ -17,7 +17,7 @@ module.exports = (sequelize) => {
     duration_hours: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true },
     guests: { type: DataTypes.INTEGER.UNSIGNED, defaultValue: 1 },
     booked_room: { type: DataTypes.INTEGER.UNSIGNED, defaultValue: 1 },
-    status: { type: DataTypes.ENUM('PENDING','CONFIRMED','CANCELLED'), defaultValue: 'PENDING' },
+    status: { type: DataTypes.ENUM('PENDING','CONFIRMED','CANCELLED','COMPLETED'), defaultValue: 'PENDING' },
     amount: { type: DataTypes.FLOAT, allowNull: false },
     base_amount: { type: DataTypes.FLOAT, allowNull: false, defaultValue: 0 },
     price_per_night: { type: DataTypes.FLOAT, allowNull: false, defaultValue: 0 },
@@ -25,6 +25,8 @@ module.exports = (sequelize) => {
     payment_id: { type: DataTypes.STRING, allowNull: true },
     payment_method: { type: DataTypes.STRING, allowNull: true },
     refund_status: { type: DataTypes.STRING, allowNull: true },
+    refund_percent: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true },
+    refund_amount: { type: DataTypes.FLOAT, allowNull: false, defaultValue: 0 },
     coupon_code: { type: DataTypes.STRING, allowNull: true },
     discount_amount: { type: DataTypes.FLOAT, allowNull: false, defaultValue: 0 }
   }, { tableName: 'bookings' });

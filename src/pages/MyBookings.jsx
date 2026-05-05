@@ -171,6 +171,8 @@ export default function MyBookings() {
           guests: booking.guests || 2,
           rooms: booking.booked_room || booking.rooms || booking.no_of_rooms || 1,
           amount: booking.amount,
+          paymentId: booking.payment_id || booking.paymentId || null,
+          paymentMethod: booking.payment_method || booking.paymentMethod || null,
           status: booking.status?.toLowerCase() || 'pending',
           image: displayImage,
           roomType: booking.room_type
@@ -188,10 +190,31 @@ export default function MyBookings() {
     fetchBookings();
   }, [apiUserBase, navigate, statusFilter]);
   
-  // Format date to display in a readable format
-  const formatDate = (dateString) => {
-    const options = { year: 'numeric', month: 'short', day: 'numeric' };
-    return new Date(dateString).toLocaleDateString('en-US', options);
+  const formatDateIST = (dateString) => {
+    if (!dateString) return 'N/A';
+    const d = new Date(dateString);
+    if (Number.isNaN(d.getTime())) return 'N/A';
+    return d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
+  const formatDateTimeIST = (dateString) => {
+    if (!dateString) return 'N/A';
+    const d = new Date(dateString);
+    if (Number.isNaN(d.getTime())) return 'N/A';
+    return d.toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+  };
+
+  const formatWhen = (booking, dateString) => {
+    const mode = String(booking?.bookingMode || 'NIGHTLY').toUpperCase();
+    return mode === 'HOURLY' ? formatDateTimeIST(dateString) : formatDateIST(dateString);
   };
   
   // Get status color based on booking status
@@ -226,25 +249,39 @@ export default function MyBookings() {
     }
   };
 
-  // Helper: determine if a booking is currently active (today between check-in and check-out)
+  // Helper: determine if a booking is currently active
   const isCurrentBooking = (booking) => {
-    const today = new Date();
+    const mode = String(booking?.bookingMode || 'NIGHTLY').toUpperCase();
     const start = new Date(booking.checkIn);
     const end = new Date(booking.checkOut);
-    // Normalize times to ignore time-of-day
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return false;
+    const okStatus = booking.status === 'confirmed' || booking.status === 'pending';
+    if (!okStatus) return false;
+    if (mode === 'HOURLY') {
+      const now = Date.now();
+      return now >= start.getTime() && now <= end.getTime();
+    }
+    const today = new Date();
     const t = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     const s = new Date(start.getFullYear(), start.getMonth(), start.getDate());
     const e = new Date(end.getFullYear(), end.getMonth(), end.getDate());
-    return t >= s && t <= e && (booking.status === 'confirmed' || booking.status === 'pending');
+    return t >= s && t <= e;
   };
 
   // Helper: determine if a booking is upcoming
   const isUpcoming = (booking) => {
-    const today = new Date();
+    const mode = String(booking?.bookingMode || 'NIGHTLY').toUpperCase();
     const start = new Date(booking.checkIn);
+    if (Number.isNaN(start.getTime())) return false;
+    const okStatus = booking.status === 'confirmed' || booking.status === 'pending';
+    if (!okStatus) return false;
+    if (mode === 'HOURLY') {
+      return start.getTime() > Date.now();
+    }
+    const today = new Date();
     today.setHours(0, 0, 0, 0);
     start.setHours(0, 0, 0, 0);
-    return start > today && (booking.status === 'confirmed' || booking.status === 'pending');
+    return start > today;
   };
 
   const currentBookings = bookings.filter(isCurrentBooking);
@@ -319,17 +356,17 @@ export default function MyBookings() {
             </div>
             <div className={`flex items-center font-medium ${getStatusColor(booking.status)} text-xs sm:text-sm mt-2 sm:mt-0`}>
               {getStatusIcon(booking.status)}
-              <span>{isCurrent ? 'Ongoing' : booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}</span>
+              <span>{booking.status ? booking.status.charAt(0).toUpperCase() + booking.status.slice(1) : 'Pending'}</span>
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4 mb-3 sm:mb-4">
             <div className="flex items-center text-gray-600 text-xs sm:text-sm">
               <FaCalendarAlt className="mr-2 text-[#ee2e24]" />
-              <span>Check-in: {formatDate(booking.checkIn)}</span>
+              <span>Check-in: {formatWhen(booking, booking.checkIn)}</span>
             </div>
             <div className="flex items-center text-gray-600 text-xs sm:text-sm">
               <FaCalendarAlt className="mr-2 text-[#ee2e24]" />
-              <span>Check-out: {formatDate(booking.checkOut)}</span>
+              <span>Check-out: {formatWhen(booking, booking.checkOut)}</span>
             </div>
             <div className="flex items-center text-gray-600 text-xs sm:text-sm">
               <FaUsers className="mr-2 text-[#ee2e24]" />
@@ -355,6 +392,38 @@ export default function MyBookings() {
             >
               View Details
             </button>
+            {booking.status === 'pending' && !booking.paymentId && !booking.paymentMethod && (
+              <button
+                className="bg-green-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded text-xs sm:text-sm hover:bg-green-700"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const paymentIntent = {
+                    bookingId: booking.id,
+                    amount: booking.amount,
+                    hotelName: booking.hotelName,
+                    address: booking.address,
+                    city: booking.city,
+                    latitude: booking.latitude,
+                    longitude: booking.longitude,
+                    bookingMode: booking.bookingMode,
+                    checkIn: booking.checkIn,
+                    checkOut: booking.checkOut,
+                    guests: booking.guests,
+                    rooms: booking.rooms,
+                    image: booking.image
+                  };
+                  try {
+                    sessionStorage.setItem('paymentIntent', JSON.stringify(paymentIntent));
+                    sessionStorage.setItem('selectedBooking', JSON.stringify(paymentIntent));
+                  } catch (e) {
+                    console.error('Failed to save payment intent:', e);
+                  }
+                  navigate('/payment');
+                }}
+              >
+                Complete Payment
+              </button>
+            )}
             {(booking.status === 'confirmed' || booking.status === 'pending') && (isUpcoming(booking) || isCurrentBooking(booking)) && (
               <button 
                 className="border border-[#ee2e24] text-[#ee2e24] px-3 py-1.5 sm:px-4 sm:py-2 rounded text-xs sm:text-sm hover:bg-red-50"

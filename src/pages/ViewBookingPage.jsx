@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { FaCalendarAlt, FaUsers, FaRupeeSign, FaMapMarkerAlt, FaCheckCircle, FaTimesCircle, FaClock, FaCreditCard } from 'react-icons/fa';
 import { getToken, clearToken } from '../api/auth';
+import { buildHotelMap } from '../utils/maps';
 
 const statusBadge = (status) => {
   const map = {
@@ -147,6 +148,7 @@ export default function ViewBookingPage() {
               latitude: apiBooking.hotel?.latitude || bookingData?.latitude,
               longitude: apiBooking.hotel?.longitude || bookingData?.longitude,
               city: apiBooking.hotel?.city || bookingData?.city,
+              map_url: apiBooking.hotel?.map_url || hotelFull?.map_url || bookingData?.map_url || bookingData?.mapUrl || bookingData?.mapURL,
               bookingMode,
               checkIn: bookingMode === 'HOURLY' ? (apiBooking.check_in_at || apiBooking.check_in) : apiBooking.check_in,
               checkOut: bookingMode === 'HOURLY' ? (apiBooking.check_out_at || apiBooking.check_out) : apiBooking.check_out,
@@ -302,11 +304,25 @@ export default function ViewBookingPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <div className="flex items-center text-gray-700">
                 <FaCalendarAlt className="mr-2 text-[#ee2e24]"/> 
-                Check-in: {new Date(booking.checkIn).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                Check-in: {(() => {
+                  const mode = String(booking.bookingMode || booking.booking_mode || 'NIGHTLY').toUpperCase();
+                  const d = new Date(booking.checkIn);
+                  if (Number.isNaN(d.getTime())) return 'N/A';
+                  return mode === 'HOURLY'
+                    ? d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })
+                    : d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'short', day: 'numeric' });
+                })()}
               </div>
               <div className="flex items-center text-gray-700">
                 <FaCalendarAlt className="mr-2 text-[#ee2e24]"/> 
-                Check-out: {new Date(booking.checkOut).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                Check-out: {(() => {
+                  const mode = String(booking.bookingMode || booking.booking_mode || 'NIGHTLY').toUpperCase();
+                  const d = new Date(booking.checkOut);
+                  if (Number.isNaN(d.getTime())) return 'N/A';
+                  return mode === 'HOURLY'
+                    ? d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })
+                    : d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'short', day: 'numeric' });
+                })()}
               </div>
               <div className="flex items-center text-gray-700">
                 <FaUsers className="mr-2 text-[#ee2e24]"/> 
@@ -331,7 +347,11 @@ export default function ViewBookingPage() {
             {/* Booking Date */}
             {booking.createdAt && (
               <div className="text-sm text-gray-500 mb-4">
-                Booked on: {new Date(booking.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                Booked on: {(() => {
+                  const d = new Date(booking.createdAt);
+                  if (Number.isNaN(d.getTime())) return 'N/A';
+                  return d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
+                })()}
               </div>
             )}
 
@@ -403,23 +423,31 @@ export default function ViewBookingPage() {
         </div>
 
         {/* Map View */}
-        {(booking.latitude && booking.longitude) || booking.address ? (
+        {(booking.latitude && booking.longitude) || booking.map_url || booking.address || booking.city ? (
           <div className="border-t p-6">
             <h3 className="text-lg font-semibold mb-3">Hotel Location</h3>
             <div className="h-[300px] w-full rounded-lg overflow-hidden bg-gray-100 border border-gray-200">
+              {(() => {
+                const map = buildHotelMap({
+                  name: booking.hotelName,
+                  latitude: booking.latitude,
+                  longitude: booking.longitude,
+                  address: booking.address,
+                  city: booking.city,
+                  map_url: booking.map_url
+                });
+                return (
               <iframe
                 title={`${booking.hotelName} Location`}
                 width="100%"
                 height="100%"
                 frameBorder="0"
                 style={{ border: 0 }}
-                src={`https://maps.google.com/maps?q=${
-                  booking.latitude && booking.longitude 
-                    ? `${booking.latitude},${booking.longitude}` 
-                    : encodeURIComponent((booking.address || '') + ' ' + (booking.city || booking.hotelName || ''))
-                }&z=15&output=embed`}
+                src={map.embedSrc}
                 allowFullScreen
               ></iframe>
+                );
+              })()}
             </div>
           </div>
         ) : null}

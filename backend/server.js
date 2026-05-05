@@ -1,7 +1,7 @@
 // server.js
 const app = require('./app');
-const { sequelize } = require('./models');
-const { DataTypes } = require('sequelize');
+const { sequelize, Booking } = require('./models');
+const { DataTypes, Op } = require('sequelize');
 
 const PORT = process.env.PORT || 3001;
 
@@ -67,6 +67,23 @@ const PORT = process.env.PORT || 3001;
           type: DataTypes.STRING,
           allowNull: true,
           after: 'payment_method'
+        });
+      }
+      if (!bookings.refund_percent) {
+        console.log('Adding missing column bookings.refund_percent');
+        await qi.addColumn('bookings', 'refund_percent', {
+          type: DataTypes.INTEGER.UNSIGNED,
+          allowNull: true,
+          after: 'refund_status'
+        });
+      }
+      if (!bookings.refund_amount) {
+        console.log('Adding missing column bookings.refund_amount');
+        await qi.addColumn('bookings', 'refund_amount', {
+          type: DataTypes.FLOAT,
+          allowNull: false,
+          defaultValue: 0,
+          after: 'refund_percent'
         });
       }
       if (!bookings.booked_room) {
@@ -136,6 +153,19 @@ const PORT = process.env.PORT || 3001;
           after: 'price_per_night'
         });
       }
+      try {
+        const statusType = String(bookings.status?.type || '');
+        if (statusType && !statusType.toUpperCase().includes('COMPLETED')) {
+          console.log('Updating enum bookings.status to include COMPLETED');
+          await qi.changeColumn('bookings', 'status', {
+            type: DataTypes.ENUM('PENDING', 'CONFIRMED', 'CANCELLED', 'COMPLETED'),
+            allowNull: false,
+            defaultValue: 'PENDING'
+          });
+        }
+      } catch (statusErr) {
+        console.warn('Could not modify bookings.status enum:', statusErr.message);
+      }
 
       // Fix coupon vendor_id constraint
       try {
@@ -157,6 +187,67 @@ const PORT = process.env.PORT || 3001;
     await sequelize.sync({ alter, force });
 
     app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+    const enableScheduler = String(process.env.ENABLE_SCHEDULER || 'true').toLowerCase() === 'true';
+    if (enableScheduler) {
+      let running = false;
+      const sweep = async () => {
+        if (running) return;
+        running = true;
+        try {
+          const now = new Date();
+          const expireTime = new Date(now.getTime() - 10 * 60 * 1000);
+
+          await Booking.update(
+            { status: 'CANCELLED' },
+            { where: { status: 'PENDING', createdAt: { [Op.lt]: expireTime } } }
+          );
+
+          await Booking.update(
+            { status: 'COMPLETED' },
+            { where: { status: 'CONFIRMED', booking_mode: 'HOURLY', check_out_at: { [Op.lte]: now } } }
+          );
+
+          const today = new Date();
+          const todayDateOnly = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+          const nightlyCandidates = await Booking.findAll({
+            where: {
+              status: 'CONFIRMED',
+              [Op.or]: [{ booking_mode: 'NIGHTLY' }, { booking_mode: null }],
+              check_out: { [Op.lte]: todayDateOnly }
+            },
+            attributes: ['id', 'check_out']
+          });
+
+          if (nightlyCandidates.length) {
+            const idsToComplete = [];
+            for (const b of nightlyCandidates) {
+              const raw = b.check_out;
+              if (!raw) continue;
+              const d = new Date(String(raw));
+              if (Number.isNaN(d.getTime())) continue;
+              if (typeof raw === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.trim())) {
+                d.setUTCHours(5, 30, 0, 0);
+              }
+              if (now.getTime() >= d.getTime()) idsToComplete.push(b.id);
+            }
+            if (idsToComplete.length) {
+              await Booking.update(
+                { status: 'COMPLETED' },
+                { where: { id: { [Op.in]: idsToComplete }, status: 'CONFIRMED' } }
+              );
+            }
+          }
+        } catch (e) {
+          console.warn('Lifecycle sweep warning:', e.message);
+        } finally {
+          running = false;
+        }
+      };
+
+      setInterval(sweep, 60 * 1000);
+      sweep().catch(() => void 0);
+    }
   } catch (err) {
     console.error('Unable to start server:', err);
     process.exit(1);

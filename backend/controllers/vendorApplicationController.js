@@ -1,6 +1,7 @@
 const { Vendor, VendorApplication, VendorApplicationDocument, sequelize } = require('../models');
 const { asyncHandler } = require('../middlewares/errorHandler');
 const { validateRequiredFields, isValidEmail } = require('../utils/validationHelper');
+const { notifyAdmins } = require('../utils/notificationHub');
 
 module.exports = {
   apply: asyncHandler(async (req, res) => {
@@ -106,6 +107,11 @@ module.exports = {
       return saved;
     });
 
+    try {
+      notifyAdmins({ section: 'vendor_applications', id: result?.id });
+    } catch {
+      void 0;
+    }
     return res.status(201).json({
       success: true,
       message: 'Vendor application submitted successfully',

@@ -36,6 +36,84 @@ const Bookings = () => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
+  const [seenBookingIds, setSeenBookingIds] = useState(() => new Set());
+
+  const formatDateIST = (dateString) => {
+    if (!dateString) return 'N/A';
+    const d = new Date(dateString);
+    if (Number.isNaN(d.getTime())) return 'N/A';
+    return d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
+  const formatDateTimeIST = (dateString) => {
+    if (!dateString) return 'N/A';
+    const d = new Date(dateString);
+    if (Number.isNaN(d.getTime())) return 'N/A';
+    return d.toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+  };
+
+  const formatWhen = (booking, dateString) => {
+    const mode = String(booking?.bookingMode || booking?.booking_mode || 'NIGHTLY').toUpperCase();
+    return mode === 'HOURLY' ? formatDateTimeIST(dateString) : formatDateIST(dateString);
+  };
+
+  const formatRoomType = (value) => {
+    const v = String(value || '').trim().toUpperCase();
+    if (!v) return 'N/A';
+    if (v === 'AC') return 'AC';
+    if (v === 'NON_AC' || v === 'NON-AC' || v === 'NON AC') return 'Non-AC';
+    return v;
+  };
+
+  const markBookingAsSeen = (bookingId) => {
+    if (!bookingId) return;
+    try {
+      const key = 'vendor_seen_booking_ids_v1';
+      const raw = localStorage.getItem(key);
+      const arr = raw ? JSON.parse(raw) : [];
+      const set = new Set(Array.isArray(arr) ? arr.map((v) => String(v)) : []);
+      set.add(String(bookingId));
+      localStorage.setItem(key, JSON.stringify(Array.from(set)));
+    } catch {
+      void 0;
+    }
+    setSeenBookingIds((prev) => {
+      const next = new Set(prev instanceof Set ? Array.from(prev) : []);
+      next.add(String(bookingId));
+      return next;
+    });
+    try {
+      window.dispatchEvent(new CustomEvent('vendor_booking_seen', { detail: { bookingId: String(bookingId) } }));
+    } catch {
+      void 0;
+    }
+  };
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('vendor_seen_booking_ids_v1');
+      const parsed = raw ? JSON.parse(raw) : [];
+      setSeenBookingIds(new Set(Array.isArray(parsed) ? parsed.map((v) => String(v)) : []));
+    } catch {
+      setSeenBookingIds(new Set());
+    }
+  }, []);
+
+  const isNewBooking = (b) => {
+    const id = b?.id;
+    if (!id) return false;
+    const st = String(b?.status || '').toLowerCase();
+    if (st !== 'confirmed' && st !== 'completed') return false;
+    return !(seenBookingIds instanceof Set ? seenBookingIds.has(String(id)) : false);
+  };
 
   const fetchBookings = async () => {
     setLoading(true);
@@ -67,8 +145,16 @@ const Bookings = () => {
         user: b.user?.full_name || b.user?.name || b.userName || '',
         userEmail: b.user?.email || b.userEmail || '',
         hotel: b.hotel?.name || b.hotelName || '',
-        checkIn: b.checkInDate || b.check_in || b.checkIn || '',
-        checkOut: b.checkOutDate || b.check_out || b.checkOut || '',
+        roomType: b.room_type || b.roomType || b.room || b.type || '',
+        bookingMode: String(b.booking_mode || b.bookingMode || 'NIGHTLY').toUpperCase(),
+        checkIn:
+          String(b.booking_mode || b.bookingMode || 'NIGHTLY').toUpperCase() === 'HOURLY'
+            ? (b.check_in_at || b.checkInAt || b.check_in || b.checkInDate || b.checkIn || '')
+            : (b.check_in || b.checkInDate || b.checkIn || ''),
+        checkOut:
+          String(b.booking_mode || b.bookingMode || 'NIGHTLY').toUpperCase() === 'HOURLY'
+            ? (b.check_out_at || b.checkOutAt || b.check_out || b.checkOutDate || b.checkOut || '')
+            : (b.check_out || b.checkOutDate || b.checkOut || ''),
         guests: b.guests || b.noOfGuests || 0,
         price: b.amount || b.finalAmount || 0,
         status: (b.status || 'PENDING').toString().charAt(0).toUpperCase() + (b.status || 'PENDING').toString().slice(1).toLowerCase(),
@@ -157,6 +243,7 @@ const Bookings = () => {
               >
                 <option>All</option>
                 <option>Confirmed</option>
+                <option>Completed</option>
                 <option>Pending</option>
                 <option>Cancelled</option>
               </select>
@@ -255,20 +342,26 @@ const Bookings = () => {
                         </div>
                       </td>
                       <td>{b.hotel}</td>
-                      <td><small>{b.checkIn ? new Date(b.checkIn).toLocaleDateString() : 'N/A'}</small></td>
-                      <td><small>{b.checkOut ? new Date(b.checkOut).toLocaleDateString() : 'N/A'}</small></td>
+                      <td><small>{formatWhen(b, b.checkIn)}</small></td>
+                      <td><small>{formatWhen(b, b.checkOut)}</small></td>
                       <td className="text-center">
                         <span className="badge bg-light text-dark">{b.guests}</span>
                       </td>
                       <td className="text-end fw-semibold">₹{b.price}</td>
                       <td className="text-center">
-                        <StatusBadge status={b.status} />
+                        <div className="d-inline-flex align-items-center gap-2">
+                          <StatusBadge status={b.status} />
+                          {isNewBooking(b) && <span className="badge bg-danger">New</span>}
+                        </div>
                       </td>
                       <td className="text-end px-3">
                         <div className="btn-group">
                           <button 
                             className="btn btn-sm btn-outline-primary" 
-                            onClick={() => setSelected(b)}
+                            onClick={() => {
+                              markBookingAsSeen(b.id);
+                              setSelected(b);
+                            }}
                             title="View Details"
                           >
                             <i className="fas fa-eye"></i>
@@ -345,6 +438,10 @@ const Bookings = () => {
                       <i className="fas fa-hotel text-muted me-2"></i>
                       <span className="fw-semibold">{selected.hotel}</span>
                     </div>
+                    <div className="mb-2">
+                      <i className="fas fa-bed text-muted me-2"></i>
+                      <span>Room Type: <strong>{formatRoomType(selected.roomType)}</strong></span>
+                    </div>
                   </div>
                   
                   <div className="col-12"><hr className="my-3" /></div>
@@ -368,11 +465,11 @@ const Bookings = () => {
                     <h6 className="text-muted text-uppercase small mb-2">Stay Schedule</h6>
                     <div className="mb-2">
                       <i className="fas fa-calendar-check text-muted me-2"></i>
-                      <span>Check-in: <strong>{selected.checkIn ? new Date(selected.checkIn).toLocaleDateString() : 'N/A'}</strong></span>
+                      <span>Check-in: <strong>{formatWhen(selected, selected.checkIn)}</strong></span>
                     </div>
                     <div className="mb-2">
                       <i className="fas fa-calendar-times text-muted me-2"></i>
-                      <span>Check-out: <strong>{selected.checkOut ? new Date(selected.checkOut).toLocaleDateString() : 'N/A'}</strong></span>
+                      <span>Check-out: <strong>{formatWhen(selected, selected.checkOut)}</strong></span>
                     </div>
                     <div>
                       <i className="fas fa-moon text-muted me-2"></i>

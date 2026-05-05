@@ -5,6 +5,7 @@ const { User, UserOtp, BlacklistedToken } = require('../models');
 const { generateNumericOtp, hashOtp, verifyOtp, getExpiry } = require('../utils/otpHelper');
 const { sendOtpEmail } = require('../utils/mailer');
 const { sendOtpSms } = require('../utils/sms');
+const { notifyAdmins } = require('../utils/notificationHub');
 require('dotenv').config();
 
 const generateToken = (user) => {
@@ -64,6 +65,11 @@ module.exports = {
       }
 
       res.status(201).json({ message: 'User registered successfully', user: { id: newUser.id, full_name: newUser.full_name, email: newUser.email, phone: newUser.phone, address: newUser.address, profile_photo: newUser.profile_photo } });
+      try {
+        notifyAdmins({ section: 'users', id: newUser.id });
+      } catch {
+        void 0;
+      }
     } catch (err) {
       console.error('User signup error:', err);
       res.status(500).json({ message: 'Server error', error: err.message });
