@@ -26,6 +26,11 @@ ChartJS.register(
 );
 
 const DashboardHome = () => {
+  const formatCurrency = (value) => {
+    const amount = Number(value || 0);
+    return `₹${amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+  };
+
   const [stats, setStats] = useState({
     totalBookings: 0,
     revenue: 0,
@@ -57,7 +62,7 @@ const DashboardHome = () => {
       
       setStats({
         totalBookings: s.totalBookings ?? s.total_bookings ?? 0,
-        revenue: s.totalRevenue ?? s.total_revenue ?? s.revenue ?? 0,
+        revenue: Number(s.totalRevenue ?? s.total_revenue ?? s.revenue ?? 0),
         occupancyRate: s.occupancyRate ?? s.occupancy_rate ?? 0,
         activeRooms: s.totalRooms ?? s.total_rooms ?? s.activeRooms ?? 0,
         totalHotels: s.totalHotels ?? s.total_hotels ?? 0,
@@ -162,7 +167,7 @@ const DashboardHome = () => {
       <div className="row g-3 mb-3">
         {[
           { label: 'Total Bookings', value: stats.totalBookings, icon: 'fa-calendar-check', color: 'primary' },
-          { label: 'Revenue', value: `₹${stats.revenue}`, icon: 'fa-rupee-sign', color: 'success' },
+          { label: 'Revenue', value: formatCurrency(stats.revenue), icon: 'fa-rupee-sign', color: 'success' },
           { label: 'Occupancy', value: `${stats.occupancyRate}%`, icon: 'fa-bed', color: 'warning' },
           { label: 'Total Hotels', value: stats.totalHotels, icon: 'fa-hotel', color: 'info' }
         ].map((card, idx) => (

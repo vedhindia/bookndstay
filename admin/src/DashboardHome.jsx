@@ -110,14 +110,31 @@ function DashboardHome() {
             trendLabels.push(months[d.getMonth()]);
         }
 
+        const getBookingRevenue = (booking) => {
+            const isHourly = String(booking.booking_mode || booking.bookingMode || '').toUpperCase() === 'HOURLY';
+            const bookedRooms = Number(booking.booked_room || booking.bookedRoom || 1) || 1;
+            const durationHours = Number(booking.duration_hours || booking.durationHours || 0) || 0;
+            const hourlyAmount = (Number(booking.price_per_hour) || Number(booking.pricePerHour) || 0) * durationHours * bookedRooms;
+            const dailyAmount = (Number(booking.price_per_night) || Number(booking.pricePerNight) || 0) * bookedRooms;
+            const fallbackAmount = isHourly ? hourlyAmount : dailyAmount;
+
+            return Number(booking.amount) ||
+              Number(booking.totalAmount) ||
+              Number(booking.finalAmount) ||
+              Number(booking.base_amount) ||
+              Number(booking.baseAmount) ||
+              fallbackAmount ||
+              0;
+        };
+
         if (bookingsRes) {
             bookingsList = bookingsRes.data || bookingsRes.bookings || (Array.isArray(bookingsRes) ? bookingsRes : []);
             if (Array.isArray(bookingsList)) {
                 // Calculate Revenue fallback only if not provided by backend
                 if (realTotalRevenue === undefined) {
                     realTotalRevenue = bookingsList
-                        .filter(b => (b.status || '').toLowerCase() === 'confirmed')
-                        .reduce((sum, b) => sum + (Number(b.amount) || Number(b.totalAmount) || 0), 0);
+                        .filter(b => (b.status || '').toLowerCase() === 'completed')
+                        .reduce((sum, b) => sum + getBookingRevenue(b), 0);
                 }
 
                 // Calculate Trends

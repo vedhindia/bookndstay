@@ -55,6 +55,14 @@ const Sidebar = ({ isCollapsed, onClose }) => {
     }
   };
 
+  const saveSeenBookingIds = (set) => {
+    try {
+      localStorage.setItem('vendor_seen_booking_ids_v1', JSON.stringify(Array.from(set)));
+    } catch {
+      void 0;
+    }
+  };
+
   const saveUnseenBookingIds = (set) => {
     try {
       localStorage.setItem('vendor_unseen_booking_ids_v1', JSON.stringify(Array.from(set)));
@@ -113,6 +121,30 @@ const Sidebar = ({ isCollapsed, onClose }) => {
   };
 
   const formatBadge = (n) => (n > 99 ? '99+' : String(n));
+
+  const markBookingsUnseenAsSeen = () => {
+    const unseen = loadUnseenBookingIds();
+    if (!(unseen instanceof Set) || unseen.size === 0) return;
+
+    const seen = loadSeenBookingIds();
+    const nextSeen = new Set(seen instanceof Set ? Array.from(seen) : []);
+    unseen.forEach((id) => nextSeen.add(String(id)));
+
+    saveSeenBookingIds(nextSeen);
+    saveUnseenBookingIds(new Set());
+
+    setSeenBookingIds(nextSeen);
+    setUnseenBookingIds(new Set());
+    setBadgeCounts((prev) => ({ ...prev, bookings: 0 }));
+
+    try {
+      window.dispatchEvent(new CustomEvent('vendor_section_seen', {
+        detail: { section: 'bookings', ids: Array.from(unseen).map((id) => String(id)) }
+      }));
+    } catch {
+      void 0;
+    }
+  };
 
   const toggleSubmenu = (title) => {
     setExpandedItems((prev) => ({
@@ -232,6 +264,11 @@ const Sidebar = ({ isCollapsed, onClose }) => {
     window.addEventListener('vendor_booking_seen', onSeen);
     return () => window.removeEventListener('vendor_booking_seen', onSeen);
   }, []);
+
+  useEffect(() => {
+    if (!location.pathname.startsWith('/dashboard/bookings')) return;
+    markBookingsUnseenAsSeen();
+  }, [location.pathname, unseenBookingIds]);
 
   return (
     <>

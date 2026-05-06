@@ -1478,15 +1478,26 @@ module.exports = {
       Booking.count({ where: { status: 'CONFIRMED' } })
     ]);
 
-    // Total Revenue (from confirmed bookings)
+    // Total Revenue (from completed bookings; includes both nightly and hourly modes)
     const revenueResult = await Booking.findOne({
-      where: { status: 'CONFIRMED' },
-      attributes: [[sequelize.fn('SUM', sequelize.col('amount')), 'total']]
+      where: { status: 'COMPLETED' },
+      attributes: [[
+        sequelize.fn(
+          'SUM',
+          sequelize.literal(`
+            CASE
+              WHEN booking_mode = 'HOURLY' THEN COALESCE(amount, price_per_hour * COALESCE(duration_hours, 0) * COALESCE(booked_room, 1), base_amount, 0)
+              ELSE COALESCE(amount, price_per_night * COALESCE(booked_room, 1), base_amount, 0)
+            END
+          `)
+        ),
+        'total'
+      ]]
     });
     const totalRevenue = revenueResult?.get('total') || 0;
 
     // Active Vendors with Revenue
-    // Fetch vendors and calculate their revenue from confirmed bookings across their hotels
+    // Fetch vendors and calculate their revenue from completed bookings across their hotels
     const vendors = await Vendor.findAll({
       where: { status: 'ACTIVE' },
       attributes: ['id', 'full_name', 'business_name', 'email', 'phone'],
@@ -1497,8 +1508,8 @@ module.exports = {
         include: [{
           model: Booking,
           as: 'bookings',
-          attributes: ['amount', 'status'],
-          where: { status: 'CONFIRMED' },
+          attributes: ['amount', 'status', 'booking_mode', 'price_per_night', 'price_per_hour', 'duration_hours', 'booked_room', 'base_amount'],
+          where: { status: 'COMPLETED' },
           required: false
         }]
       }]
@@ -1514,7 +1525,11 @@ module.exports = {
           hotelNames.push(h.name);
           if (h.bookings) {
             h.bookings.forEach(b => {
-              revenue += Number(b.amount) || 0;
+              const isHourly = (b.booking_mode || '').toUpperCase() === 'HOURLY';
+              const computedAmount = isHourly
+                ? (Number(b.price_per_hour) || 0) * (Number(b.duration_hours) || 0) * (Number(b.booked_room) || 1)
+                : (Number(b.price_per_night) || 0) * (Number(b.booked_room) || 1);
+              revenue += Number(b.amount) || Number(b.base_amount) || computedAmount || 0;
               bookings++;
             });
           }

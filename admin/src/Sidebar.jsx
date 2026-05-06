@@ -360,6 +360,48 @@ const Sidebar = ({ isCollapsed, isMobile = false, onMobileClose }) => {
 
   const formatBadge = (n) => (n > 99 ? '99+' : String(n));
 
+  const markSectionUnseenAsSeen = (section) => {
+    if (!section || !['users', 'hotels', 'vendors', 'bookings'].includes(section)) return;
+    const unseen = loadUnseenSet(section);
+    if (!(unseen instanceof Set) || unseen.size === 0) return;
+
+    const seen = loadSeenSet(section);
+    const nextSeen = new Set(seen instanceof Set ? Array.from(seen) : []);
+    unseen.forEach((id) => nextSeen.add(String(id)));
+
+    saveSeenSet(section, nextSeen);
+    saveUnseenSet(section, new Set());
+    try {
+      window.dispatchEvent(new CustomEvent('admin_section_seen', {
+        detail: { section, ids: Array.from(unseen).map((id) => String(id)) }
+      }));
+    } catch {
+      void 0;
+    }
+
+    setSeenIds((prev) => ({
+      users: section === 'users' ? nextSeen : new Set(prev?.users instanceof Set ? Array.from(prev.users) : []),
+      hotels: section === 'hotels' ? nextSeen : new Set(prev?.hotels instanceof Set ? Array.from(prev.hotels) : []),
+      vendors: section === 'vendors' ? nextSeen : new Set(prev?.vendors instanceof Set ? Array.from(prev.vendors) : []),
+      bookings: section === 'bookings' ? nextSeen : new Set(prev?.bookings instanceof Set ? Array.from(prev.bookings) : []),
+    }));
+
+    setUnseenIds((prev) => ({
+      users: section === 'users' ? new Set() : new Set(prev?.users instanceof Set ? Array.from(prev.users) : []),
+      hotels: section === 'hotels' ? new Set() : new Set(prev?.hotels instanceof Set ? Array.from(prev.hotels) : []),
+      vendors: section === 'vendors' ? new Set() : new Set(prev?.vendors instanceof Set ? Array.from(prev.vendors) : []),
+      bookings: section === 'bookings' ? new Set() : new Set(prev?.bookings instanceof Set ? Array.from(prev.bookings) : []),
+    }));
+
+    setBadgeCounts((prev) => ({ ...prev, [section]: 0 }));
+  };
+
+  useEffect(() => {
+    const section = sectionKeyForPath(location.pathname);
+    if (!section) return;
+    markSectionUnseenAsSeen(section);
+  }, [location.pathname, unseenIds]);
+
   return (
     <div className={`sidebar ${isCollapsed ? 'collapsed' : ''} ${isMobile ? 'mobile-sidebar' : ''}`}>
       <div className="sidebar-header d-flex align-items-center justify-content-between p-3">

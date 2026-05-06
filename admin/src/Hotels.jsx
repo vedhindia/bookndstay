@@ -75,6 +75,21 @@ const Hotels = ({ vendorId }) => {
     });
   };
 
+  useEffect(() => {
+    const onSectionSeen = (e) => {
+      const section = e?.detail?.section;
+      const ids = Array.isArray(e?.detail?.ids) ? e.detail.ids : [];
+      if (section !== 'hotels' || ids.length === 0) return;
+      setSeenHotelIds((prev) => {
+        const next = new Set(prev instanceof Set ? Array.from(prev) : []);
+        ids.forEach((id) => next.add(String(id)));
+        return next;
+      });
+    };
+    window.addEventListener('admin_section_seen', onSectionSeen);
+    return () => window.removeEventListener('admin_section_seen', onSectionSeen);
+  }, []);
+
   const isNewHotel = (h) => {
     const id = h?.id;
     if (!id) return false;

@@ -81,6 +81,21 @@ const Vendors = () => {
     });
   };
 
+  useEffect(() => {
+    const onSectionSeen = (e) => {
+      const section = e?.detail?.section;
+      const ids = Array.isArray(e?.detail?.ids) ? e.detail.ids : [];
+      if (section !== 'vendors' || ids.length === 0) return;
+      setSeenVendorIds((prev) => {
+        const next = new Set(prev instanceof Set ? Array.from(prev) : []);
+        ids.forEach((id) => next.add(String(id)));
+        return next;
+      });
+    };
+    window.addEventListener('admin_section_seen', onSectionSeen);
+    return () => window.removeEventListener('admin_section_seen', onSectionSeen);
+  }, []);
+
   const isNewVendor = (v) => {
     const id = v?.id || v?.vendor_id || v?._id;
     if (!id) return false;

@@ -13,7 +13,7 @@ const { sendSuccess, sendError, sendPaginatedResponse } = require('../utils/resp
 const { validateRequiredFields, validatePagination, isValidEmail } = require('../utils/validationHelper');
 const { getBookingIncludes, getPaginationOffset } = require('../utils/dbHelper');
 const { asyncHandler } = require('../middlewares/errorHandler');
-const { fn, col } = require('sequelize');
+const { fn, col, literal } = require('sequelize');
 const { addVendorClient, removeVendorClient, writeEvent, notifyAdmins } = require('../utils/notificationHub');
 
 /* ===================== HELPERS ===================== */
@@ -696,10 +696,21 @@ module.exports = {
       Hotel.count({ where: { vendor_id: req.user.id, status: 'APPROVED' } }),
       Hotel.count({ where: { vendor_id: req.user.id, status: 'PENDING' } }),
       Booking.count({ where: { vendor_id: req.user.id } }),
-      Booking.count({ where: { vendor_id: req.user.id, status: 'CONFIRMED' } }),
+      Booking.count({ where: { vendor_id: req.user.id, status: 'COMPLETED' } }),
       Booking.findAll({
-        where: { vendor_id: req.user.id, status: 'CONFIRMED' },
-        attributes: [[fn('SUM', col('amount')), 'totalRevenue']]
+        where: { vendor_id: req.user.id, status: 'COMPLETED' },
+        attributes: [[
+          fn(
+            'SUM',
+            literal(`
+              CASE
+                WHEN booking_mode = 'HOURLY' THEN COALESCE(amount, price_per_hour * COALESCE(duration_hours, 0) * COALESCE(booked_room, 1), base_amount, 0)
+                ELSE COALESCE(amount, price_per_night * COALESCE(booked_room, 1), base_amount, 0)
+              END
+            `)
+          ),
+          'totalRevenue'
+        ]]
       })
     ]);
 

@@ -118,6 +118,21 @@ const Bookings = () => {
     });
   };
 
+  useEffect(() => {
+    const onSectionSeen = (e) => {
+      const section = e?.detail?.section;
+      const ids = Array.isArray(e?.detail?.ids) ? e.detail.ids : [];
+      if (section !== 'bookings' || ids.length === 0) return;
+      setSeenBookingIds((prev) => {
+        const next = new Set(prev instanceof Set ? Array.from(prev) : []);
+        ids.forEach((id) => next.add(String(id)));
+        return next;
+      });
+    };
+    window.addEventListener('admin_section_seen', onSectionSeen);
+    return () => window.removeEventListener('admin_section_seen', onSectionSeen);
+  }, []);
+
   const isNewBooking = (b) => {
     const id = b?.id;
     if (!id) return false;
