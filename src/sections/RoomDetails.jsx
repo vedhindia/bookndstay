@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { FaArrowLeft, FaStar, FaWifi, FaTv, FaSnowflake, FaCoffee, FaCheck, FaClock, FaParking, FaUtensils, FaPlus, FaMinus } from 'react-icons/fa';
 import { MdPets, MdLocalLaundryService, MdOutlineChair } from 'react-icons/md';
+import { Link } from 'react-router-dom';
 
 export default function RoomDetails({ state, actions }) {
   const { selectedRoom } = state;
@@ -200,6 +201,14 @@ export default function RoomDetails({ state, actions }) {
                 </div>
               </div>
               <button onClick={() => actions.navigate('booking')} className="w-full bg-[#ee2e24] text-white py-3 rounded-lg font-semibold">Continue to Book</button>
+              <div className="mt-2">
+                <Link
+                  to="/refund-policy"
+                  className="text-xs text-gray-600 hover:text-[#ee2e24] transition-colors underline"
+                >
+                  Read Refund Policy
+                </Link>
+              </div>
             </div>
             
             <div className='space-y-2 text-sm'>

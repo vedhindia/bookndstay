@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FaStar } from 'react-icons/fa';
+import { getToken } from '../api/auth';
 
 const WriteReviewPage = () => {
   const navigate = useNavigate();
@@ -23,6 +24,15 @@ const WriteReviewPage = () => {
 
   const hotelName = booking?.hotel || booking?.hotelName || 'OYO Hotel';
   const bookingId = booking?.id || 'TEMP-BOOKING';
+  const hotelId = booking?.hotelId || booking?.hotel_id || booking?.hotel?.id || booking?.hotel?._id || null;
+  const apiUserBase = (() => {
+    const raw = import.meta.env.VITE_API_BASE || '/api/user/auth';
+    const base = raw.replace(/\/+$/, '');
+    if (base.endsWith('/user/auth')) return base.slice(0, -'/auth'.length);
+    if (base.endsWith('/auth')) return `${base.slice(0, -'/auth'.length)}/user`;
+    if (base.endsWith('/user')) return base;
+    return `${base}/user`;
+  })();
 
   const validate = () => {
     if (rating < 1) return 'Please select a rating.';
@@ -33,29 +43,66 @@ const WriteReviewPage = () => {
   const onSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
     const msg = validate();
     if (msg) {
       setError(msg);
       return;
     }
+    const token = getToken();
+    if (!token) {
+      setError('Please login to submit your review.');
+      navigate('/login');
+      return;
+    }
+    if (!hotelId) {
+      setError('Hotel details are missing for this booking.');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
+      const finalComment = title.trim()
+        ? `${title.trim()}\n\n${comment.trim()}`
+        : comment.trim();
+
+      const response = await fetch(`${apiUserBase}/reviews`, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          hotel_id: hotelId,
+          rating,
+          comment: finalComment
+        })
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.message || 'Failed to submit review');
+      }
+
       const payload = {
         bookingId,
+        hotelId,
         hotelName,
         rating,
         title: title.trim(),
         comment: comment.trim(),
         createdAt: new Date().toISOString(),
       };
+      // Keep local copy for quick UI feedback in current session.
       const existing = sessionStorage.getItem('reviews');
       const list = existing ? JSON.parse(existing) : [];
       list.push(payload);
       sessionStorage.setItem('reviews', JSON.stringify(list));
-      setSuccess('Thank you! Your review has been submitted.');
-      setTimeout(() => navigate('/bookings'), 800);
-    } catch {
-      setError('Failed to save your review. Please try again.');
+      setSuccess(data?.message || 'Thank you! Your review has been submitted.');
+      setTimeout(() => navigate('/bookings'), 900);
+    } catch (err) {
+      setError(err?.message || 'Failed to save your review. Please try again.');
     } finally {
       setIsSubmitting(false);
     }

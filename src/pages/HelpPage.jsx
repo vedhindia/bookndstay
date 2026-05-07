@@ -11,7 +11,7 @@ export default function HelpPage() {
         "You can cancel your booking by going to 'My Bookings' section in your account. Select the booking you wish to cancel and click on the 'Cancel' button. Please note that cancellation charges may apply based on the hotel's policy.",
     },
     {
-      question: "What is OYO's refund policy?",
+      question: "What is BookndStay's refund policy?",
       answer:
         "Refunds are processed within 5-7 business days after cancellation is confirmed. The refund amount depends on the cancellation policy of the specific hotel and how far in advance you cancel.",
     },
@@ -62,7 +62,7 @@ export default function HelpPage() {
           </div>
           <h3 className="text-xl font-semibold mb-2">Call Us</h3>
           <p className="text-gray-600 mb-4">24/7 Customer Support</p>
-          <p className="text-lg font-bold">+91 9313 9313 93</p>
+          <p className="text-lg font-bold">+91 7057062000</p>
         </div>
 
         {/* Email Us */}
@@ -72,7 +72,7 @@ export default function HelpPage() {
           </div>
           <h3 className="text-xl font-semibold mb-2">Email Us</h3>
           <p className="text-gray-600 mb-4">We'll respond within 24 hours</p>
-          <p className="text-lg font-bold">support@oyo.com</p>
+          <p className="text-lg font-bold">bookndstay@gmail.com</p>
         </div>
 
         {/* Live Chat */}

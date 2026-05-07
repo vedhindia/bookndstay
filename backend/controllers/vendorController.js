@@ -816,6 +816,121 @@ module.exports = {
     sendSuccess(res, null, 'Image deleted successfully');
   }),
 
+  /* ===================== REVIEW MANAGEMENT ===================== */
+
+  getReviews: asyncHandler(async (req, res) => {
+    const { page, limit } = validatePagination(req.query.page, req.query.limit);
+    const offset = getPaginationOffset(page, limit);
+    const q = String(req.query.q || '').trim();
+    const statusInput = String(req.query.status || '').toUpperCase();
+
+    const toDbStatus = {
+      VISIBLE: 'APPROVED',
+      HIDDEN: 'REJECTED',
+      FLAGGED: 'PENDING',
+      APPROVED: 'APPROVED',
+      REJECTED: 'REJECTED',
+      PENDING: 'PENDING'
+    };
+
+    const where = {};
+    if (toDbStatus[statusInput]) {
+      where.status = toDbStatus[statusInput];
+    }
+
+    const include = [
+      { model: User, as: 'user', attributes: ['id', 'full_name', 'email'] },
+      {
+        model: Hotel,
+        as: 'hotel',
+        attributes: ['id', 'name', 'vendor_id'],
+        where: { vendor_id: req.user.id },
+        required: true
+      }
+    ];
+
+    if (q) {
+      where[Op.or] = [
+        { comment: { [Op.like]: `%${q}%` } },
+        { '$user.full_name$': { [Op.like]: `%${q}%` } },
+        { '$user.email$': { [Op.like]: `%${q}%` } },
+        { '$hotel.name$': { [Op.like]: `%${q}%` } }
+      ];
+    }
+
+    const { rows, count } = await Review.findAndCountAll({
+      where,
+      include,
+      limit,
+      offset,
+      order: [['createdAt', 'DESC']]
+    });
+
+    const toPanelStatus = {
+      APPROVED: 'VISIBLE',
+      REJECTED: 'HIDDEN',
+      PENDING: 'FLAGGED'
+    };
+    const reviews = rows.map((row) => {
+      const item = row.toJSON();
+      return { ...item, status: toPanelStatus[item.status] || item.status };
+    });
+
+    sendSuccess(res, {
+      reviews,
+      total: count,
+      page,
+      limit
+    }, 'Reviews retrieved successfully');
+  }),
+
+  moderateReview: asyncHandler(async (req, res) => {
+    const review = await Review.findOne({
+      where: { id: req.params.reviewId },
+      include: [{
+        model: Hotel,
+        as: 'hotel',
+        attributes: ['id', 'vendor_id'],
+        where: { vendor_id: req.user.id },
+        required: true
+      }]
+    });
+
+    if (!review) throw createError('Review not found', 404);
+
+    const input = String(req.body.status || '').toUpperCase();
+    const toDbStatus = {
+      VISIBLE: 'APPROVED',
+      HIDDEN: 'REJECTED',
+      FLAGGED: 'PENDING',
+      APPROVED: 'APPROVED',
+      REJECTED: 'REJECTED',
+      PENDING: 'PENDING'
+    };
+    const nextStatus = toDbStatus[input];
+    if (!nextStatus) throw createError('Invalid status. Use VISIBLE/HIDDEN/FLAGGED', 400);
+
+    await review.update({ status: nextStatus });
+    sendSuccess(res, { review }, 'Review moderated successfully');
+  }),
+
+  deleteReview: asyncHandler(async (req, res) => {
+    const review = await Review.findOne({
+      where: { id: req.params.reviewId },
+      include: [{
+        model: Hotel,
+        as: 'hotel',
+        attributes: ['id', 'vendor_id'],
+        where: { vendor_id: req.user.id },
+        required: true
+      }]
+    });
+
+    if (!review) throw createError('Review not found', 404);
+    await review.destroy();
+    sendSuccess(res, null, 'Review deleted successfully');
+  }),
+
   /* ===================== PROFILE ===================== */
 
   getVendorProfile: asyncHandler(async (req, res) => {

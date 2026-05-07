@@ -22,6 +22,7 @@ import InvoicePage from './pages/InvoicePage';
 import VendorLoginPage from './pages/VendorLoginPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import VendorApplyPage from './pages/VendorApplyPage';
+import RefundPolicyPage from './pages/RefundPolicyPage';
 
 const VENDOR_APPLY_ROUTE = '/list-your-property';
 
@@ -193,6 +194,11 @@ const AppContent = () => {
           <Route path="/contact" element={
             <Layout state={state} actions={extendedActions}>
               <ContactPage navigate={navigateTo} />
+            </Layout>
+          } />
+          <Route path="/refund-policy" element={
+            <Layout state={state} actions={extendedActions}>
+              <RefundPolicyPage />
             </Layout>
           } />
         </Routes>

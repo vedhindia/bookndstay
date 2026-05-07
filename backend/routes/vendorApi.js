@@ -963,9 +963,7 @@ router.get('/guests/:guestId', (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/Review'
  */
-router.get('/reviews', (req, res) => {
-  res.json({ message: 'Vendor reviews list endpoint' });
-});
+router.get('/reviews', vendorCtrl.getReviews);
 
 
 /**
@@ -997,9 +995,9 @@ router.get('/reviews', (req, res) => {
  *       200:
  *         description: Response added successfully
  */
-router.post('/reviews/:reviewId/respond', (req, res) => {
-  res.json({ message: 'Vendor review response endpoint' });
-});
+router.post('/reviews/:reviewId/respond', vendorCtrl.moderateReview);
+router.put('/reviews/:reviewId/moderate', vendorCtrl.moderateReview);
+router.delete('/reviews/:reviewId', vendorCtrl.deleteReview);
 
 /**
  * @swagger

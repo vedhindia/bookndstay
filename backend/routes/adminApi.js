@@ -459,20 +459,9 @@ router.post('/bookings/:bookingId/cancel', adminCtrl.cancelBooking);
 router.get('/dashboard/stats', adminCtrl.getDashboardStats);
 
 // ============ REVIEW MODERATION API ============
-router.get('/reviews', (req, res) => {
-  // Admin can view all reviews
-  res.json({ message: 'Admin reviews list endpoint' });
-});
-
-router.put('/reviews/:reviewId/moderate', (req, res) => {
-  // Admin can moderate reviews
-  res.json({ message: 'Admin review moderation endpoint' });
-});
-
-router.delete('/reviews/:reviewId', (req, res) => {
-  // Admin can delete reviews
-  res.json({ message: 'Admin review delete endpoint' });
-});
+router.get('/reviews', requireRole(['ADMIN', 'SUPER_ADMIN']), adminCtrl.getReviews);
+router.put('/reviews/:reviewId/moderate', requireRole(['ADMIN', 'SUPER_ADMIN']), adminCtrl.moderateReview);
+router.delete('/reviews/:reviewId', requireRole(['ADMIN', 'SUPER_ADMIN']), adminCtrl.deleteReview);
 
 // ============ PAYMENT MANAGEMENT API ============
 

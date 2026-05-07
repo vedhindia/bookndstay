@@ -4,7 +4,7 @@ export default function AboutPage() {
   return (
     <div className="container mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold mb-8 text-gray-800 text-center">
-        About OYO
+        About BookndStay
       </h1>
 
       {/* Hero Section */}
@@ -15,13 +15,13 @@ export default function AboutPage() {
               Our Mission
             </h2>
             <p className="text-gray-700 mb-4">
-              OYO is committed to providing quality accommodations at affordable
+              BookndStay is committed to providing quality accommodations at affordable
               prices. We aim to revolutionize the hospitality industry by
               leveraging technology to standardize and improve the quality of
               stay across our network of hotels.
             </p>
             <p className="text-gray-700">
-              Founded in 2013, OYO has grown from a single hotel to become one
+              Founded in 2026, BookndStay has grown from a single hotel to become one
               of the world’s leading hotel chains, operating in multiple
               countries across the globe.
             </p>
@@ -29,7 +29,7 @@ export default function AboutPage() {
           <div className="md:w-1/2">
             <img
               src="https://images.oyoroomscdn.com/uploads/hotel_image/56303/medium/597f0e48823f8885.jpg"
-              alt="OYO Hotel"
+              alt="BookndStay Hotel"
               className="rounded-lg shadow-md w-full h-auto"
             />
           </div>
@@ -39,7 +39,7 @@ export default function AboutPage() {
       {/* Why Choose OYO */}
       <div className="bg-white rounded-lg shadow-md p-6 mb-8">
         <h2 className="text-2xl font-semibold mb-6 text-[#ee2e24]">
-          Why Choose OYO?
+          Why Choose BookndStay?
         </h2>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -83,8 +83,8 @@ export default function AboutPage() {
       {/* Company Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         {[
-          { value: "10,000+", label: "Hotels Worldwide" },
-          { value: "100+", label: "Cities" },
+          { value: "100+", label: "Hotels in India" },
+          { value: "50+", label: "Cities" },
           { value: "10+", label: "Countries" },
           { value: "5M+", label: "Happy Customers" },
         ].map((stat, index) => (
@@ -106,8 +106,8 @@ export default function AboutPage() {
           Our Story
         </h2>
         <p className="text-gray-700 mb-4">
-          OYO was founded in 2013 with a simple mission: to create quality
-          living spaces. What began as a single hotel in Gurgaon, India, has now
+          BookndStay was founded in 2026 with a simple mission: to create quality
+          living spaces. What began as a single hotel in Pune, India, has now
           transformed into a global hospitality powerhouse with a presence in
           multiple countries.
         </p>
@@ -118,7 +118,7 @@ export default function AboutPage() {
           accessible to millions of travelers worldwide.
         </p>
         <p className="text-gray-700">
-          Today, OYO continues to grow and evolve, constantly striving to
+          Today, BookndStay continues to grow and evolve, constantly striving to
           enhance the guest experience and provide exceptional value to our
           customers. We remain committed to our vision of becoming the most
           preferred and trusted hospitality brand in the world.

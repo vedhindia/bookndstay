@@ -1526,6 +1526,14 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
                 )}
               </button>
 
+              <button
+                type="button"
+                onClick={() => navigate('/refund-policy')}
+                className="w-full bg-white text-gray-700 hover:bg-gray-50 border border-gray-200 py-2.5 sm:py-3 rounded-lg font-semibold text-base sm:text-lg transition-colors mb-3"
+              >
+                Read Refund Policy
+              </button>
+
               {/* Additional Info */}
               <div className="space-y-2 text-sm text-gray-600">
                 <div className="flex items-start">

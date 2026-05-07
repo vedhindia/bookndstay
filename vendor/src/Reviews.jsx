@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Pagination from './components/Pagination';
+import api from './services/apiClient';
 
 const Reviews = () => {
   const [items, setItems] = useState([]);
@@ -12,11 +13,31 @@ const Reviews = () => {
   const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
 
+  const vendorReviews = {
+    list: async (params = {}) => {
+      const query = new URLSearchParams();
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '') query.append(k, v);
+      });
+      const qs = query.toString();
+      const res = await api.get(qs ? `/vendor/reviews?${qs}` : '/vendor/reviews');
+      return res.data;
+    },
+    moderate: async (reviewId, payload) => {
+      const res = await api.put(`/vendor/reviews/${reviewId}/moderate`, payload);
+      return res.data;
+    },
+    remove: async (reviewId) => {
+      const res = await api.delete(`/vendor/reviews/${reviewId}`);
+      return res.data;
+    }
+  };
+
   const fetchReviews = async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await adminReviews.list({ page, limit: pageSize, status: status !== 'All' ? status.toUpperCase() : undefined, q: query || undefined });
+      const res = await vendorReviews.list({ page, limit: pageSize, status: status !== 'All' ? status.toUpperCase() : undefined, q: query || undefined });
       const list = Array.isArray(res?.reviews)
         ? res.reviews
         : Array.isArray(res?.data)
@@ -58,7 +79,7 @@ const Reviews = () => {
   const moderate = async (r, newStatus) => {
     try {
       setLoading(true);
-      await adminReviews.moderate(r.id, { status: newStatus.toUpperCase() });
+      await vendorReviews.moderate(r.id, { status: newStatus.toUpperCase() });
       setSuccess(`Review ${newStatus.toLowerCase()} successfully`);
       await fetchReviews();
     } catch (e) {
@@ -73,7 +94,7 @@ const Reviews = () => {
     if (!window.confirm('Delete this review?')) return;
     try {
       setLoading(true);
-      await adminReviews.remove(r.id);
+      await vendorReviews.remove(r.id);
       setSuccess('Review deleted');
       await fetchReviews();
     } catch (e) {
