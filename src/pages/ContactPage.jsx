@@ -91,9 +91,9 @@ export default function ContactPage() {
                 <div>
                   <h3 className="font-medium mb-1">Address</h3>
                   <p className="text-gray-700">
-                    OYO Corporate Office
+                    BookndStay Corporate Office
                     <br />
-                    Gurugram, Haryana 122002
+                    Pune, Maharashtra 411001
                     <br />
                     India
                   </p>
@@ -106,8 +106,8 @@ export default function ContactPage() {
                 </div>
                 <div>
                   <h3 className="font-medium mb-1">Phone</h3>
-                  <p className="text-gray-700">+91 9313 9313 93</p>
-                  <p className="text-gray-700">+91 124 620 0000</p>
+                  <p className="text-gray-700">+91 7057062000</p>
+                 
                 </div>
               </div>
 
@@ -117,8 +117,8 @@ export default function ContactPage() {
                 </div>
                 <div>
                   <h3 className="font-medium mb-1">Email</h3>
-                  <p className="text-gray-700">support@oyo.com</p>
-                  <p className="text-gray-700">corporate@oyo.com</p>
+                  <p className="text-gray-700">bookndstay@gmail.com</p>
+                  
                 </div>
               </div>
 
@@ -129,9 +129,9 @@ export default function ContactPage() {
                 <div>
                   <h3 className="font-medium mb-1">Working Hours</h3>
                   <p className="text-gray-700">
-                    Monday - Friday: 9:00 AM - 6:00 PM
+                    Mon - Fri: 9:00 AM - 6:00 PM
                     <br />
-                    Saturday: 9:00 AM - 1:00 PM
+                    Sat: 9:00 AM - 1:00 PM
                     <br />
                     Sunday: Closed
                   </p>
