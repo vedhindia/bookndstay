@@ -4,6 +4,9 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { getToken, getUser, clearToken } from '../api/auth';
 import { buildHotelMap } from '../utils/maps';
 
+const MIN_HOURLY_HOURS = 3;
+const HOURLY_PRICE_MULTIPLIER = 2;
+
 const RoomDetailsPage = ({ state = {}, actions = {} }) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [showLightbox, setShowLightbox] = useState(false);
@@ -96,7 +99,7 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
     } catch {}
     const base = new Date();
     base.setMinutes(0, 0, 0);
-    base.setHours(base.getHours() + 2);
+    base.setHours(base.getHours() + 1 + MIN_HOURLY_HOURS);
     return toDateTimeLocal(base);
   });
 
@@ -106,9 +109,9 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
       const ci = new Date(checkInAt);
       const co = new Date(checkOutAt);
       if (Number.isNaN(ci.getTime()) || Number.isNaN(co.getTime())) return;
-      if (co <= ci) {
-        const next = new Date(ci.getTime() + 60 * 60 * 1000);
-        setCheckOutAt(toDateTimeLocal(next));
+      const minCo = new Date(ci.getTime() + MIN_HOURLY_HOURS * 60 * 60 * 1000);
+      if (co < minCo) {
+        setCheckOutAt(toDateTimeLocal(minCo));
       }
     } catch {
       void 0;
@@ -225,6 +228,9 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
         if (id) {
           const hotelParams = new URLSearchParams();
           if (bookingMode === 'HOURLY') {
+            const { checkInDate, checkOutDate } = getHourlyDateRange();
+            hotelParams.set('check_in', checkInDate);
+            hotelParams.set('check_out', checkOutDate);
             hotelParams.set('check_in_at', checkInAt);
             hotelParams.set('check_out_at', checkOutAt);
           } else {
@@ -264,20 +270,52 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
               })();
               if (imgs.length) setRoomImages(imgs);
               
-              // Initialize room types from hotel AC/Non-AC prices
-              const acPrice = parseFloat(hotel.ac_room_price);
-              const nonAcPrice = parseFloat(hotel.non_ac_room_price);
-              const acCount = parseInt(hotel.ac_rooms) || 0;
-              const nonAcCount = parseInt(hotel.non_ac_rooms) || 0;
-              const base = Math.round((hotel.base_price ?? hotel.price ?? safeSel?.price ?? 799));
-              const initialRooms = [];
-              if (!isNaN(nonAcPrice) && nonAcPrice > 0) initialRooms.push({ id: 'non-ac', name: 'Non AC', price: Math.round(nonAcPrice), available: nonAcCount });
-              if (!isNaN(acPrice) && acPrice > 0) initialRooms.push({ id: 'ac', name: 'AC', price: Math.round(acPrice), available: acCount });
+              let initialRooms = [];
+              try {
+                const roomTypeParams = new URLSearchParams(hotelParams);
+                const roomTypesRes = await fetch(`/api/public/hotels/${id}/room-types?${roomTypeParams.toString()}`, {
+                  method: 'GET',
+                  headers: { Accept: 'application/json' }
+                });
+                if (roomTypesRes.ok) {
+                  const roomTypesData = await roomTypesRes.json();
+                  const types = Array.isArray(roomTypesData?.data?.types)
+                    ? roomTypesData.data.types
+                    : Array.isArray(roomTypesData?.types)
+                      ? roomTypesData.types
+                      : [];
+                  initialRooms = types.map((type) => {
+                    const normalizedType = String(type.type || '').toUpperCase();
+                    const isNonAc = normalizedType.includes('NON');
+                    return {
+                      id: isNonAc ? 'non-ac' : 'ac',
+                      name: isNonAc ? 'Non AC' : 'AC',
+                      price: Math.round(Number(type.price_per_night || type.price || 0)),
+                      available: Math.max(0, Number(type.available || 0))
+                    };
+                  }).filter((room) => room.price > 0);
+                }
+              } catch (roomTypesErr) {
+                console.warn('Failed to fetch room-type availability:', roomTypesErr);
+              }
+
               if (!initialRooms.length) {
-                initialRooms.push({ id: 'non-ac', name: 'Non AC', price: base, available: 5 });
-                initialRooms.push({ id: 'ac', name: 'AC', price: base + 300, available: 5 });
+                // Fallback to hotel fields only if the dedicated availability endpoint is unavailable.
+                const acPrice = parseFloat(hotel.ac_room_price);
+                const nonAcPrice = parseFloat(hotel.non_ac_room_price);
+                const acCount = parseInt(hotel.ac_rooms) || 0;
+                const nonAcCount = parseInt(hotel.non_ac_rooms) || 0;
+                const base = Math.round((hotel.base_price ?? hotel.price ?? safeSel?.price ?? 799));
+                if (!isNaN(nonAcPrice) && nonAcPrice > 0) initialRooms.push({ id: 'non-ac', name: 'Non AC', price: Math.round(nonAcPrice), available: nonAcCount });
+                if (!isNaN(acPrice) && acPrice > 0) initialRooms.push({ id: 'ac', name: 'AC', price: Math.round(acPrice), available: acCount });
+                if (!initialRooms.length) {
+                  initialRooms.push({ id: 'non-ac', name: 'Non AC', price: base, available: 5 });
+                  initialRooms.push({ id: 'ac', name: 'AC', price: base + 300, available: 5 });
+                }
               }
               setAvailableRooms(initialRooms);
+              const totalAvailable = initialRooms.reduce((sum, room) => sum + Number(room.available || 0), 0);
+              setDetail((current) => current ? { ...current, available_rooms: totalAvailable } : current);
               
               // Only reset selection if current selection is invalid for new room list
               // But strictly, we should probably default to first room
@@ -565,26 +603,51 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
       const ci = new Date(checkInAt);
       const co = new Date(checkOutAt);
       const diff = Math.ceil((co - ci) / (1000 * 60 * 60));
-      return Math.max(1, diff);
+      return Math.max(MIN_HOURLY_HOURS, diff);
     } catch {
-      return 1;
+      return MIN_HOURLY_HOURS;
     }
   })();
 
   const unitCount = bookingMode === 'HOURLY' ? durationHours : nights;
   const unitLabel = bookingMode === 'HOURLY' ? 'Hour' : 'Night';
-  const unitPrice = bookingMode === 'HOURLY' ? Math.max(1, Math.round(Number(selectedRoomPrice || 0) / 24)) : Number(selectedRoomPrice || 0);
+  const unitPrice = bookingMode === 'HOURLY'
+    ? Math.max(1, Math.round((Number(selectedRoomPrice || 0) / 24) * HOURLY_PRICE_MULTIPLIER))
+    : Number(selectedRoomPrice || 0);
 
   const totalRooms = roomConfigs.length;
   const totalGuests = roomConfigs.reduce((sum, room) => sum + room.guests + (room.children || 0), 0);
 
+  const getHourlyDateRange = () => {
+    const start = new Date(checkInAt);
+    const end = new Date(checkOutAt);
+    const toLocalDate = (date) => new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return { checkInDate: checkIn, checkOutDate: checkOut };
+    }
+    const checkInDate = toLocalDate(start);
+    let checkOutDate = toLocalDate(end);
+    if (checkOutDate <= checkInDate) {
+      const next = new Date(start);
+      next.setDate(next.getDate() + 1);
+      checkOutDate = toLocalDate(next);
+    }
+    return { checkInDate, checkOutDate };
+  };
+
   const [availableCoupons, setAvailableCoupons] = useState([]);
 
-  // Fetch public coupons
+  // Fetch coupons. Logged-in users get coupons filtered by their personal usage limit.
   useEffect(() => {
     const fetchCoupons = async () => {
       try {
-        const res = await fetch('/api/public/coupons', { headers: { Accept: 'application/json' } });
+        const token = getToken();
+        const res = await fetch(token ? '/api/user/coupons/available' : '/api/public/coupons', {
+          headers: {
+            Accept: 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          }
+        });
         if (res.ok) {
           const data = await res.json();
           // The API response structure is { success: true, data: { coupons: [...] } }
@@ -641,23 +704,10 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
           setCouponCode(code);
         })
         .catch(() => {
-          const coupon = availableCoupons.find(c => c.code === code);
-          if (coupon) {
-            let discount = 0;
-            if (coupon.type === 'FLAT') {
-              discount = coupon.flatAmount;
-            } else {
-              discount = Math.round(base * coupon.rate);
-            }
-            const actualDiscount = Math.min(discount, base);
-            setDiscountAmount(actualDiscount);
-            setAppliedCoupon(code);
-            setCouponCode(code);
-          } else {
-            alert('Invalid coupon code');
-            setDiscountAmount(0);
-            setAppliedCoupon('');
-          }
+          alert('Invalid coupon code or usage limit reached');
+          setDiscountAmount(0);
+          setAppliedCoupon('');
+          setCouponCode('');
         });
       return;
     }
@@ -705,6 +755,12 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
       }
       if (co <= ci) {
         alert('Check-out time must be after check-in time');
+        return;
+      }
+      const minCo = new Date(ci.getTime() + MIN_HOURLY_HOURS * 60 * 60 * 1000);
+      if (co < minCo) {
+        alert(`Minimum booking duration is ${MIN_HOURLY_HOURS} hours`);
+        setCheckOutAt(toDateTimeLocal(minCo));
         return;
       }
     } else {
@@ -1237,7 +1293,7 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
                         <div className="flex justify-between items-center">
                           <span className="font-semibold text-gray-800">{room.name}</span>
                           <span className="text-[#ee2e24] font-bold text-lg">
-                            ₹{bookingMode === 'HOURLY' ? Math.max(1, Math.round(Number(room.price || 0) / 24)) : room.price}
+                            ₹{bookingMode === 'HOURLY' ? Math.max(1, Math.round((Number(room.price || 0) / 24) * HOURLY_PRICE_MULTIPLIER)) : room.price}
                           </span>
                         </div>
                         <div className="flex justify-between items-center mt-1">
@@ -1274,6 +1330,9 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
                     Hours
                   </button>
                 </div>
+                {bookingMode === 'HOURLY' && (
+                  <div className="mt-1 text-xs text-gray-500 text-right">Min {MIN_HOURLY_HOURS} hours</div>
+                )}
               </div>
 
               {bookingMode === 'HOURLY' ? (

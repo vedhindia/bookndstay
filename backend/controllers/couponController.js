@@ -1,7 +1,8 @@
 // controllers/couponController.js
-const { Coupon, Vendor } = require('../models');
-const { Op, literal } = require('sequelize');
+const { Coupon } = require('../models');
+const { Op } = require('sequelize');
 const { sendSuccess, sendError } = require('../utils/responseHelper');
+const { canUserUseCoupon } = require('../utils/couponUsage');
 
 /**
  * @description Create a new coupon
@@ -135,29 +136,31 @@ const deleteCoupon = async (req, res) => {
 };
 
 /**
- * @description Get available coupons (global; public for users)
+ * @description Get available coupons. Public requests get all active coupons;
+ * authenticated user requests exclude coupons that reached that user's limit.
  */
 const getAvailableCoupons = async (req, res) => {
   try {
     const now = new Date();
-    // Debug logging
-    console.log('Fetching available coupons. Current time:', now);
 
     const coupons = await Coupon.findAll({
       where: {
-        active: true,
-        // Simplification for debugging: check if any coupons exist first
+        active: true
       }
     });
 
-    // Filter in memory for now to debug SQL issues
-    const activeCoupons = coupons.filter(c => {
-        const isNotExpired = !c.expiry || new Date(c.expiry) > now;
-        const isNotUsedUp = c.used_count < c.usage_limit;
-        return isNotExpired && isNotUsedUp;
-    });
+    const activeCoupons = [];
+    for (const c of coupons) {
+      const isNotExpired = !c.expiry || new Date(c.expiry) > now;
+      if (!isNotExpired) continue;
 
-    console.log(`Found ${coupons.length} total active coupons, ${activeCoupons.length} valid for user.`);
+      if (req.user?.id) {
+        const allowedForUser = await canUserUseCoupon({ coupon: c, userId: req.user.id });
+        if (!allowedForUser) continue;
+      }
+
+      activeCoupons.push(c);
+    }
 
     return sendSuccess(res, { coupons: activeCoupons, count: activeCoupons.length }, 'Available coupons retrieved successfully');
   } catch (err) {
@@ -167,7 +170,7 @@ const getAvailableCoupons = async (req, res) => {
 };
 
 /**
- * @description Apply/validate a coupon code (global)
+ * @description Apply/validate a coupon code
  */
 const applyCoupon = async (req, res) => {
   try {
@@ -182,13 +185,19 @@ const applyCoupon = async (req, res) => {
       where: {
         code: code.toUpperCase(),
         active: true,
-        expiry: { [Op.or]: [{ [Op.gt]: now }, null] },
-        used_count: { [Op.lt]: literal('usage_limit') }
+        expiry: { [Op.or]: [{ [Op.gt]: now }, null] }
       }
     });
 
     if (!coupon) {
       return sendError(res, 'Invalid, expired, or fully used coupon', 400);
+    }
+
+    if (req.user?.id) {
+      const allowedForUser = await canUserUseCoupon({ coupon, userId: req.user.id });
+      if (!allowedForUser) {
+        return sendError(res, 'You have already used this coupon the maximum allowed number of times', 400);
+      }
     }
 
     // Calculate discount

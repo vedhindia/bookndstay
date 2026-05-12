@@ -1,6 +1,6 @@
 // server.js
 const app = require('./app');
-const { sequelize, Booking } = require('./models');
+const { sequelize, Booking, Coupon, CouponUsage } = require('./models');
 const { DataTypes, Op } = require('sequelize');
 
 const PORT = process.env.PORT || 3001;
@@ -185,6 +185,42 @@ const PORT = process.env.PORT || 3001;
       console.warn('Schema check warning:', e.message);
     }
     await sequelize.sync({ alter, force });
+
+    try {
+      const historicalCouponBookings = await Booking.findAll({
+        where: {
+          coupon_code: { [Op.ne]: null },
+          status: { [Op.in]: ['CONFIRMED', 'COMPLETED'] }
+        },
+        attributes: ['id', 'user_id', 'coupon_code', 'discount_amount']
+      });
+
+      for (const booking of historicalCouponBookings) {
+        const coupon = await Coupon.findOne({
+          where: { code: String(booking.coupon_code || '').toUpperCase() }
+        });
+        if (!coupon) continue;
+
+        await CouponUsage.findOrCreate({
+          where: { booking_id: booking.id },
+          defaults: {
+            coupon_id: coupon.id,
+            user_id: booking.user_id,
+            booking_id: booking.id,
+            code: coupon.code,
+            discount_amount: booking.discount_amount || 0
+          }
+        });
+      }
+
+      const coupons = await Coupon.findAll({ attributes: ['id'] });
+      for (const coupon of coupons) {
+        const count = await CouponUsage.count({ where: { coupon_id: coupon.id } });
+        await Coupon.update({ used_count: count }, { where: { id: coupon.id } });
+      }
+    } catch (couponUsageErr) {
+      console.warn('Coupon usage backfill warning:', couponUsageErr.message);
+    }
 
     app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 

@@ -386,17 +386,17 @@ const Coupons = () => {
     }
   };
 
-  // Get usage percentage
+  // Usage limit is enforced per user; used_count is total successful redemptions.
   const getUsagePercentage = (used, limit) => {
-    if (!limit || limit === 0) return 0;
-    return Math.min(Math.round((used / limit) * 100), 100);
+    if (!used || used <= 0) return 0;
+    if (!limit || limit === 0) return 100;
+    return Math.min(Math.round((used / Math.max(used, limit)) * 100), 100);
   };
 
   // Get coupon status text
   const getCouponStatus = (coupon) => {
     if (coupon.active === 0) return 'Inactive';
     if (isExpired(coupon.expiry)) return 'Expired';
-    if (coupon.used_count >= coupon.usage_limit) return 'Limit Reached';
     return 'Active';
   };
 
@@ -596,7 +596,7 @@ const Coupons = () => {
                 className="text-muted text-nowrap"
                 style={{ minWidth: '50px' }}
               >
-                {coupon.used_count}/{coupon.usage_limit}
+                {coupon.used_count} used / {coupon.usage_limit} per user
               </small>
             </div>
           </td>
@@ -795,7 +795,7 @@ const Coupons = () => {
                       disabled={loading}
                       min="1"
                     />
-                    <small className="text-muted">Maximum times coupon can be used (default: 1)</small>
+                    <small className="text-muted">Maximum times each user can use this coupon (default: 1)</small>
                   </div>
 
                   {/* Used Count (Read-only for edit) */}
@@ -811,7 +811,7 @@ const Coupons = () => {
                         disabled
                         readOnly
                       />
-                      <small className="text-muted">Current usage count (read-only, default: 0)</small>
+                      <small className="text-muted">Total successful redemptions across all users (read-only)</small>
                     </div>
                   )}
 

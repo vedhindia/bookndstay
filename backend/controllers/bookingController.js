@@ -1,7 +1,8 @@
 // controllers/bookingController.js
 const { Booking, Room, Payment, sequelize, Hotel, Coupon } = require('../models');
-const { Op, literal } = require('sequelize');
+const { Op } = require('sequelize');
 const Razorpay = require('razorpay');
+const { canUserUseCoupon, recordCouponUsageForBooking } = require('../utils/couponUsage');
 require('dotenv').config();
 
 const razorpay = new Razorpay({
@@ -76,8 +77,7 @@ module.exports = {
           where: {
             code: coupon_code,
             active: true,
-            expiry: { [Op.or]: [{ [Op.gt]: now }, null] },
-            used_count: { [Op.lt]: literal('usage_limit') }
+            expiry: { [Op.or]: [{ [Op.gt]: now }, null] }
           },
           transaction: t,
           lock: t.LOCK.UPDATE
@@ -85,6 +85,15 @@ module.exports = {
         if (!coupon) {
           await t.rollback();
           return res.status(400).json({ message: 'Invalid or expired coupon' });
+        }
+        const allowedForUser = await canUserUseCoupon({
+          coupon,
+          userId: req.user.id,
+          transaction: t
+        });
+        if (!allowedForUser) {
+          await t.rollback();
+          return res.status(400).json({ message: 'You have already used this coupon the maximum allowed number of times' });
         }
         if (coupon.type === 'PERCENT') {
           discount_amount = (baseAmount * coupon.value) / 100;
@@ -142,7 +151,7 @@ module.exports = {
   completePayment: async (req, res) => {
     try {
       // This is a sample endpoint to update payment after gateway response
-      const { booking_id, gateway_payment_id, status } = req.body;
+      const { booking_id, gateway_payment_id, status, payment_method } = req.body;
       const payment = await Payment.findOne({ where: { booking_id } });
       if (!payment) return res.status(404).json({ message: 'Payment not found' });
 
@@ -197,22 +206,13 @@ module.exports = {
       await payment.save();
 
       if (status === 'success') {
+        if (booking.coupon_code) {
+          await recordCouponUsageForBooking({ booking });
+        }
+
         booking.status = 'CONFIRMED';
         booking.payment_id = payment.gateway_payment_id;
         await booking.save();
-
-        // increment coupon usage only on successful payment
-        if (booking.coupon_code) {
-          await Coupon.increment(
-            { used_count: 1 },
-            {
-              where: {
-                code: booking.coupon_code,
-                used_count: { [Op.lt]: literal('usage_limit') }
-              }
-            }
-          );
-        }
       } else {
         booking.status = 'CANCELLED';
         await booking.save();
@@ -240,7 +240,10 @@ module.exports = {
         }
       }
       res.json({ payment, booking });
-    } catch (err) { console.error(err); res.status(500).json({ message: err.message }); }
+    } catch (err) {
+      console.error(err);
+      res.status(err.statusCode || 500).json({ message: err.message });
+    }
   },
 
   getMyBookings: async (req, res) => {

@@ -12,6 +12,7 @@ const Booking = require('./booking')(sequelize, DataTypes);
 const Review = require('./review')(sequelize, DataTypes);
 const Payment = require('./payment')(sequelize, DataTypes);
 const Coupon = require('./coupon')(sequelize, DataTypes);
+const CouponUsage = require('./couponUsage')(sequelize, DataTypes);
 const UserOtp = require('./userOtp')(sequelize, DataTypes);
 const BlacklistedToken = require('./blacklistedToken')(sequelize, DataTypes);
 const VendorApplication = require('./vendorApplication')(sequelize, DataTypes);
@@ -64,6 +65,13 @@ Review.belongsTo(Hotel, { foreignKey: 'hotel_id', as: 'hotel' });
 Booking.hasOne(Payment, { foreignKey: 'booking_id', as: 'payment' });
 Payment.belongsTo(Booking, { foreignKey: 'booking_id', as: 'booking' });
 
+Coupon.hasMany(CouponUsage, { foreignKey: 'coupon_id', as: 'usages' });
+CouponUsage.belongsTo(Coupon, { foreignKey: 'coupon_id', as: 'coupon' });
+User.hasMany(CouponUsage, { foreignKey: 'user_id', as: 'couponUsages' });
+CouponUsage.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+Booking.hasOne(CouponUsage, { foreignKey: 'booking_id', as: 'couponUsage' });
+CouponUsage.belongsTo(Booking, { foreignKey: 'booking_id', as: 'booking' });
+
 VendorApplication.hasMany(VendorApplicationDocument, { foreignKey: 'application_id', as: 'documents' });
 VendorApplicationDocument.belongsTo(VendorApplication, { foreignKey: 'application_id', as: 'application' });
 
@@ -81,6 +89,7 @@ module.exports = {
   Review,
   Payment,
   Coupon,
+  CouponUsage,
   UserOtp,
   BlacklistedToken,
   VendorApplication,

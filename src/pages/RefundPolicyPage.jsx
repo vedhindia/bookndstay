@@ -20,7 +20,7 @@ export default function RefundPolicyPage() {
             Refund eligibility depends on:
           </p>
           <ul className="list-disc pl-5 text-gray-700 text-sm sm:text-base space-y-1">
-            <li>Booking type (Nightly / Hourly)</li>
+            <li>Booking type (Night / Hour)</li>
             <li>Time remaining before check-in/start time</li>
             <li>Payment method used</li>
           </ul>
