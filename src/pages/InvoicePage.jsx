@@ -414,7 +414,7 @@ export default function InvoicePage() {
                   </p>
                   <div className="text-sm text-gray-600 print:text-gray-700 space-y-1">
                     <p className="font-medium mb-2">For support & queries:</p>
-                    <p>📧 support@bookndstay.com | 📞 +91-124-4565656</p>
+                    <p>📧 bookndstay@gmail.com.com | 📞 +91-7057062000</p>
                     <p className="mt-2">🌐 www.bookndstay.com</p>
                   </div>
                 </div>
