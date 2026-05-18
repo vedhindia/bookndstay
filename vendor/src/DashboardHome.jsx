@@ -265,7 +265,12 @@ const DashboardHome = () => {
                             ? 'success'
                             : b.status === 'PENDING'
                             ? 'warning'
-                            : 'danger'
+                            : b.status === 'COMPLETED'
+                            ? 'primary'
+                            : b.status === 'CANCELLED'
+                            ? 'danger'
+                            : 'info'
+
                         }`}
                       >
                         {b.status}

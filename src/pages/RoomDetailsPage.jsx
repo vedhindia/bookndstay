@@ -6,6 +6,10 @@ import { buildHotelMap } from '../utils/maps';
 
 const MIN_HOURLY_HOURS = 3;
 const HOURLY_PRICE_MULTIPLIER = 2;
+const HOURLY_DAY_START_HOUR = 6;
+const HOURLY_DAY_END_HOUR = 18;
+const HOURLY_LATEST_SAME_DAY_CHECKOUT_HOUR = 21;
+const HOURLY_OVERNIGHT_CHECKOUT_HOUR = 11;
 
 const RoomDetailsPage = ({ state = {}, actions = {} }) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
@@ -109,10 +113,32 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
       const ci = new Date(checkInAt);
       const co = new Date(checkOutAt);
       if (Number.isNaN(ci.getTime()) || Number.isNaN(co.getTime())) return;
-      const minCo = new Date(ci.getTime() + MIN_HOURLY_HOURS * 60 * 60 * 1000);
-      if (co < minCo) {
-        setCheckOutAt(toDateTimeLocal(minCo));
+      const p = parseDateTimeLocalParts(checkInAt);
+      if (!p) return;
+
+      if (p.hour24 < HOURLY_DAY_START_HOUR) {
+        const nextCi = new Date(ci);
+        nextCi.setHours(HOURLY_DAY_START_HOUR, 0, 0, 0);
+        setCheckInAt(toDateTimeLocal(nextCi));
+        return;
       }
+
+      const isOvernight = p.hour24 > HOURLY_DAY_END_HOUR || (p.hour24 === HOURLY_DAY_END_HOUR && p.minute > 0);
+      if (isOvernight) {
+        const fixed = new Date(ci);
+        fixed.setDate(fixed.getDate() + 1);
+        fixed.setHours(HOURLY_OVERNIGHT_CHECKOUT_HOUR, 0, 0, 0);
+        if (co.getTime() !== fixed.getTime()) {
+          setCheckOutAt(toDateTimeLocal(fixed));
+        }
+        return;
+      }
+
+      const minCo = new Date(ci.getTime() + MIN_HOURLY_HOURS * 60 * 60 * 1000);
+      if (co < minCo) setCheckOutAt(toDateTimeLocal(minCo));
+      const lastAllowed = new Date(ci);
+      lastAllowed.setHours(HOURLY_LATEST_SAME_DAY_CHECKOUT_HOUR, 0, 0, 0);
+      if (co > lastAllowed) setCheckOutAt(toDateTimeLocal(lastAllowed));
     } catch {
       void 0;
     }
@@ -122,6 +148,13 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
     const p = state.selectedRoom?.price ?? 799;
     return Math.round(p);
   });
+
+  const isHourlyOvernight = (() => {
+    if (bookingMode !== 'HOURLY') return false;
+    const p = parseDateTimeLocalParts(checkInAt);
+    if (!p) return false;
+    return p.hour24 > HOURLY_DAY_END_HOUR || (p.hour24 === HOURLY_DAY_END_HOUR && p.minute > 0);
+  })();
   const [couponCode, setCouponCode] = useState('');
   const [discountAmount, setDiscountAmount] = useState(0);
   const [appliedCoupon, setAppliedCoupon] = useState('');
@@ -757,11 +790,37 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
         alert('Check-out time must be after check-in time');
         return;
       }
-      const minCo = new Date(ci.getTime() + MIN_HOURLY_HOURS * 60 * 60 * 1000);
-      if (co < minCo) {
-        alert(`Minimum booking duration is ${MIN_HOURLY_HOURS} hours`);
-        setCheckOutAt(toDateTimeLocal(minCo));
+      const p = parseDateTimeLocalParts(checkInAt);
+      if (p && p.hour24 < HOURLY_DAY_START_HOUR) {
+        alert(`Hourly booking starts from ${String(HOURLY_DAY_START_HOUR).padStart(2, '0')}:00 AM`);
+        const nextCi = new Date(ci);
+        nextCi.setHours(HOURLY_DAY_START_HOUR, 0, 0, 0);
+        setCheckInAt(toDateTimeLocal(nextCi));
         return;
+      }
+
+      if (isHourlyOvernight) {
+        const fixed = new Date(ci);
+        fixed.setDate(fixed.getDate() + 1);
+        fixed.setHours(HOURLY_OVERNIGHT_CHECKOUT_HOUR, 0, 0, 0);
+        if (co.getTime() !== fixed.getTime()) {
+          setCheckOutAt(toDateTimeLocal(fixed));
+          return;
+        }
+      } else {
+        const lastAllowed = new Date(ci);
+        lastAllowed.setHours(HOURLY_LATEST_SAME_DAY_CHECKOUT_HOUR, 0, 0, 0);
+        if (co > lastAllowed) {
+          alert(`Hourly booking is allowed only until ${String(HOURLY_LATEST_SAME_DAY_CHECKOUT_HOUR - 12).padStart(2, '0')}:00 PM`);
+          setCheckOutAt(toDateTimeLocal(lastAllowed));
+          return;
+        }
+        const minCo = new Date(ci.getTime() + MIN_HOURLY_HOURS * 60 * 60 * 1000);
+        if (co < minCo) {
+          alert(`Minimum booking duration is ${MIN_HOURLY_HOURS} hours`);
+          setCheckOutAt(toDateTimeLocal(minCo));
+          return;
+        }
       }
     } else {
       const todayDate = new Date();
@@ -1331,7 +1390,9 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
                   </button>
                 </div>
                 {bookingMode === 'HOURLY' && (
-                  <div className="mt-1 text-xs text-gray-500 text-right">Min {MIN_HOURLY_HOURS} hours</div>
+                  <div className="mt-1 text-xs text-gray-500 text-right">
+                    {isHourlyOvernight ? `Checkout ${HOURLY_OVERNIGHT_CHECKOUT_HOUR}:00 AM next day` : `Min ${MIN_HOURLY_HOURS} hours`}
+                  </div>
                 )}
               </div>
 
@@ -1396,12 +1457,14 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
                             value={parts.date}
                             min={minDate}
                             onChange={(e) => setCheckOutAt(buildDateTimeLocal(e.target.value, h12.hour12, parts.minute, h12.ampm))}
+                            disabled={isHourlyOvernight}
                             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#ee2e24] focus:outline-none"
                           />
                           <div className="grid grid-cols-3 gap-2">
                             <select
                               value={String(h12.hour12)}
                               onChange={(e) => setCheckOutAt(buildDateTimeLocal(parts.date, e.target.value, parts.minute, h12.ampm))}
+                              disabled={isHourlyOvernight}
                               className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-[#ee2e24] focus:outline-none"
                             >
                               {Array.from({ length: 12 }, (_, i) => i + 1).map((v) => (
@@ -1411,6 +1474,7 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
                             <select
                               value={String(parts.minute).padStart(2, '0')}
                               onChange={(e) => setCheckOutAt(buildDateTimeLocal(parts.date, h12.hour12, e.target.value, h12.ampm))}
+                              disabled={isHourlyOvernight}
                               className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-[#ee2e24] focus:outline-none"
                             >
                               {['00', '15', '30', '45'].map((m) => (
@@ -1420,6 +1484,7 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
                             <select
                               value={h12.ampm}
                               onChange={(e) => setCheckOutAt(buildDateTimeLocal(parts.date, h12.hour12, parts.minute, e.target.value))}
+                              disabled={isHourlyOvernight}
                               className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-[#ee2e24] focus:outline-none"
                             >
                               <option value="AM">AM</option>

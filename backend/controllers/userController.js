@@ -59,6 +59,10 @@ const buildISTDateTimeFromDateOnly = (dateOnly, time12h) => {
 
 const DEFAULT_HOTEL_CHECK_IN_TIME = '12:00 PM';
 const DEFAULT_HOTEL_CHECK_OUT_TIME = '11:00 AM';
+const MIN_HOURLY_HOURS = 3;
+const HOURLY_DAY_START_HOUR = 6;
+const HOURLY_DAY_END_HOUR = 18;
+const HOURLY_LATEST_SAME_DAY_CHECKOUT_TIME = '09:00 PM';
 
 const normalizeRoomTypeValue = (value) =>
   String(value || '').trim().toUpperCase().replace(/[\s-]+/g, '_');
@@ -994,6 +998,52 @@ module.exports = {
       if (coAt <= ciAt) {
         throw createError('check_out_at must be after check_in_at', 400);
       }
+
+      const getIstParts = (d) => {
+        const istMs = d.getTime() + (5.5 * 60 * 60 * 1000);
+        const x = new Date(istMs);
+        return {
+          hour: x.getUTCHours(),
+          minute: x.getUTCMinutes(),
+          dateOnly: x.toISOString().slice(0, 10)
+        };
+      };
+
+      const addDaysToDateOnly = (dateOnly, days) => {
+        const s = String(dateOnly || '').slice(0, 10);
+        const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!m) return null;
+        const y = Number(m[1]);
+        const mo = Number(m[2]);
+        const da = Number(m[3]);
+        const utc = Date.UTC(y, mo - 1, da + Number(days || 0), 0, 0, 0);
+        return new Date(utc).toISOString().slice(0, 10);
+      };
+
+      const ist = getIstParts(ciAt);
+      if (ist.hour < HOURLY_DAY_START_HOUR) {
+        throw createError(`Hourly booking starts from ${String(HOURLY_DAY_START_HOUR).padStart(2, '0')}:00 AM`, 400);
+      }
+
+      const isOvernight = ist.hour > HOURLY_DAY_END_HOUR || (ist.hour === HOURLY_DAY_END_HOUR && ist.minute > 0);
+      if (isOvernight) {
+        const nextDate = addDaysToDateOnly(ist.dateOnly, 1);
+        if (!nextDate) throw createError('Invalid check-in datetime', 400);
+        const fixed = buildISTDateTimeFromDateOnly(nextDate, DEFAULT_HOTEL_CHECK_OUT_TIME);
+        if (!fixed) throw createError('Invalid fixed checkout datetime', 400);
+        coAt = fixed;
+      } else {
+        const diff = Math.ceil((coAt - ciAt) / (1000 * 60 * 60));
+        if (diff < MIN_HOURLY_HOURS) {
+          throw createError(`Minimum booking duration is ${MIN_HOURLY_HOURS} hours`, 400);
+        }
+        const lastAllowed = buildISTDateTimeFromDateOnly(ist.dateOnly, HOURLY_LATEST_SAME_DAY_CHECKOUT_TIME);
+        if (!lastAllowed) throw createError('Invalid checkout time rule', 500);
+        if (coAt > lastAllowed) {
+          throw createError(`Hourly booking is allowed only until ${HOURLY_LATEST_SAME_DAY_CHECKOUT_TIME}`, 400);
+        }
+      }
+
       durationHours = Math.max(1, Math.ceil((coAt - ciAt) / (1000 * 60 * 60)));
       effectiveCheckIn = toDateOnly(ciAt);
       effectiveCheckOut = toDateOnly(coAt);
