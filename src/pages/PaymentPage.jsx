@@ -359,6 +359,7 @@ export default function PaymentPage() {
       // Prepare confirmation data
       const confirmationData = {
         id: confirmedBooking?.id || bookingId,
+        hotelId: summary?.hotelId || confirmedBooking?.hotel_id || confirmedBooking?.hotelId,
         hotelName: summary?.hotelName,
         address: summary?.address,
         city: summary?.city,
@@ -507,6 +508,7 @@ export default function PaymentPage() {
             // Prepare confirmation data
             const confirmationData = {
               id: confirmedBooking?.id || bookingId,
+              hotelId: summary?.hotelId || confirmedBooking?.hotel_id || confirmedBooking?.hotelId,
               hotelName: summary?.hotelName,
               address: summary?.address,
               city: summary?.city,

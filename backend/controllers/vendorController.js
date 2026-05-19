@@ -254,6 +254,7 @@ module.exports = {
       if (rangeStartDate && rangeEndDate) {
         const nightlyModeWhere = { [Op.or]: [{ booking_mode: 'NIGHTLY' }, { booking_mode: null }] };
         const hourlyModeWhere = { booking_mode: 'HOURLY' };
+        const nonAcRoomTypeValues = ['NON_AC', 'Non AC', 'NON-AC', 'Non-AC', 'NON AC'];
 
         const nightlyOverlapWhere = {
           hotel_id: h.id,
@@ -279,18 +280,47 @@ module.exports = {
           Booking.sum('booked_room', { where: nightlyOverlapWhere }),
           Booking.sum('booked_room', { where: hourlyOverlapWhere })
         ]);
+        const [
+          acNightlyBookedRaw,
+          acHourlyBookedRaw,
+          nonAcNightlyBookedRaw,
+          nonAcHourlyBookedRaw
+        ] = await Promise.all([
+          Booking.sum('booked_room', { where: { ...nightlyOverlapWhere, room_type: 'AC' } }),
+          Booking.sum('booked_room', { where: { ...hourlyOverlapWhere, room_type: 'AC' } }),
+          Booking.sum('booked_room', { where: { ...nightlyOverlapWhere, room_type: { [Op.in]: nonAcRoomTypeValues } } }),
+          Booking.sum('booked_room', { where: { ...hourlyOverlapWhere, room_type: { [Op.in]: nonAcRoomTypeValues } } })
+        ]);
+
         const bookedTotal = Number(nightlyBookedRaw || 0) + Number(hourlyBookedRaw || 0);
+        const bookedAc = Number(acNightlyBookedRaw || 0) + Number(acHourlyBookedRaw || 0);
+        const bookedNonAc = Number(nonAcNightlyBookedRaw || 0) + Number(nonAcHourlyBookedRaw || 0);
+
         const capacityTotal = parseInt(h.available_rooms || 0);
-        const computedAvailable = Math.max(0, capacityTotal - bookedTotal);
+        const capacityAc = parseInt(h.ac_rooms || 0);
+        const capacityNonAc = parseInt(h.non_ac_rooms || 0);
+
+        const availableTotal = Math.max(0, capacityTotal - bookedTotal);
+        const availableAc = Math.max(0, capacityAc - bookedAc);
+        const availableNonAc = Math.max(0, capacityNonAc - bookedNonAc);
+
         h.setDataValue('availability', {
           mode: 'NIGHTLY',
           from: rangeStartDate,
           to: rangeEndDate,
           capacity_total: capacityTotal,
+          capacity_ac: capacityAc,
+          capacity_non_ac: capacityNonAc,
           booked_total: bookedTotal,
-          available_total: computedAvailable
+          booked_ac: bookedAc,
+          booked_non_ac: bookedNonAc,
+          available_total: availableTotal,
+          available_ac: availableAc,
+          available_non_ac: availableNonAc
         });
-        h.setDataValue('available_rooms', computedAvailable);
+        h.setDataValue('available_rooms', availableTotal);
+        h.setDataValue('ac_rooms', availableAc);
+        h.setDataValue('non_ac_rooms', availableNonAc);
       }
       return h;
     }));

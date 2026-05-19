@@ -910,6 +910,7 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
       // Prepare payment intent with booking details
       const paymentIntent = {
         bookingId: bookingId,
+        hotelId: hotelId,
         hotelName: detail?.name || 'Hotel',
         address: detail?.address || detail?.location || '',
         city: detail?.city || '',
@@ -1391,7 +1392,9 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
                 </div>
                 {bookingMode === 'HOURLY' && (
                   <div className="mt-1 text-xs text-gray-500 text-right">
-                    {isHourlyOvernight ? `Checkout ${HOURLY_OVERNIGHT_CHECKOUT_HOUR}:00 AM next day` : `Min ${MIN_HOURLY_HOURS} hours`}
+                    {isHourlyOvernight
+                      ? `Checkout ${HOURLY_OVERNIGHT_CHECKOUT_HOUR}:00 AM next day`
+                      : `Min ${MIN_HOURLY_HOURS} hours • You can book the room between 6 AM to 6 PM only`}
                   </div>
                 )}
               </div>

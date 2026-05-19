@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { FaCheckCircle, FaMapMarkerAlt, FaCalendarAlt, FaUsers, FaPrint, FaHome } from 'react-icons/fa';
 import { buildHotelMap } from '../utils/maps';
+import { getToken } from '../api/auth';
 
 const BookingConfirmationPage = () => {
   const navigate = useNavigate();
@@ -29,6 +30,7 @@ const BookingConfirmationPage = () => {
   const city = roomDetails?.city;
   const mapUrl = roomDetails?.map_url || roomDetails?.mapUrl || roomDetails?.mapURL;
   const bookingId = roomDetails?.id || 'N/A';
+  const hotelId = roomDetails?.hotelId || roomDetails?.hotel_id || roomDetails?.hotel?.id || roomDetails?.hotel?._id;
   const checkIn = roomDetails?.checkIn;
   const checkOut = roomDetails?.checkOut;
   const bookingMode = String(roomDetails?.bookingMode || roomDetails?.booking_mode || 'NIGHTLY').toUpperCase();
@@ -56,6 +58,37 @@ const BookingConfirmationPage = () => {
     );
   }
 
+  const openHotelDetails = async () => {
+    if (hotelId) {
+      navigate(`/roomDetails?id=${hotelId}`);
+      return;
+    }
+
+    const token = getToken();
+    if (!token || !bookingId || bookingId === 'N/A') {
+      navigate('/viewBooking');
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/user/bookings/${bookingId}`, {
+        method: 'GET',
+        headers: { Accept: 'application/json', Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to load booking details');
+      const data = await res.json();
+      const booking = data?.data?.booking || data?.booking;
+      const hid = booking?.hotel_id || booking?.hotel?.id || booking?.hotel?._id;
+      if (!hid) {
+        navigate('/viewBooking');
+        return;
+      }
+      navigate(`/roomDetails?id=${hid}`);
+    } catch {
+      navigate('/viewBooking');
+    }
+  };
+
   return (
     <div className="bg-gray-50 min-h-screen py-8">
       <div className="container mx-auto px-4">
@@ -78,7 +111,7 @@ const BookingConfirmationPage = () => {
               <div className="flex items-start mb-4">
                 <div 
                   className="h-20 w-20 bg-gray-200 rounded-md mr-4 flex-shrink-0 overflow-hidden cursor-pointer" 
-                  onClick={() => navigate(`/roomDetails?id=${bookingId}`)}
+                  onClick={openHotelDetails}
                 >
                   {image ? (
                     <img src={image} alt={hotelName} className="w-full h-full object-cover hover:opacity-90 transition-opacity" />
