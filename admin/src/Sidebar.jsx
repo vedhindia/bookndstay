@@ -87,12 +87,21 @@ const Sidebar = ({ isCollapsed, isMobile = false, onMobileClose }) => {
   };
 
   const normalizeList = (res) => {
-    return Array.isArray(res?.data)
-      ? res.data
-      : Array.isArray(res?.results)
-      ? res.results
-      : Array.isArray(res?.items)
-      ? res.items
+    const root = res?.data ?? res;
+    return Array.isArray(root?.data)
+      ? root.data
+      : Array.isArray(root?.results)
+      ? root.results
+      : Array.isArray(root?.items)
+      ? root.items
+      : Array.isArray(root?.users)
+      ? root.users
+      : Array.isArray(root?.hotels)
+      ? root.hotels
+      : Array.isArray(root?.vendors)
+      ? root.vendors
+      : Array.isArray(root?.bookings)
+      ? root.bookings
       : Array.isArray(res?.users)
       ? res.users
       : Array.isArray(res?.hotels)
@@ -125,7 +134,7 @@ const Sidebar = ({ isCollapsed, isMobile = false, onMobileClose }) => {
 
   const bootstrapIfNeeded = async () => {
     try {
-      const bootKey = 'admin_seen_bootstrap_v1';
+      const bootKey = 'admin_seen_bootstrap_v2';
       const booted = localStorage.getItem(bootKey);
       if (booted && hasValidSeenState()) return false;
 

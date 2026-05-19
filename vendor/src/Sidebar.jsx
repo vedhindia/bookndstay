@@ -71,8 +71,64 @@ const Sidebar = ({ isCollapsed, onClose }) => {
     }
   };
 
+  const hasValidSeenState = () => {
+    try {
+      const raw = localStorage.getItem('vendor_seen_booking_ids_v1');
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (!Array.isArray(parsed)) return false;
+      const rawUnseen = localStorage.getItem('vendor_unseen_booking_ids_v1');
+      const parsedUnseen = rawUnseen ? JSON.parse(rawUnseen) : null;
+      if (parsedUnseen !== null && !Array.isArray(parsedUnseen)) return false;
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const bootstrapIfNeeded = async () => {
+    try {
+      const bootKey = 'vendor_seen_bootstrap_v1';
+      const booted = localStorage.getItem(bootKey);
+      if (booted && hasValidSeenState()) return false;
+
+      const resResp = await api.get('/vendor/bookings', { params: { page: 1, limit: 500 } });
+      const res = resResp?.data;
+      const list = Array.isArray(res?.data)
+        ? res.data
+        : Array.isArray(res?.bookings)
+        ? res.bookings
+        : Array.isArray(res?.results)
+        ? res.results
+        : Array.isArray(res)
+        ? res
+        : [];
+
+      const initialSeen = new Set();
+      for (const b of list) {
+        const st = String(b?.status || '').toUpperCase();
+        if (st !== 'CONFIRMED' && st !== 'COMPLETED') continue;
+        const id = b?.id ?? b?.booking_id ?? b?._id;
+        if (!id) continue;
+        initialSeen.add(String(id));
+      }
+
+      saveSeenBookingIds(initialSeen);
+      saveUnseenBookingIds(new Set());
+      localStorage.setItem(bootKey, '1');
+      setSeenBookingIds(initialSeen);
+      setUnseenBookingIds(new Set());
+      setBadgeCounts({ bookings: 0 });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const fetchBadges = async () => {
     try {
+      const bootedNow = await bootstrapIfNeeded();
+      if (bootedNow) return;
+
       const resResp = await api.get('/vendor/bookings', { params: { page: 1, limit: 200 } });
       const res = resResp?.data;
       const list = Array.isArray(res?.data)
