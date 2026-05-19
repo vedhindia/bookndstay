@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { useNavigate } from 'react-router-dom';
 import { getToken } from '../api/auth';
@@ -18,6 +18,8 @@ const Hotels = ({ state, actions }) => {
     groupFriendly: false,
     localIDAccepted: false
   });
+  const [featuredOnly, setFeaturedOnly] = useState(false);
+  const [selectedAmenities, setSelectedAmenities] = useState([]);
   const [originalHotels, setOriginalHotels] = useState([]);
   const [hotels, setHotels] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -102,6 +104,34 @@ const Hotels = ({ state, actions }) => {
     return result;
   };
 
+  const parseTextList = (val) => {
+    if (!val && val !== '') return [];
+    if (Array.isArray(val)) return val.map((x) => String(x).trim()).filter(Boolean);
+    if (typeof val === 'string') {
+      const trimmed = val.trim();
+      if (!trimmed) return [];
+      if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || trimmed.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) return parsed.map((x) => String(x).trim()).filter(Boolean);
+          if (parsed && typeof parsed === 'object') {
+            return Object.values(parsed).map((x) => String(x).trim()).filter(Boolean);
+          }
+        } catch {
+          // fall through
+        }
+      }
+      return trimmed.split(',').map((s) => s.trim()).filter(Boolean);
+    }
+    return [];
+  };
+
+  const toNumberOrNull = (val) => {
+    if (val === null || val === undefined || val === '') return null;
+    const n = typeof val === 'number' ? val : parseFloat(String(val));
+    return Number.isFinite(n) ? n : null;
+  };
+
   const handleImageNavigation = (hotelId, direction, e) => {
     e.stopPropagation();
     
@@ -128,12 +158,16 @@ const Hotels = ({ state, actions }) => {
   };
 
   const haversineKm = (lat1, lon1, lat2, lon2) => {
-    if (![lat1, lon1, lat2, lon2].every(n => typeof n === 'number' && !isNaN(n))) return Infinity;
+    const a1 = toNumberOrNull(lat1);
+    const o1 = toNumberOrNull(lon1);
+    const a2 = toNumberOrNull(lat2);
+    const o2 = toNumberOrNull(lon2);
+    if (![a1, o1, a2, o2].every((n) => typeof n === 'number' && !Number.isNaN(n))) return Infinity;
     const R = 6371;
     const toRad = (d) => d * Math.PI / 180;
-    const dLat = toRad(lat2 - lat1);
-    const dLon = toRad(lon2 - lon1);
-    const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+    const dLat = toRad(a2 - a1);
+    const dLon = toRad(o2 - o1);
+    const a = Math.sin(dLat/2)**2 + Math.cos(toRad(a1))*Math.cos(toRad(a2))*Math.sin(dLon/2)**2;
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     return R * c;
   };
@@ -141,15 +175,20 @@ const Hotels = ({ state, actions }) => {
   const handleNearMe = () => {
     if (!navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition((pos) => {
-      const { latitude: myLat, longitude: myLon } = pos.coords;
+      const myLat = toNumberOrNull(pos?.coords?.latitude);
+      const myLon = toNumberOrNull(pos?.coords?.longitude);
+      if (!myLat || !myLon) {
+        setError('Unable to get your location');
+        return;
+      }
       
       // Update originalHotels with distance and sort by distance
       setOriginalHotels(prev => {
         const withDistance = prev.map(h => ({
           ...h,
-          distanceKm: haversineKm(myLat, myLon, h.latitude ?? h.lat ?? 0, h.longitude ?? h.lng ?? 0),
+          distanceKm: haversineKm(myLat, myLon, h.latitude ?? h.lat, h.longitude ?? h.lng),
           distance: (() => {
-            const km = haversineKm(myLat, myLon, h.latitude ?? h.lat ?? 0, h.longitude ?? h.lng ?? 0);
+            const km = haversineKm(myLat, myLon, h.latitude ?? h.lat, h.longitude ?? h.lng);
             return (isFinite(km) ? `${km.toFixed(1)} km` : h.distance);
           })()
         }));
@@ -163,6 +202,8 @@ const Hotels = ({ state, actions }) => {
       if (sortOption !== 'popularity') {
           setSortOption('popularity');
       }
+    }, () => {
+      setError('Please allow location access to use Near Me');
     });
   };
 
@@ -350,6 +391,10 @@ const Hotels = ({ state, actions }) => {
             return ['WiFi', 'AC', 'TV', 'Room Service'];
           })();
 
+          const features = parseTextList(item.hotel_features ?? item.hotelFeatures ?? item.features ?? '');
+          const featuresLc = features.map((x) => String(x).toLowerCase());
+          const hasFeature = (kw) => featuresLc.some((x) => x.includes(kw));
+
           // Parse images
           const imgs = (() => {
             const arr = collectAllImages(item);
@@ -368,7 +413,7 @@ const Hotels = ({ state, actions }) => {
             name,
             location: cityLoc,
             description: item.description || `A comfortable stay in ${cityLoc} with modern amenities.`,
-            distance: item.distance || ((1 + Math.random() * 5).toFixed(1) + ' km'),
+            distance: item.distance || null,
             rating: parseFloat(rating.toFixed(1)),
             reviews,
             ratingText,
@@ -396,17 +441,19 @@ const Hotels = ({ state, actions }) => {
               }
               return n && n > 0 ? `${n} people booked this hotel today` : null;
             })(),
-            familyFriendly: item.familyFriendly ?? ((idx % 2) === 0),
-            neighborhoodStay: item.neighborhoodStay ?? ((idx % 3) === 0),
-            groupFriendly: item.groupFriendly ?? ((idx % 4) === 0),
-            localIDAccepted: item.localIDAccepted ?? ((idx % 2) === 1),
+            familyFriendly: Boolean(item.familyFriendly ?? (features.length ? hasFeature('family') : false)),
+            neighborhoodStay: Boolean(item.neighborhoodStay ?? (features.length ? (hasFeature('neighborhood') || hasFeature('neighbourhood') || hasFeature('local stay')) : false)),
+            groupFriendly: Boolean(item.groupFriendly ?? (features.length ? hasFeature('group') : false)),
+            localIDAccepted: Boolean(item.localIDAccepted ?? (features.length ? (hasFeature('local id') || hasFeature('local-id') || hasFeature('localid')) : false)),
             couplesFriendly: item.couplesFriendly ?? ((idx % 3) === 1),
             isOyoRoom: item.isOyoRoom ?? ((idx % 2) === 0),
             isTownhouse: item.isTownhouse ?? ((idx % 5) === 0),
             isOyoHome: item.isOyoHome ?? ((idx % 4) === 1),
             isHotel: item.isHotel ?? true,
-            latitude: item.latitude ?? item.lat,
-            longitude: item.longitude ?? item.lng,
+            featured: Boolean(item.featured ?? false),
+            hotelFeatures: features,
+            latitude: toNumberOrNull(item.latitude ?? item.lat),
+            longitude: toNumberOrNull(item.longitude ?? item.lng),
             address: item.address,
             city: item.city,
           };
@@ -465,6 +512,19 @@ const Hotels = ({ state, actions }) => {
       hotel => hotel.price >= priceRange[0] && hotel.price <= priceRange[1]
     );
 
+    if (featuredOnly) {
+      filtered = filtered.filter((hotel) => hotel.featured);
+    }
+
+    if (selectedAmenities.length) {
+      const selectedLc = selectedAmenities.map((x) => String(x).toLowerCase());
+      filtered = filtered.filter((hotel) => {
+        const hotelAmens = Array.isArray(hotel.amenities) ? hotel.amenities : [];
+        const hotelSet = new Set(hotelAmens.map((x) => String(x).toLowerCase()));
+        return selectedLc.every((a) => hotelSet.has(a));
+      });
+    }
+
     // 2. Filter by Collections
     if (selectedFilters.familyFriendly) {
       filtered = filtered.filter(hotel => hotel.familyFriendly);
@@ -512,7 +572,7 @@ const Hotels = ({ state, actions }) => {
     
     setHotels(sliced);
 
-  }, [originalHotels, selectedFilters, priceRange, sortOption, page, limit, city]);
+  }, [originalHotels, selectedFilters, priceRange, sortOption, page, limit, city, featuredOnly, selectedAmenities]);
 
   const handleFilterChange = (filter) => {
     const newFilters = {
@@ -530,7 +590,33 @@ const Hotels = ({ state, actions }) => {
       groupFriendly: false,
       localIDAccepted: false
     });
+    setFeaturedOnly(false);
+    setSelectedAmenities([]);
     setPriceRange([minPrice, maxPrice]);
+    setPage(1);
+  };
+
+  const amenityOptions = useMemo(() => {
+    const counts = new Map();
+    for (const h of originalHotels) {
+      const list = Array.isArray(h.amenities) ? h.amenities : [];
+      for (const a of list) {
+        const key = String(a).trim();
+        if (!key) continue;
+        counts.set(key, (counts.get(key) || 0) + 1);
+      }
+    }
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([name]) => name)
+      .slice(0, 10);
+  }, [originalHotels]);
+
+  const toggleAmenity = (name) => {
+    setSelectedAmenities((prev) => {
+      const exists = prev.includes(name);
+      return exists ? prev.filter((x) => x !== name) : [...prev, name];
+    });
     setPage(1);
   };
 
@@ -682,6 +768,42 @@ const Hotels = ({ state, actions }) => {
                     </label>
                   </div>
                 </div>
+
+                <div className="mb-4">
+                  <h6 className="fw-bold mb-3">Other</h6>
+                  <div className="form-check mb-2">
+                    <input
+                      className="form-check-input"
+                      type="checkbox"
+                      id="featuredOnly"
+                      checked={featuredOnly}
+                      onChange={() => { setFeaturedOnly(!featuredOnly); setPage(1); }}
+                    />
+                    <label className="form-check-label" htmlFor="featuredOnly">
+                      Featured Only
+                    </label>
+                  </div>
+                </div>
+
+                {amenityOptions.length > 0 && (
+                  <div className="mb-1">
+                    <h6 className="fw-bold mb-3">Amenities</h6>
+                    {amenityOptions.map((a) => (
+                      <div className="form-check mb-2" key={a}>
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          id={`amen_${a}`}
+                          checked={selectedAmenities.includes(a)}
+                          onChange={() => toggleAmenity(a)}
+                        />
+                        <label className="form-check-label" htmlFor={`amen_${a}`}>
+                          {a}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -861,7 +983,7 @@ const Hotels = ({ state, actions }) => {
                           <div className="flex-grow-1">
                             <h5 className="card-title fw-bold mb-1">{hotel.name}</h5>
                             <p className="text-muted mb-2">
-                              {hotel.location} ❤️ {hotel.distance}
+                              {hotel.location} ❤️ {hotel.distance || '—'}
                             </p>
                             
                             {hotel.description && (
