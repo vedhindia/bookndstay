@@ -146,6 +146,9 @@ const Hotels = () => {
   const [form, setForm] = useState(initialForm);
   const [deleting, setDeleting] = useState(false);
   const [toDelete, setToDelete] = useState(null);
+  const [editAvailability, setEditAvailability] = useState(null);
+  const [editHotelLoading, setEditHotelLoading] = useState(false);
+  const [capacityEditEnabled, setCapacityEditEnabled] = useState(false);
   const [showAvailability, setShowAvailability] = useState(false);
   const [availabilityHotel, setAvailabilityHotel] = useState(null);
   const [availabilityFrom, setAvailabilityFrom] = useState(() => new Date().toISOString().slice(0, 10));
@@ -303,12 +306,28 @@ const Hotels = () => {
 
   const openEdit = (h) => {
     setError('');
-    const normalized = { ...h };
-    setForm({
-      ...initialForm,
-      ...normalized,
-    });
+    const hotelId = h?.id || h?._id || h?.hotel_id;
+    setEditAvailability(h?.availability || null);
+    setCapacityEditEnabled(false);
     setShowEdit(true);
+    setEditHotelLoading(true);
+    setForm({ ...initialForm, id: hotelId || null });
+
+    api
+      .get(`/vendor/hotels/${hotelId}`)
+      .then((resp) => {
+        const payload = resp?.data;
+        const hotel = payload?.data?.hotel || payload?.hotel || payload?.data || null;
+        if (!hotel) throw new Error('Hotel not found');
+        const normalized = normalize(hotel);
+        setForm({ ...initialForm, ...normalized });
+      })
+      .catch((e) => {
+        setError(e?.response?.data?.message || e?.message || 'Failed to load hotel');
+      })
+      .finally(() => {
+        setEditHotelLoading(false);
+      });
   };
 
   const closeModals = () => {
@@ -316,6 +335,9 @@ const Hotels = () => {
     setShowCreate(false);
     setShowEdit(false);
     setForm(initialForm);
+    setEditAvailability(null);
+    setEditHotelLoading(false);
+    setCapacityEditEnabled(false);
   };
 
   // Build UI -> API payload for create
@@ -338,7 +360,7 @@ const Hotels = () => {
       state: f.state?.trim() || '',
       pincode: f.pincode?.trim() || '',
       country: f.country?.trim() || 'India',
-      map_url: f.map_url?.trim() || undefined,
+      map_url: f.map_url?.trim() || '',
       amenities: amenitiesArr,
       hotel_features: hotelFeaturesArr,
       phone: f.phone?.trim() || undefined,
@@ -355,16 +377,9 @@ const Hotels = () => {
       cancellation_policy: f.cancellation_policy?.trim() || undefined,
       gst_number: f.gst_number?.trim() || undefined,
       featured: Boolean(f.featured),
+      latitude: Number(f.latitude),
+      longitude: Number(f.longitude),
     };
-
-    if (f.latitude !== '' && f.latitude !== null && f.latitude !== undefined) {
-      const lat = Number(f.latitude);
-      if (!Number.isNaN(lat)) payload.latitude = lat;
-    }
-    if (f.longitude !== '' && f.longitude !== null && f.longitude !== undefined) {
-      const lng = Number(f.longitude);
-      if (!Number.isNaN(lng)) payload.longitude = lng;
-    }
 
     // Clean undefined values
     Object.keys(payload).forEach((k) => {
@@ -394,7 +409,7 @@ const Hotels = () => {
       state: f.state?.trim() || '',
       pincode: f.pincode?.trim() || '',
       country: f.country?.trim() || 'India',
-      map_url: f.map_url?.trim() || undefined,
+      map_url: f.map_url?.trim() || '',
       amenities: amenitiesArr,
       hotel_features: hotelFeaturesArr,
       phone: f.phone?.trim() || undefined,
@@ -411,16 +426,9 @@ const Hotels = () => {
       cancellation_policy: f.cancellation_policy?.trim() || undefined,
       gst_number: f.gst_number?.trim() || undefined,
       featured: Boolean(f.featured),
+      latitude: Number(f.latitude),
+      longitude: Number(f.longitude),
     };
-
-    if (f.latitude !== '' && f.latitude !== null && f.latitude !== undefined) {
-      const lat = Number(f.latitude);
-      if (!Number.isNaN(lat)) payload.latitude = lat;
-    }
-    if (f.longitude !== '' && f.longitude !== null && f.longitude !== undefined) {
-      const lng = Number(f.longitude);
-      if (!Number.isNaN(lng)) payload.longitude = lng;
-    }
 
     // Clean undefined values
     Object.keys(payload).forEach((k) => {
@@ -437,8 +445,24 @@ const Hotels = () => {
     if (!f.city?.trim()) return 'City is required';
     if (!f.state?.trim()) return 'State is required';
     if (!f.pincode?.trim()) return 'Pincode is required';
+    if (!String(f.latitude ?? '').trim()) return 'Latitude is required';
+    if (!String(f.longitude ?? '').trim()) return 'Longitude is required';
+    if (!String(f.map_url ?? '').trim()) return 'Map URL is required';
     if (!f.phone?.trim()) return 'Phone is required';
     if (!f.email?.trim()) return 'Email is required';
+
+    const lat = Number(f.latitude);
+    const lng = Number(f.longitude);
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90) return 'Latitude must be between -90 and 90';
+    if (!Number.isFinite(lng) || lng < -180 || lng > 180) return 'Longitude must be between -180 and 180';
+
+    const mapUrl = String(f.map_url || '').trim();
+    try {
+      const u = new URL(mapUrl);
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return 'Map URL must start with http:// or https://';
+    } catch {
+      return 'Map URL must be a valid URL';
+    }
 
     const totalRooms = Number(f.total_rooms);
     const availableRooms = Number(f.available_rooms);
@@ -504,6 +528,12 @@ const Hotels = () => {
     setError('');
     try {
       const payload = buildUpdatePayload(form);
+      if (!capacityEditEnabled) {
+        delete payload.total_rooms;
+        delete payload.available_rooms;
+        delete payload.ac_rooms;
+        delete payload.non_ac_rooms;
+      }
 
       await api.put(`/vendor/hotels/${form.id}`, payload);
       setSuccess('Hotel updated successfully');
@@ -1028,34 +1058,42 @@ const Hotels = () => {
                   </div>
 
                   <div className="col-md-6">
-                    <label className="form-label">Latitude</label>
+                    <label className="form-label">Latitude <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       type="number"
                       step="any"
+                      min="-90"
+                      max="90"
                       placeholder="19.0760"
                       value={form.latitude}
                       onChange={(e) => setForm({ ...form, latitude: e.target.value })}
+                      required
                     />
                   </div>
                   <div className="col-md-6">
-                    <label className="form-label">Longitude</label>
+                    <label className="form-label">Longitude <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       type="number"
                       step="any"
+                      min="-180"
+                      max="180"
                       placeholder="72.8777"
                       value={form.longitude}
                       onChange={(e) => setForm({ ...form, longitude: e.target.value })}
+                      required
                     />
                   </div>
                   <div className="col-md-12">
-                    <label className="form-label">Map URL</label>
+                    <label className="form-label">Map URL <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
+                      type="url"
                       placeholder="https://maps.google.com/..."
                       value={form.map_url}
                       onChange={(e) => setForm({ ...form, map_url: e.target.value })}
+                      required
                     />
                   </div>
 
@@ -1258,6 +1296,35 @@ const Hotels = () => {
               </div>
               <div className="modal-body">
                 {error && <div className="alert alert-warning py-2 mb-3">{error}</div>}
+                {editHotelLoading && <div className="alert alert-info py-2 mb-3">Loading hotel details...</div>}
+                {editAvailability && (
+                  <div className="alert alert-secondary py-2 mb-3">
+                    <div className="fw-semibold mb-1">
+                      Availability (Auto) for {editAvailability.from || availabilityFilterFrom} → {editAvailability.to || availabilityFilterTo}
+                    </div>
+                    <div className="d-flex flex-wrap gap-3">
+                      <div>Available Rooms: {editAvailability.available_total ?? '—'}</div>
+                      <div>Available AC: {editAvailability.available_ac ?? '—'}</div>
+                      <div>Available Non-AC: {editAvailability.available_non_ac ?? '—'}</div>
+                      <div>Booked Total: {editAvailability.booked_total ?? '—'}</div>
+                    </div>
+                  </div>
+                )}
+                <div className="alert alert-light py-2 mb-3">
+                  <div className="form-check mb-0">
+                    <input
+                      className="form-check-input"
+                      type="checkbox"
+                      id="capacityEditEnabled"
+                      checked={capacityEditEnabled}
+                      onChange={(e) => setCapacityEditEnabled(e.target.checked)}
+                      disabled={editHotelLoading}
+                    />
+                    <label className="form-check-label" htmlFor="capacityEditEnabled">
+                      Edit Room Capacity (Only enable if you are changing the actual room count)
+                    </label>
+                  </div>
+                </div>
                 <div className="row g-3">
                   <div className="col-md-8">
                     <label className="form-label">Name <span className="text-danger">*</span></label>
@@ -1345,34 +1412,42 @@ const Hotels = () => {
                   </div>
 
                   <div className="col-md-6">
-                    <label className="form-label">Latitude</label>
+                    <label className="form-label">Latitude <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       type="number"
                       step="any"
+                      min="-90"
+                      max="90"
                       placeholder="19.0760"
                       value={form.latitude}
                       onChange={(e) => setForm({ ...form, latitude: e.target.value })}
+                      required
                     />
                   </div>
                   <div className="col-md-6">
-                    <label className="form-label">Longitude</label>
+                    <label className="form-label">Longitude <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       type="number"
                       step="any"
+                      min="-180"
+                      max="180"
                       placeholder="72.8777"
                       value={form.longitude}
                       onChange={(e) => setForm({ ...form, longitude: e.target.value })}
+                      required
                     />
                   </div>
                   <div className="col-md-12">
-                    <label className="form-label">Map URL</label>
+                    <label className="form-label">Map URL <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
+                      type="url"
                       placeholder="https://maps.google.com/..."
                       value={form.map_url}
                       onChange={(e) => setForm({ ...form, map_url: e.target.value })}
+                      required
                     />
                   </div>
 
@@ -1400,7 +1475,7 @@ const Hotels = () => {
 
 
                   <div className="col-md-3">
-                    <label className="form-label">Total Rooms <span className="text-danger">*</span></label>
+                    <label className="form-label">Total Rooms (Capacity) <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       type="number"
@@ -1409,11 +1484,12 @@ const Hotels = () => {
                       placeholder="50"
                       value={form.total_rooms}
                       onChange={(e) => setForm({ ...form, total_rooms: e.target.value })}
+                      disabled={!capacityEditEnabled}
                       required
                     />
                   </div>
                   <div className="col-md-3">
-                    <label className="form-label">Available Rooms <span className="text-danger">*</span></label>
+                    <label className="form-label">Available Rooms (Capacity) <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       type="number"
@@ -1422,11 +1498,12 @@ const Hotels = () => {
                       placeholder="50"
                       value={form.available_rooms}
                       onChange={(e) => setForm({ ...form, available_rooms: e.target.value })}
+                      disabled={!capacityEditEnabled}
                       required
                     />
                   </div>
                   <div className="col-md-3">
-                    <label className="form-label">AC Rooms <span className="text-danger">*</span></label>
+                    <label className="form-label">AC Rooms (Capacity) <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       type="number"
@@ -1435,11 +1512,12 @@ const Hotels = () => {
                       placeholder="25"
                       value={form.ac_rooms}
                       onChange={(e) => setForm({ ...form, ac_rooms: e.target.value })}
+                      disabled={!capacityEditEnabled}
                       required
                     />
                   </div>
                   <div className="col-md-3">
-                    <label className="form-label">Non-AC Rooms <span className="text-danger">*</span></label>
+                    <label className="form-label">Non-AC Rooms (Capacity) <span className="text-danger">*</span></label>
                     <input
                       className="form-control"
                       type="number"
@@ -1448,6 +1526,7 @@ const Hotels = () => {
                       placeholder="25"
                       value={form.non_ac_rooms}
                       onChange={(e) => setForm({ ...form, non_ac_rooms: e.target.value })}
+                      disabled={!capacityEditEnabled}
                       required
                     />
                   </div>
@@ -1555,7 +1634,7 @@ const Hotels = () => {
                 <button className="btn btn-secondary" onClick={closeModals}>
                   Cancel
                 </button>
-                <button className="btn btn-primary" onClick={updateHotel} disabled={saving}>
+                <button className="btn btn-primary" onClick={updateHotel} disabled={saving || editHotelLoading}>
                   {saving ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
