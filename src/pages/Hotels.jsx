@@ -718,7 +718,7 @@ const Hotels = ({ state, actions }) => {
 
                 {/* Collections */}
                 <div className="mb-4">
-                  <h6 className="fw-bold mb-3">Collections</h6>
+                  <h6 className="fw-bold mb-3">Features</h6>
                   <div className="form-check mb-2">
                     <input 
                       className="form-check-input" 

@@ -719,13 +719,19 @@ module.exports = {
       approvedHotels,
       pendingHotels,
       totalBookings,
+      pendingBookings,
       confirmedBookings,
+      cancelledBookings,
+      completedBookings,
       revenueResult
     ] = await Promise.all([
       Hotel.count({ where: { vendor_id: req.user.id } }),
       Hotel.count({ where: { vendor_id: req.user.id, status: 'APPROVED' } }),
       Hotel.count({ where: { vendor_id: req.user.id, status: 'PENDING' } }),
       Booking.count({ where: { vendor_id: req.user.id } }),
+      Booking.count({ where: { vendor_id: req.user.id, status: 'PENDING' } }),
+      Booking.count({ where: { vendor_id: req.user.id, status: 'CONFIRMED' } }),
+      Booking.count({ where: { vendor_id: req.user.id, status: 'CANCELLED' } }),
       Booking.count({ where: { vendor_id: req.user.id, status: 'COMPLETED' } }),
       Booking.findAll({
         where: { vendor_id: req.user.id, status: 'COMPLETED' },
@@ -750,7 +756,10 @@ module.exports = {
         approvedHotels,
         pendingHotels,
         totalBookings,
+        pendingBookings,
         confirmedBookings,
+        cancelledBookings,
+        completedBookings,
         totalRevenue: parseFloat(revenueResult[0]?.dataValues?.totalRevenue || 0)
       }
     }, 'Dashboard statistics retrieved');

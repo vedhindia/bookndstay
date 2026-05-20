@@ -38,7 +38,9 @@ const DashboardHome = () => {
     activeRooms: 0,
     totalHotels: 0,
     confirmed: 0,
-    pending: 0
+    pending: 0,
+    cancelled: 0,
+    completed: 0
   });
   const [recentBookings, setRecentBookings] = useState([]);
   const [loadingStats, setLoadingStats] = useState(false);
@@ -67,7 +69,9 @@ const DashboardHome = () => {
         activeRooms: s.totalRooms ?? s.total_rooms ?? s.activeRooms ?? 0,
         totalHotels: s.totalHotels ?? s.total_hotels ?? 0,
         confirmed: s.confirmedBookings ?? 0,
-        pending: s.pendingBookings ?? 0
+        pending: s.pendingBookings ?? 0,
+        cancelled: s.cancelledBookings ?? 0,
+        completed: s.completedBookings ?? 0
       });
     } catch (e) {
       setErrorStats(e?.response?.data?.message || e?.message || 'Failed to load stats.');
@@ -144,20 +148,21 @@ const DashboardHome = () => {
   }, [stats.revenue]);
 
   const bookingsPie = useMemo(() => {
-    const confirmed = recentBookings.filter(b => b.status === 'CONFIRMED').length;
-    const pending = recentBookings.filter(b => b.status === 'PENDING').length;
-    const cancelled = recentBookings.filter(b => b.status === 'CANCELLED').length;
+    const confirmed = Number(stats.confirmed) || 0;
+    const pending = Number(stats.pending) || 0;
+    const cancelled = Number(stats.cancelled) || 0;
+    const completed = Number(stats.completed) || 0;
     return {
-      labels: ['Confirmed', 'Pending', 'Cancelled'],
+      labels: ['Confirmed', 'Pending', 'Completed', 'Cancelled'],
       datasets: [
         {
-          data: [confirmed, pending, cancelled],
-          backgroundColor: ['#22c55e', '#f59e0b', '#ef4444'],
+          data: [confirmed, pending, completed, cancelled],
+          backgroundColor: ['#22c55e', '#f59e0b', '#3b82f6', '#ef4444'],
           borderWidth: 1
         }
       ]
     };
-  }, [recentBookings]);
+  }, [stats.confirmed, stats.pending, stats.cancelled, stats.completed]);
 
   return (
     <div className="container-fluid p-3 p-md-4">
