@@ -31,6 +31,8 @@ const Hotels = ({ state, actions }) => {
   const [pagination, setPagination] = useState(null);
   const [showMap, setShowMap] = useState(false);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [nearMeLoading, setNearMeLoading] = useState(false);
+  const [nearMeActive, setNearMeActive] = useState(false);
 
   useEffect(() => {
     if (state?.city && state.city !== city) {
@@ -174,39 +176,70 @@ const Hotels = ({ state, actions }) => {
   };
 
   const handleNearMe = () => {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition((pos) => {
-      const myLat = toNumberOrNull(pos?.coords?.latitude);
-      const myLon = toNumberOrNull(pos?.coords?.longitude);
-      if (!myLat || !myLon) {
-        setError('Unable to get your location');
-        return;
-      }
-      
-      // Update originalHotels with distance and sort by distance
-      setOriginalHotels(prev => {
-        const withDistance = prev.map(h => ({
-          ...h,
-          distanceKm: haversineKm(myLat, myLon, h.latitude ?? h.lat, h.longitude ?? h.lng),
-          distance: (() => {
+    if (!navigator.geolocation) {
+      setError('Geolocation is not supported by your browser');
+      return;
+    }
+
+    setError('');
+    setNearMeLoading(true);
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const myLat = toNumberOrNull(pos?.coords?.latitude);
+        const myLon = toNumberOrNull(pos?.coords?.longitude);
+        if (myLat === null || myLon === null) {
+          setError('Unable to get your location');
+          setNearMeLoading(false);
+          return;
+        }
+
+        setNearMeActive(true);
+        setCity('');
+
+        setOriginalHotels((prev) => {
+          const withDistance = prev.map((h) => {
             const km = haversineKm(myLat, myLon, h.latitude ?? h.lat, h.longitude ?? h.lng);
-            return (isFinite(km) ? `${km.toFixed(1)} km` : h.distance);
-          })()
-        }));
-        // Sort by distance
-        return withDistance.sort((a, b) => (a.distanceKm || Infinity) - (b.distanceKm || Infinity));
-      });
-      
-      // Reset page to 1
-      setPage(1);
-      // Ensure sort option allows this order (if 'popularity' preserves order)
-      if (sortOption !== 'popularity') {
-          setSortOption('popularity');
-      }
-    }, () => {
-      setError('Please allow location access to use Near Me');
-    });
+            return {
+              ...h,
+              distanceKm: km,
+              distance: Number.isFinite(km) ? `${km.toFixed(1)} km` : null
+            };
+          });
+          return withDistance.sort((a, b) => (a.distanceKm || Infinity) - (b.distanceKm || Infinity));
+        });
+
+        setPage(1);
+        if (sortOption !== 'popularity') setSortOption('popularity');
+        setNearMeLoading(false);
+      },
+      (err) => {
+        if (err?.code === 1) {
+          setError('Location permission denied. Please allow access to use Near Me.');
+        } else if (err?.code === 2) {
+          setError('Location is unavailable right now. Please check your connection or try again.');
+        } else if (err?.code === 3) {
+          setError('Location request timed out. Please try again.');
+        } else {
+          setError('Unable to retrieve your location. Please enable location services.');
+        }
+        setNearMeLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+    );
   };
+
+  useEffect(() => {
+    if (loading) return;
+    if (!originalHotels || originalHotels.length === 0) return;
+    if (nearMeActive) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const isNearMe = params.get('nearMe') === 'true' || params.get('near_me') === 'true';
+    if (isNearMe) {
+      handleNearMe();
+    }
+  }, [loading, originalHotels.length, nearMeActive]);
 
 
   useEffect(() => {
@@ -981,9 +1014,14 @@ const Hotels = ({ state, actions }) => {
                     className="btn btn-sm d-flex align-items-center justify-content-center px-3 text-[#ee2e24] bg-white border-start-0 border rounded-end-pill fw-medium text-capitalize" 
                     type="button" 
                     onClick={handleNearMe}
+                disabled={nearMeLoading}
                   >
-                    <FaCrosshairs className="me-1" />
-                    <span className="text-nowrap">Near Me</span>
+                {nearMeLoading ? (
+                  <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                ) : (
+                  <FaCrosshairs className="me-1" />
+                )}
+                <span className="text-nowrap">{nearMeLoading ? 'Locating...' : 'Near Me'}</span>
                   </button>
                 </div>
                 <div className="d-flex gap-2 flex-grow-1 flex-md-grow-0">
@@ -1124,7 +1162,7 @@ const Hotels = ({ state, actions }) => {
                           <div className="flex-grow-1">
                             <h5 className="card-title fw-bold mb-1">{hotel.name}</h5>
                             <p className="text-muted mb-2">
-                              {hotel.location} ❤️ {hotel.distance || '—'}
+                              {hotel.location} ❤️ {nearMeActive ? (hotel.distance || '—') : '—'}
                             </p>
                             
                             {hotel.description && (

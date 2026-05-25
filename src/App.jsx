@@ -68,8 +68,8 @@ const AppContent = () => {
     else if (page === 'roomDetails') navigate('/roomDetails' + query);
     else if (page === 'payment') navigate('/payment');
     else if (page === 'booking') navigate('/booking');
-    else if (page === 'hotels') navigate('/hotels');//change
-    else if (page === 'searchhotel') navigate('/searchhotel');
+    else if (page === 'hotels') navigate('/hotels' + query);
+    else if (page === 'searchhotel') navigate('/searchhotel' + query);
     else if (page === 'about') navigate('/about');
     else if (page === 'contact') navigate('/contact');
     else if (page === 'help') navigate('/help');
