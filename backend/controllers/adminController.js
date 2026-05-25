@@ -50,6 +50,36 @@ const parseDateTimeInputAsIST = (value) => {
   return new Date(utcMs);
 };
 
+const round2 = (val) => {
+  const n = Number(val);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n * 100) / 100;
+};
+
+const getCommissionPercent = () => {
+  const raw = process.env.COMMISSION_PERCENT ?? process.env.PLATFORM_COMMISSION_PERCENT;
+  const n = parseFloat(String(raw ?? ''));
+  if (Number.isFinite(n) && n >= 0 && n <= 100) return n;
+  return 10;
+};
+
+const istDateOnly = (d) => {
+  const dt = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(dt.getTime())) return null;
+  const ist = new Date(dt.getTime() + 330 * 60 * 1000);
+  return ist.toISOString().slice(0, 10);
+};
+
+const weekStartMondayIST = (d) => {
+  const dateOnly = istDateOnly(d);
+  if (!dateOnly) return null;
+  const base = new Date(`${dateOnly}T00:00:00.000Z`);
+  const day = base.getUTCDay();
+  const diff = (day + 6) % 7;
+  base.setUTCDate(base.getUTCDate() - diff);
+  return base.toISOString().slice(0, 10);
+};
+
 module.exports = {
   notificationsStream: asyncHandler(async (req, res) => {
     res.status(200);
@@ -1583,6 +1613,370 @@ module.exports = {
     };
 
     sendSuccess(res, { stats }, 'Dashboard statistics retrieved successfully');
+  }),
+
+  getPayAtHotelCommissionDueWeekly: asyncHandler(async (req, res) => {
+    const requested = String(req.query.week_start || req.query.weekStart || '').trim();
+    const computedWeekStart = weekStartMondayIST(new Date());
+    const weekStart = requested || computedWeekStart;
+    if (!weekStart || !/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) {
+      return sendError(res, 'Invalid week_start. Use YYYY-MM-DD.', 400);
+    }
+
+    const ws = new Date(`${weekStart}T00:00:00.000Z`);
+    const we = new Date(ws.getTime());
+    we.setUTCDate(we.getUTCDate() + 6);
+    const weekEnd = we.toISOString().slice(0, 10);
+
+    const bookings = await Booking.findAll({
+      where: {
+        payment_method: 'PAY_AT_HOTEL',
+        status: { [Op.ne]: 'CANCELLED' },
+        payment_received_at: { [Op.ne]: null },
+        settlement_week_start: weekStart,
+        [Op.or]: [{ settlement_status: null }, { settlement_status: 'UNSETTLED' }]
+      },
+      include: [
+        { model: Vendor, as: 'vendor', attributes: ['id', 'full_name', 'business_name', 'email', 'phone'] },
+        { model: Hotel, as: 'hotel', attributes: ['id', 'name'] }
+      ],
+      order: [['payment_received_at', 'ASC']]
+    });
+
+    const percentFallback = getCommissionPercent();
+    const byVendor = new Map();
+
+    for (const b of bookings) {
+      const vendorId = b.vendor?.id ?? b.vendor_id;
+      if (!vendorId) continue;
+
+      const paymentAmount = Number(
+        b.payment_received_amount ?? b.amount ?? 0
+      );
+      const percent = Number.isFinite(Number(b.commission_percent))
+        ? Math.min(100, Math.max(0, Number(b.commission_percent)))
+        : percentFallback;
+      const commission = Number.isFinite(Number(b.commission_amount))
+        ? round2(Number(b.commission_amount))
+        : round2((paymentAmount * percent) / 100);
+
+      const current = byVendor.get(vendorId) || {
+        vendor_id: vendorId,
+        vendor_name: b.vendor?.full_name || '',
+        business_name: b.vendor?.business_name || '',
+        email: b.vendor?.email || '',
+        phone: b.vendor?.phone || '',
+        bookings_count: 0,
+        total_booking_amount: 0,
+        total_commission_due: 0,
+        bookings: []
+      };
+
+      current.bookings_count += 1;
+      current.total_booking_amount = round2(current.total_booking_amount + (Number.isFinite(paymentAmount) ? paymentAmount : 0));
+      current.total_commission_due = round2(current.total_commission_due + commission);
+      current.bookings.push({
+        id: b.id,
+        hotel_id: b.hotel?.id || b.hotel_id,
+        hotel_name: b.hotel?.name || '',
+        payment_received_at: b.payment_received_at,
+        payment_received_amount: round2(paymentAmount),
+        commission_percent: percent,
+        commission_amount: commission,
+        settlement_status: b.settlement_status || 'UNSETTLED'
+      });
+
+      byVendor.set(vendorId, current);
+    }
+
+    const vendors = Array.from(byVendor.values()).sort((a, b) => b.total_commission_due - a.total_commission_due);
+
+    sendSuccess(res, { week_start: weekStart, week_end: weekEnd, vendors }, 'Pay-at-hotel commission due report generated');
+  }),
+
+  settlePayAtHotelCommissionDueWeekly: asyncHandler(async (req, res) => {
+    const vendorId = Number(req.body?.vendor_id ?? req.body?.vendorId);
+    const weekStart = String(req.body?.week_start ?? req.body?.weekStart ?? '').trim();
+    const settlementRefRaw = String(req.body?.settlement_ref ?? req.body?.settlementRef ?? '').trim();
+    const settlementRef = settlementRefRaw ? settlementRefRaw : null;
+
+    if (!Number.isFinite(vendorId) || vendorId <= 0) {
+      return sendError(res, 'Invalid vendor_id', 400);
+    }
+    if (!weekStart || !/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) {
+      return sendError(res, 'Invalid week_start. Use YYYY-MM-DD.', 400);
+    }
+
+    const now = new Date();
+    const settledCount = await sequelize.transaction(async (t) => {
+      const [affected] = await Booking.update(
+        {
+          settlement_status: 'SETTLED',
+          settled_at: now,
+          settlement_ref: settlementRef
+        },
+        {
+          where: {
+            vendor_id: vendorId,
+            payment_method: 'PAY_AT_HOTEL',
+            status: { [Op.ne]: 'CANCELLED' },
+            payment_received_at: { [Op.ne]: null },
+            settlement_week_start: weekStart,
+            [Op.or]: [{ settlement_status: null }, { settlement_status: 'UNSETTLED' }]
+          },
+          transaction: t
+        }
+      );
+      return affected;
+    });
+
+    sendSuccess(res, { vendor_id: vendorId, week_start: weekStart, settled_count: settledCount }, 'Weekly settlement marked as settled');
+  }),
+
+  getVendorSettlementWeekly: asyncHandler(async (req, res) => {
+    const requested = String(req.query.week_start || req.query.weekStart || '').trim();
+    const computedWeekStart = weekStartMondayIST(new Date());
+    const weekStart = requested || computedWeekStart;
+    if (!weekStart || !/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) {
+      return sendError(res, 'Invalid week_start. Use YYYY-MM-DD.', 400);
+    }
+
+    const ws = new Date(`${weekStart}T00:00:00.000Z`);
+    const we = new Date(ws.getTime());
+    we.setUTCDate(we.getUTCDate() + 7);
+    const weekEnd = new Date(ws.getTime());
+    weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
+    const weekEndStr = weekEnd.toISOString().slice(0, 10);
+
+    const percentFallback = getCommissionPercent();
+
+    const bookings = await Booking.findAll({
+      where: {
+        status: { [Op.ne]: 'CANCELLED' },
+        payment_received_at: { [Op.ne]: null },
+        [Op.or]: [
+          { payment_method: { [Op.ne]: 'PAY_AT_HOTEL' } },
+          {
+            payment_method: 'PAY_AT_HOTEL',
+            checked_in_at: { [Op.ne]: null }
+          },
+          { payment_method: null }
+        ],
+        [Op.or]: [
+          { settlement_week_start: weekStart },
+          {
+            settlement_week_start: null,
+            payment_received_at: { [Op.gte]: ws, [Op.lt]: we }
+          }
+        ],
+        [Op.or]: [{ settlement_status: null }, { settlement_status: 'UNSETTLED' }]
+      },
+      include: [
+        { model: Vendor, as: 'vendor', attributes: ['id', 'full_name', 'business_name', 'email', 'phone'] },
+        { model: Hotel, as: 'hotel', attributes: ['id', 'name', 'vendor_id'] }
+      ],
+      order: [['payment_received_at', 'ASC']]
+    });
+
+    const byVendor = new Map();
+
+    const addHotelTotals = (vendorObj, hotelId, hotelName, bucket, base, commission, payable) => {
+      const key = String(hotelId || '0');
+      vendorObj.hotels = vendorObj.hotels || {};
+      const h = vendorObj.hotels[key] || {
+        hotel_id: hotelId || null,
+        hotel_name: hotelName || '',
+        online_gross: 0,
+        online_commission: 0,
+        online_payable: 0,
+        pay_at_hotel_gross: 0,
+        pay_at_hotel_commission_due: 0
+      };
+      if (bucket === 'ONLINE') {
+        h.online_gross = round2(h.online_gross + base);
+        h.online_commission = round2(h.online_commission + commission);
+        h.online_payable = round2(h.online_payable + payable);
+      } else {
+        h.pay_at_hotel_gross = round2(h.pay_at_hotel_gross + base);
+        h.pay_at_hotel_commission_due = round2(h.pay_at_hotel_commission_due + commission);
+      }
+      vendorObj.hotels[key] = h;
+    };
+
+    for (const b of bookings) {
+      const vendorId = b.vendor?.id ?? b.vendor_id;
+      if (!vendorId) continue;
+
+      const paymentMethod = String(b.payment_method || '').toUpperCase() === 'PAY_AT_HOTEL' ? 'PAY_AT_HOTEL' : 'ONLINE';
+      const baseAmount = Number(b.payment_received_amount ?? b.amount ?? 0) || 0;
+      const percentRaw = Number(b.commission_percent);
+      const percent = Number.isFinite(percentRaw) && percentRaw > 0
+        ? Math.min(100, Math.max(0, percentRaw))
+        : percentFallback;
+      const storedCommission = Number(b.commission_amount);
+      const commission = Number.isFinite(storedCommission) && storedCommission > 0
+        ? round2(storedCommission)
+        : round2((baseAmount * percent) / 100);
+
+      const storedPayable = Number(b.vendor_payable_amount);
+      const computedPayable = round2(baseAmount - commission);
+      const payableTolerance = 1;
+      const payable = (() => {
+        if (!Number.isFinite(storedPayable) || storedPayable <= 0) return computedPayable;
+        const sp = round2(storedPayable);
+        if (commission <= 0) return sp <= baseAmount + payableTolerance ? sp : computedPayable;
+        if (sp > baseAmount - payableTolerance) return computedPayable;
+        if (Math.abs(sp - computedPayable) <= payableTolerance) return sp;
+        return computedPayable;
+      })();
+
+      const current = byVendor.get(vendorId) || {
+        vendor_id: vendorId,
+        vendor_name: b.vendor?.full_name || '',
+        business_name: b.vendor?.business_name || '',
+        email: b.vendor?.email || '',
+        phone: b.vendor?.phone || '',
+        online_bookings: 0,
+        online_gross: 0,
+        online_commission: 0,
+        online_payable: 0,
+        pay_at_hotel_bookings: 0,
+        pay_at_hotel_gross: 0,
+        pay_at_hotel_commission_due: 0,
+        net_settlement: 0,
+        hotels: {},
+        bookings: []
+      };
+
+      const hotelId = b.hotel?.id || b.hotel_id;
+      const hotelName = b.hotel?.name || '';
+
+      if (paymentMethod === 'PAY_AT_HOTEL') {
+        current.pay_at_hotel_bookings += 1;
+        current.pay_at_hotel_gross = round2(current.pay_at_hotel_gross + baseAmount);
+        current.pay_at_hotel_commission_due = round2(current.pay_at_hotel_commission_due + commission);
+        addHotelTotals(current, hotelId, hotelName, 'PAY_AT_HOTEL', baseAmount, commission, payable);
+      } else {
+        current.online_bookings += 1;
+        current.online_gross = round2(current.online_gross + baseAmount);
+        current.online_commission = round2(current.online_commission + commission);
+        current.online_payable = round2(current.online_payable + payable);
+        addHotelTotals(current, hotelId, hotelName, 'ONLINE', baseAmount, commission, payable);
+      }
+
+      current.bookings.push({
+        id: b.id,
+        hotel_id: hotelId || null,
+        hotel_name: hotelName || '',
+        payment_method: paymentMethod,
+        payment_received_at: b.payment_received_at,
+        payment_received_amount: round2(baseAmount),
+        commission_amount: round2(commission),
+        vendor_payable_amount: round2(payable)
+      });
+
+      current.net_settlement = round2(current.online_payable - current.pay_at_hotel_commission_due);
+      byVendor.set(vendorId, current);
+    }
+
+    const vendors = Array.from(byVendor.values())
+      .map((v) => ({
+        ...v,
+        hotels: Object.values(v.hotels || {}).sort((a, b) => String(a.hotel_name).localeCompare(String(b.hotel_name)))
+      }))
+      .sort((a, b) => Math.abs(b.net_settlement) - Math.abs(a.net_settlement));
+
+    const totals = vendors.reduce(
+      (acc, v) => {
+        acc.online_payable += Number(v.online_payable || 0);
+        acc.pay_at_hotel_commission_due += Number(v.pay_at_hotel_commission_due || 0);
+        return acc;
+      },
+      { online_payable: 0, pay_at_hotel_commission_due: 0 }
+    );
+
+    sendSuccess(
+      res,
+      {
+        week_start: weekStart,
+        week_end: weekEndStr,
+        commission_percent: percentFallback,
+        totals: {
+          online_payable: round2(totals.online_payable),
+          pay_at_hotel_commission_due: round2(totals.pay_at_hotel_commission_due),
+          net: round2(totals.online_payable - totals.pay_at_hotel_commission_due)
+        },
+        vendors
+      },
+      'Vendor settlement report generated'
+    );
+  }),
+
+  settleVendorSettlementWeekly: asyncHandler(async (req, res) => {
+    const vendorId = Number(req.body?.vendor_id ?? req.body?.vendorId);
+    const weekStart = String(req.body?.week_start ?? req.body?.weekStart ?? '').trim();
+    const settlementRefRaw = String(req.body?.settlement_ref ?? req.body?.settlementRef ?? '').trim();
+    const settlementRef = settlementRefRaw ? settlementRefRaw : null;
+
+    if (!Number.isFinite(vendorId) || vendorId <= 0) {
+      return sendError(res, 'Invalid vendor_id', 400);
+    }
+    if (!weekStart || !/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) {
+      return sendError(res, 'Invalid week_start. Use YYYY-MM-DD.', 400);
+    }
+
+    const ws = new Date(`${weekStart}T00:00:00.000Z`);
+    const we = new Date(ws.getTime());
+    we.setUTCDate(we.getUTCDate() + 7);
+
+    const ids = await Booking.findAll({
+      where: {
+        vendor_id: vendorId,
+        status: { [Op.ne]: 'CANCELLED' },
+        payment_received_at: { [Op.ne]: null },
+        [Op.or]: [
+          { payment_method: { [Op.ne]: 'PAY_AT_HOTEL' } },
+          {
+            payment_method: 'PAY_AT_HOTEL',
+            checked_in_at: { [Op.ne]: null }
+          },
+          { payment_method: null }
+        ],
+        [Op.or]: [
+          { settlement_week_start: weekStart },
+          {
+            settlement_week_start: null,
+            payment_received_at: { [Op.gte]: ws, [Op.lt]: we }
+          }
+        ],
+        [Op.or]: [{ settlement_status: null }, { settlement_status: 'UNSETTLED' }]
+      },
+      attributes: ['id']
+    });
+
+    const bookingIds = ids.map((r) => r.id).filter(Boolean);
+    if (bookingIds.length === 0) {
+      return sendSuccess(res, { vendor_id: vendorId, week_start: weekStart, settled_count: 0 }, 'No unsettled bookings found for this vendor/week');
+    }
+
+    const now = new Date();
+    const settledCount = await sequelize.transaction(async (t) => {
+      const [affected] = await Booking.update(
+        {
+          settlement_week_start: weekStart,
+          settlement_status: 'SETTLED',
+          settled_at: now,
+          settlement_ref: settlementRef
+        },
+        {
+          where: { id: { [Op.in]: bookingIds } },
+          transaction: t
+        }
+      );
+      return affected;
+    });
+
+    sendSuccess(res, { vendor_id: vendorId, week_start: weekStart, settled_count: settledCount }, 'Vendor week marked as settled');
   }),
 
   // ============ REVIEW MODERATION ============

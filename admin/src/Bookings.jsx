@@ -185,6 +185,9 @@ const Bookings = () => {
         guests: b.guests || b.noOfGuests || 0,
         price: b.amount || b.finalAmount || 0,
         status: (b.status || 'PENDING').toString().charAt(0).toUpperCase() + (b.status || 'PENDING').toString().slice(1).toLowerCase(),
+        paymentMethod: b.payment_method || b.paymentMethod || null,
+        checkedInAt: b.checked_in_at || b.checkedInAt || null,
+        paymentReceivedAt: b.payment_received_at || b.paymentReceivedAt || null,
       }));
       setItems(normalized);
       const computedTotal = res?.total ?? res?.pagination?.total ?? res?.meta?.total ?? res?.count ?? normalized.length;
@@ -459,6 +462,9 @@ const Bookings = () => {
                   <th>Booking ID</th>
                   <th>User</th>
                   <th>Hotel</th>
+                  <th className="text-center">Booking Method</th>
+                  <th className="text-center">Checked-in</th>
+                  <th className="text-center">Payment</th>
                   <th>Check-in</th>
                   <th>Check-out</th>
                   <th className="text-center">Guests</th>
@@ -470,7 +476,7 @@ const Bookings = () => {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan="10" className="text-center py-5">
+                    <td colSpan="13" className="text-center py-5">
                       <div className="spinner-border text-primary" role="status">
                         <span className="visually-hidden">Loading...</span>
                       </div>
@@ -494,6 +500,27 @@ const Bookings = () => {
                         </div>
                       </td>
                       <td>{b.hotel}</td>
+                      <td className="text-center">
+                        {String(b.paymentMethod || '').toUpperCase() === 'PAY_AT_HOTEL' ? (
+                          <span className="badge bg-warning text-dark">Pay at Hotel</span>
+                        ) : (
+                          <span className="badge bg-success">Online</span>
+                        )}
+                      </td>
+                      <td className="text-center">
+                        {b.checkedInAt ? (
+                          <span className="badge bg-success">Yes</span>
+                        ) : (
+                          <span className="badge bg-secondary">No</span>
+                        )}
+                      </td>
+                      <td className="text-center">
+                        {b.paymentReceivedAt ? (
+                          <span className="badge bg-success">Received</span>
+                        ) : (
+                          <span className="badge bg-secondary">Pending</span>
+                        )}
+                      </td>
                       <td>
                         <small>{formatWhen(b, b.checkIn)}</small>
                       </td>
@@ -523,7 +550,7 @@ const Bookings = () => {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="10" className="text-center text-muted py-5">
+                    <td colSpan="13" className="text-center text-muted py-5">
                       <i className="fas fa-inbox fa-3x mb-3 d-block"></i>
                       <div>No bookings found</div>
                       {(query || hotel !== 'All' || status !== 'All' || dateFrom || dateTo || userFilter) && (
@@ -611,6 +638,30 @@ const Bookings = () => {
                     <div className="form-control d-flex align-items-center">
                       <StatusBadge status={selected.status} />
                     </div>
+                  </div>
+                  <div className="col-md-6">
+                    <label className="form-label fw-bold small text-muted">Payment Method</label>
+                    <input
+                      className="form-control"
+                      value={String(selected.paymentMethod || '').toUpperCase() === 'PAY_AT_HOTEL' ? 'Pay at Hotel' : 'Online'}
+                      readOnly
+                    />
+                  </div>
+                  <div className="col-md-6">
+                    <label className="form-label fw-bold small text-muted">Checked-in At</label>
+                    <input
+                      className="form-control"
+                      value={selected.checkedInAt ? formatDateTimeIST(selected.checkedInAt) : 'No'}
+                      readOnly
+                    />
+                  </div>
+                  <div className="col-md-6">
+                    <label className="form-label fw-bold small text-muted">Payment Received At</label>
+                    <input
+                      className="form-control"
+                      value={selected.paymentReceivedAt ? formatDateTimeIST(selected.paymentReceivedAt) : 'No'}
+                      readOnly
+                    />
                   </div>
                   <div className="col-md-6">
                     <label className="form-label fw-bold small text-muted">Check-in Date</label>

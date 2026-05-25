@@ -29,6 +29,7 @@ const Bookings = () => {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [selected, setSelected] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -37,6 +38,20 @@ const Bookings = () => {
   const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
   const [seenBookingIds, setSeenBookingIds] = useState(() => new Set());
+  const [checkInLoading, setCheckInLoading] = useState(false);
+  const [paymentReceivedLoading, setPaymentReceivedLoading] = useState(false);
+  const [paymentReceivedMethod, setPaymentReceivedMethod] = useState('CASH');
+  const [paymentReceivedAmount, setPaymentReceivedAmount] = useState('');
+  const [commissionSummary, setCommissionSummary] = useState({
+    percent: 10,
+    payAtHotelGross: 0,
+    onlineGross: 0,
+    totalCommission: 0,
+    totalNet: 0,
+    settlementDueThisWeek: 0,
+    settlementWeekStart: null,
+    settlementWeekEnd: null
+  });
 
   const formatDateIST = (dateString) => {
     if (!dateString) return 'N/A';
@@ -71,6 +86,36 @@ const Bookings = () => {
     if (v === 'AC') return 'AC';
     if (v === 'NON_AC' || v === 'NON-AC' || v === 'NON AC') return 'Non-AC';
     return v;
+  };
+
+  const normalizeBookingFromApi = (b) => {
+    const bookingMode = String(b?.booking_mode || b?.bookingMode || 'NIGHTLY').toUpperCase();
+    const normalized = {
+      id: b?.id || b?.booking_id || b?._id || '',
+      userId: b?.user?.id || b?.user?._id || b?.userId || '',
+      user: b?.user?.full_name || b?.user?.name || b?.userName || '',
+      userEmail: b?.user?.email || b?.userEmail || '',
+      hotel: b?.hotel?.name || b?.hotelName || '',
+      roomType: b?.room_type || b?.roomType || b?.room || b?.type || '',
+      bookingMode,
+      checkIn: bookingMode === 'HOURLY'
+        ? (b?.check_in_at || b?.checkInAt || b?.check_in || b?.checkInDate || b?.checkIn || '')
+        : (b?.check_in || b?.checkInDate || b?.checkIn || ''),
+      checkOut: bookingMode === 'HOURLY'
+        ? (b?.check_out_at || b?.checkOutAt || b?.check_out || b?.checkOutDate || b?.checkOut || '')
+        : (b?.check_out || b?.checkOutDate || b?.checkOut || ''),
+      guests: b?.guests || b?.noOfGuests || 0,
+      price: b?.amount || b?.finalAmount || 0,
+      status: (b?.status || 'PENDING').toString().charAt(0).toUpperCase() + (b?.status || 'PENDING').toString().slice(1).toLowerCase(),
+      paymentMethod: b?.payment_method || b?.paymentMethod || null,
+      checkedInAt: b?.checked_in_at || b?.checkedInAt || null,
+      paymentReceivedAt: b?.payment_received_at || b?.paymentReceivedAt || null,
+      paymentReceivedMethod: b?.payment_received_method || b?.paymentReceivedMethod || null,
+      paymentReceivedAmount: b?.payment_received_amount || b?.paymentReceivedAmount || null,
+      commissionPercent: b?.commission_percent ?? b?.commissionPercent ?? null,
+      commissionAmount: b?.commission_amount ?? b?.commissionAmount ?? null
+    };
+    return normalized;
   };
 
   const markBookingAsSeen = (bookingId) => {
@@ -130,6 +175,91 @@ const Bookings = () => {
     return !(seenBookingIds instanceof Set ? seenBookingIds.has(String(id)) : false);
   };
 
+  const openBookingDetails = async (booking) => {
+    const bookingId = booking?.id;
+    if (!bookingId) return;
+    markBookingAsSeen(bookingId);
+    setSelected(booking);
+    setDetailLoading(true);
+    setError('');
+    try {
+      const resp = await api.get(`/vendor/bookings/${bookingId}`);
+      const raw = resp?.data?.data ?? resp?.data ?? null;
+      if (raw) {
+        const normalized = normalizeBookingFromApi(raw);
+        setSelected(normalized);
+        const pm = String(raw?.payment_method || raw?.paymentMethod || '').toUpperCase();
+        setPaymentReceivedMethod(pm === 'PAY_AT_HOTEL' ? 'CASH' : 'ONLINE');
+        const amt = raw?.payment_received_amount ?? raw?.amount ?? '';
+        setPaymentReceivedAmount(amt === null || amt === undefined ? '' : String(amt));
+      }
+    } catch (e) {
+      setError('Failed to load booking details.');
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const refreshSelectedFromApiPayload = (payload) => {
+    if (!payload) return;
+    const normalized = normalizeBookingFromApi(payload);
+    setSelected(normalized);
+    const pm = String(payload?.payment_method || payload?.paymentMethod || normalized?.paymentMethod || '').toUpperCase();
+    if (pm) {
+      setPaymentReceivedMethod(pm === 'PAY_AT_HOTEL' ? 'CASH' : 'ONLINE');
+    }
+    const amt = payload?.payment_received_amount ?? payload?.amount ?? normalized?.price ?? '';
+    setPaymentReceivedAmount(amt === null || amt === undefined ? '' : String(amt));
+  };
+
+  const markCheckedIn = async () => {
+    if (!selected?.id) return;
+    setCheckInLoading(true);
+    setError('');
+    setSuccess('');
+    try {
+      const resp = await api.put(`/vendor/bookings/${selected.id}/check-in`, {});
+      const raw = resp?.data?.data?.booking ?? resp?.data?.data ?? null;
+      if (raw) refreshSelectedFromApiPayload(raw);
+      setSuccess('Checked-in recorded');
+      try {
+        await fetchCommissionSummary();
+      } catch {
+        void 0;
+      }
+    } catch (e) {
+      setError('Failed to record checked-in.');
+    } finally {
+      setCheckInLoading(false);
+    }
+  };
+
+  const markPaymentReceived = async () => {
+    if (!selected?.id) return;
+    setPaymentReceivedLoading(true);
+    setError('');
+    setSuccess('');
+    try {
+      const amt = paymentReceivedAmount === '' ? undefined : Number(paymentReceivedAmount);
+      const resp = await api.put(`/vendor/bookings/${selected.id}/payment-received`, {
+        payment_received_method: paymentReceivedMethod,
+        payment_received_amount: Number.isFinite(amt) ? amt : undefined
+      });
+      const raw = resp?.data?.data?.booking ?? resp?.data?.data ?? null;
+      if (raw) refreshSelectedFromApiPayload(raw);
+      setSuccess('Payment received recorded');
+      try {
+        await fetchCommissionSummary();
+      } catch {
+        void 0;
+      }
+    } catch (e) {
+      setError('Failed to record payment received.');
+    } finally {
+      setPaymentReceivedLoading(false);
+    }
+  };
+
   const fetchBookings = async () => {
     setLoading(true);
     setError('');
@@ -173,6 +303,9 @@ const Bookings = () => {
         guests: b.guests || b.noOfGuests || 0,
         price: b.amount || b.finalAmount || 0,
         status: (b.status || 'PENDING').toString().charAt(0).toUpperCase() + (b.status || 'PENDING').toString().slice(1).toLowerCase(),
+        paymentMethod: b.payment_method || b.paymentMethod || null,
+        checkedInAt: b.checked_in_at || b.checkedInAt || null,
+        paymentReceivedAt: b.payment_received_at || b.paymentReceivedAt || null,
       }));
       setItems(normalized);
       const computedTotal = res?.total ?? res?.pagination?.total ?? res?.meta?.total ?? res?.count ?? normalized.length;
@@ -189,9 +322,36 @@ const Bookings = () => {
     }
   };
 
+  const fetchCommissionSummary = async () => {
+    try {
+      const resp = await api.get('/vendor/reports/commission-summary');
+      const data = resp?.data?.data || {};
+      const pah = data.pay_at_hotel || {};
+      const online = data.online || {};
+      const totals = data.totals || {};
+      const settlement = data.settlement_due_this_week || {};
+      setCommissionSummary({
+        percent: Number(data.percent || 10),
+        payAtHotelGross: Number(pah.gross_amount || 0),
+        onlineGross: Number(online.gross_amount || 0),
+        totalCommission: Number(totals.commission_amount || 0),
+        totalNet: Number(totals.net_amount || 0),
+        settlementDueThisWeek: Number(settlement.pay_at_hotel_commission_due || 0),
+        settlementWeekStart: settlement.week_start || null,
+        settlementWeekEnd: settlement.week_end || null
+      });
+    } catch {
+      void 0;
+    }
+  };
+
   useEffect(() => {
     fetchBookings();
   }, [page, pageSize, status, dateFrom, dateTo, userFilter?.userId]);
+
+  useEffect(() => {
+    fetchCommissionSummary();
+  }, []);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -299,6 +459,54 @@ const Bookings = () => {
         </div>
       </div>
 
+      <div className="row g-3 mb-3">
+        <div className="col-md-3">
+          <div className="card border-0 shadow-sm h-100">
+            <div className="card-body text-center">
+              <div className="text-muted small">Pay at Hotel Amount (Checked-in + Payment Received)</div>
+              <div className="fs-4 fw-bold">₹{Number(commissionSummary.payAtHotelGross || 0).toLocaleString()}</div>
+            </div>
+          </div>
+        </div>
+        <div className="col-md-3">
+          <div className="card border-0 shadow-sm h-100">
+            <div className="card-body text-center">
+              <div className="text-muted small">Settlement Due (This Week)</div>
+              <div className="fs-4 fw-bold text-danger">₹{Number(commissionSummary.settlementDueThisWeek || 0).toLocaleString()}</div>
+              {commissionSummary.settlementWeekStart && commissionSummary.settlementWeekEnd ? (
+                <div className="text-muted small mt-1">
+                  {commissionSummary.settlementWeekStart} to {commissionSummary.settlementWeekEnd}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+        <div className="col-md-3">
+          <div className="card border-0 shadow-sm h-100">
+            <div className="card-body text-center">
+              <div className="text-muted small">Online Booking Amount</div>
+              <div className="fs-4 fw-bold">₹{Number(commissionSummary.onlineGross || 0).toLocaleString()}</div>
+            </div>
+          </div>
+        </div>
+        <div className="col-md-3">
+          <div className="card border-0 shadow-sm h-100">
+            <div className="card-body text-center">
+              <div className="text-muted small">Total Admin Commission ({Number(commissionSummary.percent || 10)}%)</div>
+              <div className="fs-4 fw-bold">₹{Number(commissionSummary.totalCommission || 0).toLocaleString()}</div>
+            </div>
+          </div>
+        </div>
+        <div className="col-md-3">
+          <div className="card border-0 shadow-sm h-100">
+            <div className="card-body text-center">
+              <div className="text-muted small">Net Amount (After Commission)</div>
+              <div className="fs-4 fw-bold text-success">₹{Number(commissionSummary.totalNet || 0).toLocaleString()}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {success && (
         <div className="alert alert-success alert-dismissible fade show py-2" role="alert">
           <i className="fas fa-check-circle me-2"></i>{success}
@@ -322,6 +530,9 @@ const Bookings = () => {
                   <th className="px-3">Sr No.</th>
                   <th>User</th>
                   <th>Hotel</th>
+                  <th className="text-center">Booking Method</th>
+                  <th className="text-center">Checked-in</th>
+                  <th className="text-center">Payment</th>
                   <th>Check-in</th>
                   <th>Check-out</th>
                   <th className="text-center">Guests</th>
@@ -333,7 +544,7 @@ const Bookings = () => {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan="9" className="text-center py-5">
+                    <td colSpan="12" className="text-center py-5">
                       <div className="spinner-border text-primary" role="status">
                         <span className="visually-hidden">Loading...</span>
                       </div>
@@ -357,6 +568,27 @@ const Bookings = () => {
                         </div>
                       </td>
                       <td>{b.hotel}</td>
+                      <td className="text-center">
+                        {String(b.paymentMethod || '').toUpperCase() === 'PAY_AT_HOTEL' ? (
+                          <span className="badge bg-warning text-dark">Pay at Hotel</span>
+                        ) : (
+                          <span className="badge bg-success">Online</span>
+                        )}
+                      </td>
+                      <td className="text-center">
+                        {b.checkedInAt ? (
+                          <span className="badge bg-success">Yes</span>
+                        ) : (
+                          <span className="badge bg-secondary">No</span>
+                        )}
+                      </td>
+                      <td className="text-center">
+                        {b.paymentReceivedAt ? (
+                          <span className="badge bg-success">Received</span>
+                        ) : (
+                          <span className="badge bg-secondary">Pending</span>
+                        )}
+                      </td>
                       <td><small>{formatWhen(b, b.checkIn)}</small></td>
                       <td><small>{formatWhen(b, b.checkOut)}</small></td>
                       <td className="text-center">
@@ -374,8 +606,7 @@ const Bookings = () => {
                           <button 
                             className="btn btn-sm btn-outline-primary" 
                             onClick={() => {
-                              markBookingAsSeen(b.id);
-                              setSelected(b);
+                              openBookingDetails(b);
                             }}
                             title="View Details"
                           >
@@ -387,7 +618,7 @@ const Bookings = () => {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="9" className="text-center text-muted py-5">
+                    <td colSpan="12" className="text-center text-muted py-5">
                       <i className="fas fa-inbox fa-3x mb-3 d-block"></i>
                       <div>No bookings found</div>
                       {(query || status !== 'All' || dateFrom || dateTo || userFilter) && (
@@ -431,74 +662,172 @@ const Bookings = () => {
                 <button type="button" className="btn-close" onClick={() => setSelected(null)}></button>
               </div>
               <div className="modal-body">
-                <div className="row g-3">
-                  <div className="col-md-6">
-                    <h6 className="text-muted text-uppercase small mb-2">Booking Reference</h6>
-                    <div className="d-flex align-items-center mb-2">
-                      <span className="text-muted me-2">ID:</span>
-                      <span className="fw-bold">{selected.id}</span>
+                {detailLoading ? (
+                  <div className="text-center py-5">
+                    <div className="spinner-border text-primary" role="status">
+                      <span className="visually-hidden">Loading...</span>
                     </div>
-                    <div className="d-flex align-items-center mb-2">
-                      <span className="text-muted me-2">Status:</span>
-                      <StatusBadge status={selected.status} />
+                    <div className="mt-2 text-muted">Loading booking details...</div>
+                  </div>
+                ) : (
+                  <div className="row g-3">
+                    <div className="col-md-6">
+                      <h6 className="text-muted text-uppercase small mb-2">Booking Reference</h6>
+                      <div className="d-flex align-items-center mb-2">
+                        <span className="text-muted me-2">ID:</span>
+                        <span className="fw-bold">{selected.id}</span>
+                      </div>
+                      <div className="d-flex align-items-center mb-2">
+                        <span className="text-muted me-2">Status:</span>
+                        <StatusBadge status={selected.status} />
+                      </div>
+                      <div className="d-flex align-items-center">
+                        <span className="text-muted me-2">Total Price:</span>
+                        <span className="fw-bold text-success">₹{selected.price}</span>
+                      </div>
                     </div>
-                    <div className="d-flex align-items-center">
-                      <span className="text-muted me-2">Total Price:</span>
-                      <span className="fw-bold text-success">₹{selected.price}</span>
+                    <div className="col-md-6">
+                      <h6 className="text-muted text-uppercase small mb-2">Hotel Information</h6>
+                      <div className="mb-2">
+                        <i className="fas fa-hotel text-muted me-2"></i>
+                        <span className="fw-semibold">{selected.hotel}</span>
+                      </div>
+                      <div className="mb-2">
+                        <i className="fas fa-bed text-muted me-2"></i>
+                        <span>Room Type: <strong>{formatRoomType(selected.roomType)}</strong></span>
+                      </div>
+                    </div>
+                    
+                    <div className="col-12"><hr className="my-3" /></div>
+                    
+                    <div className="col-md-6">
+                      <h6 className="text-muted text-uppercase small mb-2">Guest Details</h6>
+                      <div className="mb-2">
+                        <i className="fas fa-user text-muted me-2"></i>
+                        <span>{selected.user}</span>
+                      </div>
+                      <div className="mb-2">
+                        <i className="fas fa-envelope text-muted me-2"></i>
+                        <span>{selected.userEmail || 'N/A'}</span>
+                      </div>
+                      <div>
+                        <i className="fas fa-users text-muted me-2"></i>
+                        <span>{selected.guests} Guests</span>
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <h6 className="text-muted text-uppercase small mb-2">Stay Schedule</h6>
+                      <div className="mb-2">
+                        <i className="fas fa-calendar-check text-muted me-2"></i>
+                        <span>Check-in: <strong>{formatWhen(selected, selected.checkIn)}</strong></span>
+                      </div>
+                      <div className="mb-2">
+                        <i className="fas fa-calendar-times text-muted me-2"></i>
+                        <span>Check-out: <strong>{formatWhen(selected, selected.checkOut)}</strong></span>
+                      </div>
+                      <div>
+                        <i className="fas fa-moon text-muted me-2"></i>
+                        <span>
+                          {selected.checkIn && selected.checkOut 
+                            ? Math.max(0, Math.ceil((new Date(selected.checkOut) - new Date(selected.checkIn)) / (1000 * 60 * 60 * 24))) 
+                            : 0} Nights
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="col-12"><hr className="my-3" /></div>
+
+                    <div className="col-md-6">
+                      <h6 className="text-muted text-uppercase small mb-2">Operational Status</h6>
+                      <div className="mb-2">
+                        <span className="text-muted me-2">Payment Method:</span>
+                        <span className="fw-semibold">{String(selected.paymentMethod || '').toUpperCase() === 'PAY_AT_HOTEL' ? 'Pay at Hotel' : 'Online'}</span>
+                      </div>
+                      <div className="mb-2">
+                        <span className="text-muted me-2">Checked-in:</span>
+                        <span className="fw-semibold">{selected.checkedInAt ? formatDateTimeIST(selected.checkedInAt) : 'No'}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted me-2">Payment Received:</span>
+                        <span className="fw-semibold">{selected.paymentReceivedAt ? formatDateTimeIST(selected.paymentReceivedAt) : 'No'}</span>
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <h6 className="text-muted text-uppercase small mb-2">Commission</h6>
+                      {String(selected.paymentMethod || '').toUpperCase() === 'PAY_AT_HOTEL' ? (
+                        <>
+                          <div className="mb-2">
+                            <span className="text-muted me-2">Commission %:</span>
+                            <span className="fw-semibold">{selected.commissionPercent ?? '-'}</span>
+                          </div>
+                          <div className="mb-2">
+                            <span className="text-muted me-2">Commission Amount:</span>
+                            <span className="fw-semibold">₹{selected.commissionAmount ?? '-'}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted me-2">Payment Received Amount:</span>
+                            <span className="fw-semibold">₹{selected.paymentReceivedAmount ?? '-'}</span>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-muted">Not applicable</div>
+                      )}
                     </div>
                   </div>
-                  <div className="col-md-6">
-                    <h6 className="text-muted text-uppercase small mb-2">Hotel Information</h6>
-                    <div className="mb-2">
-                      <i className="fas fa-hotel text-muted me-2"></i>
-                      <span className="fw-semibold">{selected.hotel}</span>
-                    </div>
-                    <div className="mb-2">
-                      <i className="fas fa-bed text-muted me-2"></i>
-                      <span>Room Type: <strong>{formatRoomType(selected.roomType)}</strong></span>
-                    </div>
-                  </div>
-                  
-                  <div className="col-12"><hr className="my-3" /></div>
-                  
-                  <div className="col-md-6">
-                    <h6 className="text-muted text-uppercase small mb-2">Guest Details</h6>
-                    <div className="mb-2">
-                      <i className="fas fa-user text-muted me-2"></i>
-                      <span>{selected.user}</span>
-                    </div>
-                    <div className="mb-2">
-                      <i className="fas fa-envelope text-muted me-2"></i>
-                      <span>{selected.userEmail || 'N/A'}</span>
-                    </div>
-                    <div>
-                      <i className="fas fa-users text-muted me-2"></i>
-                      <span>{selected.guests} Guests</span>
-                    </div>
-                  </div>
-                  <div className="col-md-6">
-                    <h6 className="text-muted text-uppercase small mb-2">Stay Schedule</h6>
-                    <div className="mb-2">
-                      <i className="fas fa-calendar-check text-muted me-2"></i>
-                      <span>Check-in: <strong>{formatWhen(selected, selected.checkIn)}</strong></span>
-                    </div>
-                    <div className="mb-2">
-                      <i className="fas fa-calendar-times text-muted me-2"></i>
-                      <span>Check-out: <strong>{formatWhen(selected, selected.checkOut)}</strong></span>
-                    </div>
-                    <div>
-                      <i className="fas fa-moon text-muted me-2"></i>
-                      <span>
-                        {selected.checkIn && selected.checkOut 
-                          ? Math.max(0, Math.ceil((new Date(selected.checkOut) - new Date(selected.checkIn)) / (1000 * 60 * 60 * 24))) 
-                          : 0} Nights
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                )}
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setSelected(null)}>Close</button>
+                <div className="d-flex flex-wrap gap-2 w-100 justify-content-between align-items-center">
+                  <div className="d-flex flex-wrap gap-2 align-items-center">
+                    <button
+                      type="button"
+                      className="btn btn-success"
+                      onClick={markCheckedIn}
+                      disabled={
+                        detailLoading ||
+                        checkInLoading ||
+                        !!selected.checkedInAt ||
+                        !['confirmed', 'completed'].includes(String(selected.status || '').toLowerCase())
+                      }
+                    >
+                      {selected.checkedInAt ? 'Checked-in' : checkInLoading ? 'Saving...' : 'Mark Checked-in'}
+                    </button>
+
+                    <div className="d-flex flex-wrap gap-2 align-items-center">
+                      <select
+                        className="form-select"
+                        style={{ width: 'auto' }}
+                        value={paymentReceivedMethod}
+                        onChange={(e) => setPaymentReceivedMethod(e.target.value)}
+                        disabled={detailLoading || paymentReceivedLoading || !!selected.paymentReceivedAt}
+                      >
+                        <option value="CASH">Cash</option>
+                        <option value="UPI">UPI</option>
+                        <option value="CARD">Card</option>
+                        <option value="ONLINE">Online</option>
+                      </select>
+                      <input
+                        type="number"
+                        className="form-control"
+                        style={{ width: '160px' }}
+                        value={paymentReceivedAmount}
+                        onChange={(e) => setPaymentReceivedAmount(e.target.value)}
+                        disabled={detailLoading || paymentReceivedLoading || !!selected.paymentReceivedAt}
+                        placeholder="Amount"
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={markPaymentReceived}
+                        disabled={detailLoading || paymentReceivedLoading || !!selected.paymentReceivedAt}
+                      >
+                        {selected.paymentReceivedAt ? 'Payment Received' : paymentReceivedLoading ? 'Saving...' : 'Mark Payment Received'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <button type="button" className="btn btn-secondary" onClick={() => setSelected(null)}>Close</button>
+                </div>
               </div>
             </div>
           </div>

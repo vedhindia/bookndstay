@@ -86,6 +86,36 @@ const parseStrictNumber = (val) => {
   return n;
 };
 
+const round2 = (val) => {
+  const n = Number(val);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n * 100) / 100;
+};
+
+const getCommissionPercent = () => {
+  const raw = process.env.COMMISSION_PERCENT ?? process.env.PLATFORM_COMMISSION_PERCENT;
+  const n = parseFloat(String(raw ?? ''));
+  if (Number.isFinite(n) && n >= 0 && n <= 100) return n;
+  return 10;
+};
+
+const istDateOnly = (d) => {
+  const dt = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(dt.getTime())) return null;
+  const ist = new Date(dt.getTime() + 330 * 60 * 1000);
+  return ist.toISOString().slice(0, 10);
+};
+
+const weekStartMondayIST = (d) => {
+  const dateOnly = istDateOnly(d);
+  if (!dateOnly) return null;
+  const base = new Date(`${dateOnly}T00:00:00.000Z`);
+  const day = base.getUTCDay();
+  const diff = (day + 6) % 7;
+  base.setUTCDate(base.getUTCDate() - diff);
+  return base.toISOString().slice(0, 10);
+};
+
 const assertRoomsValid = ({ totalRooms, availableRooms, acRooms, nonAcRooms }) => {
   if (!Number.isInteger(totalRooms) || totalRooms <= 0) throw createError('total_rooms must be a positive integer');
   if (!Number.isInteger(availableRooms) || availableRooms < 0) throw createError('available_rooms must be an integer 0 or more');
@@ -684,6 +714,87 @@ module.exports = {
     sendSuccess(res, booking, 'Booking status updated');
   }),
 
+  markCheckedIn: asyncHandler(async (req, res) => {
+    const booking = await Booking.findOne({
+      where: {
+        id: req.params.bookingId,
+        vendor_id: req.user.id
+      },
+      include: getBookingIncludes()
+    });
+
+    if (!booking) throw createError('Booking not found', 404);
+    if (booking.status === 'CANCELLED') throw createError('Cancelled bookings cannot be checked-in', 400);
+    if (!['CONFIRMED', 'COMPLETED'].includes(String(booking.status || '').toUpperCase())) {
+      throw createError('Only confirmed bookings can be checked-in', 400);
+    }
+
+    if (!booking.checked_in_at) {
+      const at = parseDateTimeInputAsIST(req.body?.checked_in_at) || new Date();
+      booking.checked_in_at = at;
+      await booking.save();
+      try {
+        notifyAdmins({ section: 'bookings', id: booking.id });
+      } catch {
+        void 0;
+      }
+    }
+
+    sendSuccess(res, { booking }, 'Checked-in recorded');
+  }),
+
+  markPaymentReceived: asyncHandler(async (req, res) => {
+    const booking = await Booking.findOne({
+      where: {
+        id: req.params.bookingId,
+        vendor_id: req.user.id
+      },
+      include: getBookingIncludes()
+    });
+
+    if (!booking) throw createError('Booking not found', 404);
+    if (booking.status === 'CANCELLED') throw createError('Cancelled bookings cannot be updated', 400);
+
+    if (!booking.payment_received_at) {
+      const at = parseDateTimeInputAsIST(req.body?.payment_received_at) || new Date();
+      const amtInput = parseStrictNumber(req.body?.payment_received_amount ?? req.body?.amount);
+      const amount = Number.isFinite(amtInput) ? amtInput : Number(booking.amount || 0);
+      if (!Number.isFinite(amount) || amount < 0) throw createError('Invalid payment_received_amount', 400);
+
+      const methodRaw = String(req.body?.payment_received_method ?? req.body?.method ?? '').trim();
+      const defaultMethod = String(booking.payment_method || '').toUpperCase() === 'PAY_AT_HOTEL' ? 'PAY_AT_HOTEL' : 'ONLINE';
+      const method = methodRaw ? methodRaw.toUpperCase() : defaultMethod;
+
+      const percentInput = parseStrictNumber(req.body?.commission_percent ?? booking.commission_percent);
+      const percent = Number.isFinite(percentInput) ? Math.min(100, Math.max(0, percentInput)) : getCommissionPercent();
+
+      const paymentReceivedAmount = round2(amount);
+      const commissionAmount = round2((paymentReceivedAmount * percent) / 100);
+      const vendorPayableAmount = round2(paymentReceivedAmount - commissionAmount);
+
+      booking.payment_received_at = at;
+      booking.payment_received_method = method;
+      booking.payment_received_amount = paymentReceivedAmount;
+      booking.commission_percent = percent;
+      booking.commission_amount = commissionAmount;
+      booking.vendor_payable_amount = vendorPayableAmount;
+
+      if (String(booking.payment_method || '').toUpperCase() === 'PAY_AT_HOTEL') {
+        booking.settlement_week_start = weekStartMondayIST(at);
+        if (!booking.settlement_status) booking.settlement_status = 'UNSETTLED';
+      }
+
+      await booking.save();
+      try {
+        notifyAdmins({ section: 'bookings', id: booking.id });
+      } catch {
+        void 0;
+      }
+    }
+
+    sendSuccess(res, { booking }, 'Payment received recorded');
+  }),
+
   getNotificationCounts: asyncHandler(async (req, res) => {
     const parseSince = (v) => {
       if (!v) return null;
@@ -787,6 +898,121 @@ module.exports = {
       booking_count: bookingCount,
       period: { start: start_date, end: end_date }
     }, 'Revenue report generated');
+  }),
+
+  getCommissionSummary: asyncHandler(async (req, res) => {
+    const percentFallback = getCommissionPercent();
+
+    const pahBaseExpr = 'COALESCE(payment_received_amount, 0)';
+    const pahPercentExpr = `COALESCE(NULLIF(commission_percent, 0), ${percentFallback})`;
+    const pahCommissionExpr = `COALESCE(NULLIF(commission_amount, 0), (${pahBaseExpr} * ${pahPercentExpr} / 100))`;
+    const pahNetExpr = `(${pahBaseExpr} - ${pahCommissionExpr})`;
+
+    const onlineBaseExpr = 'COALESCE(payment_received_amount, amount, 0)';
+    const onlinePercentExpr = `COALESCE(NULLIF(commission_percent, 0), ${percentFallback})`;
+    const onlineCommissionExpr = `COALESCE(NULLIF(commission_amount, 0), (${onlineBaseExpr} * ${onlinePercentExpr} / 100))`;
+    const onlineNetExpr = `(${onlineBaseExpr} - ${onlineCommissionExpr})`;
+
+    const baseWhere = {
+      vendor_id: req.user.id,
+      status: { [Op.ne]: 'CANCELLED' }
+    };
+
+    const thisWeekStart = weekStartMondayIST(new Date());
+    const ws = thisWeekStart ? new Date(`${thisWeekStart}T00:00:00.000Z`) : null;
+    const we = ws ? new Date(ws.getTime()) : null;
+    if (we) we.setUTCDate(we.getUTCDate() + 7);
+    const weekEnd = ws ? new Date(ws.getTime()) : null;
+    if (weekEnd) weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
+    const thisWeekEndStr = weekEnd ? weekEnd.toISOString().slice(0, 10) : null;
+
+    const [pahAgg, onlineAgg, pahThisWeekAgg] = await Promise.all([
+      Booking.findOne({
+        where: {
+          ...baseWhere,
+          payment_method: 'PAY_AT_HOTEL',
+          checked_in_at: { [Op.ne]: null },
+          payment_received_at: { [Op.ne]: null }
+        },
+        attributes: [
+          [fn('SUM', literal(pahBaseExpr)), 'gross_amount'],
+          [fn('SUM', literal(pahCommissionExpr)), 'commission_amount'],
+          [fn('SUM', literal(pahNetExpr)), 'net_amount']
+        ]
+      }),
+      Booking.findOne({
+        where: {
+          ...baseWhere,
+          payment_received_at: { [Op.ne]: null },
+          [Op.or]: [{ payment_method: { [Op.ne]: 'PAY_AT_HOTEL' } }, { payment_method: null }]
+        },
+        attributes: [
+          [fn('SUM', literal(onlineBaseExpr)), 'gross_amount'],
+          [fn('SUM', literal(onlineCommissionExpr)), 'commission_amount'],
+          [fn('SUM', literal(onlineNetExpr)), 'net_amount']
+        ]
+      }),
+      Booking.findOne({
+        where: {
+          ...baseWhere,
+          payment_method: 'PAY_AT_HOTEL',
+          checked_in_at: { [Op.ne]: null },
+          payment_received_at: { [Op.ne]: null },
+          [Op.or]: [{ settlement_status: null }, { settlement_status: 'UNSETTLED' }],
+          ...(thisWeekStart && ws && we
+            ? {
+                [Op.or]: [
+                  { settlement_week_start: thisWeekStart },
+                  {
+                    settlement_week_start: null,
+                    payment_received_at: { [Op.gte]: ws, [Op.lt]: we }
+                  }
+                ]
+              }
+            : {})
+        },
+        attributes: [
+          [fn('SUM', literal(pahCommissionExpr)), 'commission_amount'],
+          [fn('SUM', literal(pahBaseExpr)), 'gross_amount']
+        ]
+      })
+    ]);
+
+    const pahGross = parseFloat(pahAgg?.get?.('gross_amount') || pahAgg?.dataValues?.gross_amount || 0) || 0;
+    const pahCommission = parseFloat(pahAgg?.get?.('commission_amount') || pahAgg?.dataValues?.commission_amount || 0) || 0;
+    const pahNet = parseFloat(pahAgg?.get?.('net_amount') || pahAgg?.dataValues?.net_amount || 0) || 0;
+
+    const onlineGross = parseFloat(onlineAgg?.get?.('gross_amount') || onlineAgg?.dataValues?.gross_amount || 0) || 0;
+    const onlineCommission = parseFloat(onlineAgg?.get?.('commission_amount') || onlineAgg?.dataValues?.commission_amount || 0) || 0;
+    const onlineNet = parseFloat(onlineAgg?.get?.('net_amount') || onlineAgg?.dataValues?.net_amount || 0) || 0;
+
+    const thisWeekPahCommission = parseFloat(pahThisWeekAgg?.get?.('commission_amount') || pahThisWeekAgg?.dataValues?.commission_amount || 0) || 0;
+    const thisWeekPahGross = parseFloat(pahThisWeekAgg?.get?.('gross_amount') || pahThisWeekAgg?.dataValues?.gross_amount || 0) || 0;
+
+    sendSuccess(res, {
+      percent: percentFallback,
+      pay_at_hotel: {
+        gross_amount: round2(pahGross),
+        commission_amount: round2(pahCommission),
+        net_amount: round2(pahNet)
+      },
+      online: {
+        gross_amount: round2(onlineGross),
+        commission_amount: round2(onlineCommission),
+        net_amount: round2(onlineNet)
+      },
+      settlement_due_this_week: {
+        week_start: thisWeekStart,
+        week_end: thisWeekEndStr,
+        pay_at_hotel_gross_amount: round2(thisWeekPahGross),
+        pay_at_hotel_commission_due: round2(thisWeekPahCommission)
+      },
+      totals: {
+        gross_amount: round2(pahGross + onlineGross),
+        commission_amount: round2(pahCommission + onlineCommission),
+        net_amount: round2(pahNet + onlineNet)
+      }
+    }, 'Commission summary retrieved');
   }),
 
   /* ===================== IMAGE MANAGEMENT ===================== */

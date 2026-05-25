@@ -457,6 +457,10 @@ router.post('/bookings/:bookingId/cancel', adminCtrl.cancelBooking);
 
 // ============ ANALYTICS & REPORTS API ============
 router.get('/dashboard/stats', adminCtrl.getDashboardStats);
+router.get('/reports/pay-at-hotel-commission', requireRole(['ADMIN', 'SUPER_ADMIN']), adminCtrl.getPayAtHotelCommissionDueWeekly);
+router.post('/reports/pay-at-hotel-commission/settle', requireRole(['ADMIN', 'SUPER_ADMIN']), adminCtrl.settlePayAtHotelCommissionDueWeekly);
+router.get('/reports/vendor-settlement', requireRole(['ADMIN', 'SUPER_ADMIN']), adminCtrl.getVendorSettlementWeekly);
+router.post('/reports/vendor-settlement/settle', requireRole(['ADMIN', 'SUPER_ADMIN']), adminCtrl.settleVendorSettlementWeekly);
 
 // ============ REVIEW MODERATION API ============
 router.get('/reviews', requireRole(['ADMIN', 'SUPER_ADMIN']), adminCtrl.getReviews);

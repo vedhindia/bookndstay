@@ -153,6 +153,95 @@ const PORT = process.env.PORT || 3001;
           after: 'price_per_night'
         });
       }
+      if (!bookings.checked_in_at) {
+        console.log('Adding missing column bookings.checked_in_at');
+        await qi.addColumn('bookings', 'checked_in_at', {
+          type: DataTypes.DATE,
+          allowNull: true,
+          after: 'status'
+        });
+      }
+      if (!bookings.payment_received_at) {
+        console.log('Adding missing column bookings.payment_received_at');
+        await qi.addColumn('bookings', 'payment_received_at', {
+          type: DataTypes.DATE,
+          allowNull: true,
+          after: 'checked_in_at'
+        });
+      }
+      if (!bookings.payment_received_method) {
+        console.log('Adding missing column bookings.payment_received_method');
+        await qi.addColumn('bookings', 'payment_received_method', {
+          type: DataTypes.STRING,
+          allowNull: true,
+          after: 'payment_received_at'
+        });
+      }
+      if (!bookings.payment_received_amount) {
+        console.log('Adding missing column bookings.payment_received_amount');
+        await qi.addColumn('bookings', 'payment_received_amount', {
+          type: DataTypes.FLOAT,
+          allowNull: true,
+          after: 'payment_received_method'
+        });
+      }
+      if (!bookings.commission_percent) {
+        console.log('Adding missing column bookings.commission_percent');
+        await qi.addColumn('bookings', 'commission_percent', {
+          type: DataTypes.FLOAT,
+          allowNull: true,
+          after: 'payment_received_amount'
+        });
+      }
+      if (!bookings.commission_amount) {
+        console.log('Adding missing column bookings.commission_amount');
+        await qi.addColumn('bookings', 'commission_amount', {
+          type: DataTypes.FLOAT,
+          allowNull: true,
+          after: 'commission_percent'
+        });
+      }
+      if (!bookings.vendor_payable_amount) {
+        console.log('Adding missing column bookings.vendor_payable_amount');
+        await qi.addColumn('bookings', 'vendor_payable_amount', {
+          type: DataTypes.FLOAT,
+          allowNull: true,
+          after: 'commission_amount'
+        });
+      }
+      if (!bookings.settlement_week_start) {
+        console.log('Adding missing column bookings.settlement_week_start');
+        await qi.addColumn('bookings', 'settlement_week_start', {
+          type: DataTypes.DATEONLY,
+          allowNull: true,
+          after: 'vendor_payable_amount'
+        });
+      }
+      if (!bookings.settlement_status) {
+        console.log('Adding missing column bookings.settlement_status');
+        await qi.addColumn('bookings', 'settlement_status', {
+          type: DataTypes.ENUM('UNSETTLED', 'SETTLED'),
+          allowNull: true,
+          defaultValue: 'UNSETTLED',
+          after: 'settlement_week_start'
+        });
+      }
+      if (!bookings.settled_at) {
+        console.log('Adding missing column bookings.settled_at');
+        await qi.addColumn('bookings', 'settled_at', {
+          type: DataTypes.DATE,
+          allowNull: true,
+          after: 'settlement_status'
+        });
+      }
+      if (!bookings.settlement_ref) {
+        console.log('Adding missing column bookings.settlement_ref');
+        await qi.addColumn('bookings', 'settlement_ref', {
+          type: DataTypes.STRING,
+          allowNull: true,
+          after: 'settled_at'
+        });
+      }
       try {
         const statusType = String(bookings.status?.type || '');
         if (statusType && !statusType.toUpperCase().includes('COMPLETED')) {

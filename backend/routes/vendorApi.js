@@ -708,6 +708,8 @@ router.get('/bookings/:bookingId', vendorCtrl.getBookingById);
  *         description: Booking status updated successfully
  */
 router.put('/bookings/:bookingId/status', vendorCtrl.updateBookingStatus);
+router.put('/bookings/:bookingId/check-in', vendorCtrl.markCheckedIn);
+router.put('/bookings/:bookingId/payment-received', vendorCtrl.markPaymentReceived);
 router.get('/notifications/counts', vendorCtrl.getNotificationCounts);
 
 /**
@@ -767,6 +769,7 @@ router.get('/dashboard/stats', vendorCtrl.getDashboardStats);
  *         description: Revenue report data
  */
 router.get('/reports/revenue', vendorCtrl.getRevenueReport);
+router.get('/reports/commission-summary', vendorCtrl.getCommissionSummary);
 
 /**
  * @swagger

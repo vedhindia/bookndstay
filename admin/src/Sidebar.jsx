@@ -28,6 +28,7 @@ const Sidebar = ({ isCollapsed, isMobile = false, onMobileClose }) => {
     { title: 'Vendors', icon: 'fas fa-user-tie', path: '/dashboard/vendors' },
     { title: 'Coupons', icon: 'fas fa-tags', path: '/dashboard/coupons' },
     { title: 'Bookings', icon: 'fas fa-calendar-check', path: '/dashboard/bookings' },
+    { title: 'Reports', icon: 'fas fa-chart-line', path: '/dashboard/reports' },
     { title: 'My Info', icon: 'fas fa-user-circle', path: '/dashboard/my-info' },
   ];
 

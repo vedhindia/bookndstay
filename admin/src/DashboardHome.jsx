@@ -297,8 +297,8 @@ function DashboardHome() {
                   <h6 className="text-muted mb-2">Total Bookings</h6>
                   <h3 className="mb-0 fw-bold">{stats.totalBookings?.toLocaleString?.() || stats.totalBookings}</h3>
                 </div>
-                <div className="bg-primary bg-opacity-10 p-3 rounded-circle">
-                  <i className="fas fa-calendar-check fa-2x text-primary"></i>
+                <div className="bg-primary bg-opacity-10 p-2 rounded-circle">
+                  <i className="fas fa-calendar-check fa-1x text-primary"></i>
                 </div>
               </div>
             </div>
@@ -313,8 +313,8 @@ function DashboardHome() {
                   <h6 className="text-muted mb-2">Total Revenue</h6>
                   <h3 className="mb-0 fw-bold">₹{stats.totalRevenue?.toLocaleString?.() || stats.totalRevenue}</h3>
                 </div>
-                <div className="bg-success bg-opacity-10 p-3 rounded-circle">
-                  <i className="fas fa-rupee-sign fa-2x text-success"></i>
+                <div className="bg-success bg-opacity-10 p-2 rounded-circle">
+                  <i className="fas fa-rupee-sign fa-1x text-success"></i>
                 </div>
               </div>
             </div>
@@ -329,8 +329,8 @@ function DashboardHome() {
                   <h6 className="text-muted mb-2">Total Hotels</h6>
                   <h3 className="mb-0 fw-bold">{stats.totalHotels?.toLocaleString?.() || stats.totalHotels}</h3>
                 </div>
-                <div className="bg-warning bg-opacity-10 p-3 rounded-circle">
-                  <i className="fas fa-hotel fa-2x text-warning"></i>
+                <div className="bg-warning bg-opacity-10 p-2 rounded-circle">
+                  <i className="fas fa-hotel fa-1x text-warning"></i>
                 </div>
               </div>
             </div>
@@ -345,8 +345,8 @@ function DashboardHome() {
                   <h6 className="text-muted mb-2">Active Users</h6>
                   <h3 className="mb-0 fw-bold">{stats.activeUsers?.toLocaleString?.() || stats.activeUsers}</h3>
                 </div>
-                <div className="bg-info bg-opacity-10 p-3 rounded-circle">
-                  <i className="fas fa-users fa-2x text-info"></i>
+                <div className="bg-info bg-opacity-10 p-2 rounded-circle">
+                  <i className="fas fa-users fa-1x text-info"></i>
                 </div>
               </div>
             </div>

@@ -43,6 +43,36 @@ const parseWebhookPayload = (req) => {
   return { raw, json };
 };
 
+const round2 = (val) => {
+  const n = Number(val);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n * 100) / 100;
+};
+
+const getCommissionPercent = () => {
+  const raw = process.env.COMMISSION_PERCENT ?? process.env.PLATFORM_COMMISSION_PERCENT;
+  const n = parseFloat(String(raw ?? ''));
+  if (Number.isFinite(n) && n >= 0 && n <= 100) return n;
+  return 10;
+};
+
+const istDateOnly = (d) => {
+  const dt = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(dt.getTime())) return null;
+  const ist = new Date(dt.getTime() + 330 * 60 * 1000);
+  return ist.toISOString().slice(0, 10);
+};
+
+const weekStartMondayIST = (d) => {
+  const dateOnly = istDateOnly(d);
+  if (!dateOnly) return null;
+  const base = new Date(`${dateOnly}T00:00:00.000Z`);
+  const day = base.getUTCDay();
+  const diff = (day + 6) % 7;
+  base.setUTCDate(base.getUTCDate() - diff);
+  return base.toISOString().slice(0, 10);
+};
+
 module.exports = {
   getPaymentKey: (req, res) => {
     res.json({ key: process.env.RZP_KEY_ID || 'rzp_test_placeholder' });
@@ -168,6 +198,23 @@ module.exports = {
         fresh.status = 'CONFIRMED';
         fresh.payment_id = paymentId || fresh.payment_id || orderId;
         fresh.payment_method = 'ONLINE';
+        if (!fresh.payment_received_at) {
+          const now = new Date();
+          fresh.payment_received_at = now;
+          fresh.payment_received_method = fresh.payment_received_method || 'ONLINE';
+          const paymentReceivedAmount = Number(fresh.amount || 0);
+          fresh.payment_received_amount = paymentReceivedAmount;
+
+          const percent = Number.isFinite(Number(fresh.commission_percent))
+            ? Math.min(100, Math.max(0, Number(fresh.commission_percent)))
+            : getCommissionPercent();
+          fresh.commission_percent = percent;
+          const commissionAmount = round2((paymentReceivedAmount * percent) / 100);
+          fresh.commission_amount = commissionAmount;
+          fresh.vendor_payable_amount = round2(paymentReceivedAmount - commissionAmount);
+          fresh.settlement_week_start = fresh.settlement_week_start || weekStartMondayIST(now);
+          fresh.settlement_status = fresh.settlement_status || 'UNSETTLED';
+        }
         await fresh.save({ transaction: t });
       });
 

@@ -28,7 +28,18 @@ module.exports = (sequelize) => {
     refund_percent: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true },
     refund_amount: { type: DataTypes.FLOAT, allowNull: false, defaultValue: 0 },
     coupon_code: { type: DataTypes.STRING, allowNull: true },
-    discount_amount: { type: DataTypes.FLOAT, allowNull: false, defaultValue: 0 }
+    discount_amount: { type: DataTypes.FLOAT, allowNull: false, defaultValue: 0 },
+    checked_in_at: { type: DataTypes.DATE, allowNull: true },
+    payment_received_at: { type: DataTypes.DATE, allowNull: true },
+    payment_received_method: { type: DataTypes.STRING, allowNull: true },
+    payment_received_amount: { type: DataTypes.FLOAT, allowNull: true },
+    commission_percent: { type: DataTypes.FLOAT, allowNull: true },
+    commission_amount: { type: DataTypes.FLOAT, allowNull: true },
+    vendor_payable_amount: { type: DataTypes.FLOAT, allowNull: true },
+    settlement_week_start: { type: DataTypes.DATEONLY, allowNull: true },
+    settlement_status: { type: DataTypes.ENUM('UNSETTLED', 'SETTLED'), allowNull: true },
+    settled_at: { type: DataTypes.DATE, allowNull: true },
+    settlement_ref: { type: DataTypes.STRING, allowNull: true }
   }, { tableName: 'bookings' });
 
   return Booking;

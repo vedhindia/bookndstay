@@ -57,6 +57,36 @@ const buildISTDateTimeFromDateOnly = (dateOnly, time12h) => {
   return new Date(utcMs);
 };
 
+const round2 = (val) => {
+  const n = Number(val);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n * 100) / 100;
+};
+
+const getCommissionPercent = () => {
+  const raw = process.env.COMMISSION_PERCENT ?? process.env.PLATFORM_COMMISSION_PERCENT;
+  const n = parseFloat(String(raw ?? ''));
+  if (Number.isFinite(n) && n >= 0 && n <= 100) return n;
+  return 10;
+};
+
+const istDateOnly = (d) => {
+  const dt = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(dt.getTime())) return null;
+  const ist = new Date(dt.getTime() + 330 * 60 * 1000);
+  return ist.toISOString().slice(0, 10);
+};
+
+const weekStartMondayIST = (d) => {
+  const dateOnly = istDateOnly(d);
+  if (!dateOnly) return null;
+  const base = new Date(`${dateOnly}T00:00:00.000Z`);
+  const day = base.getUTCDay();
+  const diff = (day + 6) % 7;
+  base.setUTCDate(base.getUTCDate() - diff);
+  return base.toISOString().slice(0, 10);
+};
+
 const DEFAULT_HOTEL_CHECK_IN_TIME = '12:00 PM';
 const DEFAULT_HOTEL_CHECK_OUT_TIME = '11:00 AM';
 const MIN_HOURLY_HOURS = 3;
@@ -1615,6 +1645,25 @@ module.exports = {
         booking.status = 'CONFIRMED';
         booking.payment_id = payment.gateway_payment_id || booking.payment_id;
         if (payment_method) booking.payment_method = payment_method;
+        if (String(payment_method || booking.payment_method || '').toUpperCase() !== 'PAY_AT_HOTEL') {
+          if (!booking.payment_received_at) {
+            const now = new Date();
+            booking.payment_received_at = now;
+            booking.payment_received_method = booking.payment_received_method || 'ONLINE';
+            const paymentReceivedAmount = Number(booking.amount || 0);
+            booking.payment_received_amount = paymentReceivedAmount;
+
+            const percent = Number.isFinite(Number(booking.commission_percent))
+              ? Math.min(100, Math.max(0, Number(booking.commission_percent)))
+              : getCommissionPercent();
+            booking.commission_percent = percent;
+            const commissionAmount = round2((paymentReceivedAmount * percent) / 100);
+            booking.commission_amount = commissionAmount;
+            booking.vendor_payable_amount = round2(paymentReceivedAmount - commissionAmount);
+            booking.settlement_week_start = booking.settlement_week_start || weekStartMondayIST(now);
+            booking.settlement_status = booking.settlement_status || 'UNSETTLED';
+          }
+        }
         await booking.save();
 
         try {
@@ -1629,6 +1678,25 @@ module.exports = {
         }
       } else if (payment_method && !booking.payment_method) {
         booking.payment_method = payment_method;
+        if (String(payment_method || '').toUpperCase() !== 'PAY_AT_HOTEL') {
+          if (!booking.payment_received_at) {
+            const now = new Date();
+            booking.payment_received_at = now;
+            booking.payment_received_method = booking.payment_received_method || 'ONLINE';
+            const paymentReceivedAmount = Number(booking.amount || 0);
+            booking.payment_received_amount = paymentReceivedAmount;
+
+            const percent = Number.isFinite(Number(booking.commission_percent))
+              ? Math.min(100, Math.max(0, Number(booking.commission_percent)))
+              : getCommissionPercent();
+            booking.commission_percent = percent;
+            const commissionAmount = round2((paymentReceivedAmount * percent) / 100);
+            booking.commission_amount = commissionAmount;
+            booking.vendor_payable_amount = round2(paymentReceivedAmount - commissionAmount);
+            booking.settlement_week_start = booking.settlement_week_start || weekStartMondayIST(now);
+            booking.settlement_status = booking.settlement_status || 'UNSETTLED';
+          }
+        }
         await booking.save();
       }
 

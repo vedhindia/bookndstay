@@ -21,6 +21,8 @@ router.delete('/images/:imageId', ctrl.deleteHotelImage);
 router.get('/bookings', ctrl.getMyBookings);
 router.get('/bookings/:bookingId', ctrl.getBookingById);
 router.put('/bookings/:bookingId/status', ctrl.updateBookingStatus);
+router.put('/bookings/:bookingId/check-in', ctrl.markCheckedIn);
+router.put('/bookings/:bookingId/payment-received', ctrl.markPaymentReceived);
 
 // ============ ANALYTICS & REPORTS ============
 router.get('/dashboard/stats', ctrl.getDashboardStats);
