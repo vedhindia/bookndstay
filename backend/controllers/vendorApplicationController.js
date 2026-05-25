@@ -15,6 +15,16 @@ module.exports = {
       hotel_license_number,
     } = req.body || {};
 
+    const acceptTermsRaw = req.body?.accept_terms ?? req.body?.acceptTerms;
+    const acceptTerms = (() => {
+      if (acceptTermsRaw === true) return true;
+      const v = String(acceptTermsRaw ?? '').trim().toLowerCase();
+      return v === 'true' || v === '1' || v === 'yes' || v === 'on';
+    })();
+    if (!acceptTerms) {
+      return res.status(400).json({ message: 'You must agree to the terms and conditions' });
+    }
+
     const validation = validateRequiredFields(req.body || {}, [
       'full_name',
       'email',

@@ -14,6 +14,7 @@ export default function VendorApplyPage() {
   });
   const [gstFile, setGstFile] = useState(null);
   const [hotelLicenseFile, setHotelLicenseFile] = useState(null);
+  const [acceptTerms, setAcceptTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -36,6 +37,7 @@ export default function VendorApplyPage() {
     if (!form.hotel_license_number.trim()) return 'Hotel license number is required';
     if (!gstFile) return 'GST document is required';
     if (!hotelLicenseFile) return 'Hotel license document is required';
+    if (!acceptTerms) return 'You must agree to the terms and conditions';
     return '';
   };
 
@@ -49,6 +51,7 @@ export default function VendorApplyPage() {
 
     const fd = new FormData();
     Object.entries(form).forEach(([k, v]) => fd.append(k, v));
+    fd.append('accept_terms', acceptTerms ? 'true' : 'false');
     fd.append('gst', gstFile);
     fd.append('hotel_license', hotelLicenseFile);
 
@@ -69,6 +72,7 @@ export default function VendorApplyPage() {
       });
       setGstFile(null);
       setHotelLicenseFile(null);
+      setAcceptTerms(false);
     } catch (err) {
       setError(err.message || 'Failed to submit application');
     } finally {
@@ -224,9 +228,30 @@ export default function VendorApplyPage() {
             </div>
           </div>
 
+          <div className="border border-gray-200 rounded-md p-3 bg-gray-50">
+            <div className="text-sm font-semibold text-gray-800 mb-2">Terms &amp; Conditions</div>
+            <ul className="text-sm text-gray-700 list-disc pl-5 space-y-1">
+              <li>Admin gets 10% commission on each booking (Online or Pay at Hotel).</li>
+              <li>Admin can approve or reject the hotel at any time if any problems occur.</li>
+            </ul>
+            <label className="flex items-start gap-2 mt-3 text-sm text-gray-800 select-none">
+              <input
+                type="checkbox"
+                checked={acceptTerms}
+                onChange={(e) => {
+                  setAcceptTerms(e.target.checked);
+                  setError('');
+                  setSuccess('');
+                }}
+                className="mt-1"
+              />
+              <span>I agree to the Terms &amp; Conditions</span>
+            </label>
+          </div>
+
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !acceptTerms}
             className="w-full bg-[#ee2e24] text-white py-2.5 rounded-md hover:bg-[#d5281f] transition-colors font-semibold disabled:opacity-70"
           >
             {loading ? 'Submitting...' : 'Submit Application'}
@@ -236,4 +261,3 @@ export default function VendorApplyPage() {
     </div>
   );
 }
-

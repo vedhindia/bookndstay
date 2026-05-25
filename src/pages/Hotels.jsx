@@ -30,6 +30,7 @@ const Hotels = ({ state, actions }) => {
   const [city, setCity] = useState(state?.city || '');
   const [pagination, setPagination] = useState(null);
   const [showMap, setShowMap] = useState(false);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   useEffect(() => {
     if (state?.city && state.city !== city) {
@@ -681,7 +682,7 @@ const Hotels = ({ state, actions }) => {
 
         <div className="row">
           {/* Filters Sidebar */}
-          <div className="col-lg-3 mb-4 mb-lg-0">
+          <div className="col-lg-3 mb-4 mb-lg-0 d-none d-lg-block">
             <div className="card border-0 shadow-sm position-sticky" style={{ top: '90px', zIndex: 2 }}>
               <div className="card-body">
                 <div className="d-flex justify-content-between align-items-center mb-3">
@@ -810,6 +811,146 @@ const Hotels = ({ state, actions }) => {
 
           {/* Hotel Listings */}
           <div className="col-lg-9">
+            <div className="d-lg-none mb-3">
+              <div className="d-flex justify-content-between align-items-center">
+                <button
+                  type="button"
+                  className="btn btn-outline-danger bg-danger btn-sm"
+                  onClick={() => setMobileFiltersOpen((v) => !v)}
+                >
+                  Filters
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-link text-danger text-decoration-none p-0"
+                  onClick={clearAllFilters}
+                >
+                  Clear All
+                </button>
+              </div>
+              {mobileFiltersOpen && (
+                <div className="card border-0 shadow-sm mt-2">
+                  <div className="card-body">
+                    <div className="d-flex justify-content-between align-items-center mb-3">
+                      <h6 className="mb-0 fw-bold">Filters</h6>
+                      <button type="button" className="btn-close" aria-label="Close" onClick={() => setMobileFiltersOpen(false)}></button>
+                    </div>
+
+                    <div className="mb-4">
+                      <h6 className="fw-bold mb-3">Price</h6>
+                      <div className="d-flex justify-content-between mb-2">
+                        <small>Min: ₹{minPrice}</small>
+                        <small>Max: ₹{maxPrice}</small>
+                      </div>
+                      <input
+                        type="range"
+                        className="form-range"
+                        min={minPrice}
+                        max={maxPrice}
+                        step={1}
+                        value={priceRange[1]}
+                        onChange={(e) => {
+                          const newMaxPrice = parseInt(e.target.value);
+                          setPriceRange([minPrice, newMaxPrice]);
+                          setPage(1);
+                        }}
+                      />
+                      <div className="text-end mt-1">
+                        <small className="text-muted">Up to ₹{priceRange[1]}</small>
+                      </div>
+                    </div>
+
+                    <div className="mb-4">
+                      <h6 className="fw-bold mb-3">Features</h6>
+                      <div className="form-check mb-2">
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          id="m_familyFriendly"
+                          checked={selectedFilters.familyFriendly}
+                          onChange={() => handleFilterChange('familyFriendly')}
+                        />
+                        <label className="form-check-label" htmlFor="m_familyFriendly">
+                          Family Friendly
+                        </label>
+                      </div>
+                      <div className="form-check mb-2">
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          id="m_neighborhoodStay"
+                          checked={selectedFilters.neighborhoodStay}
+                          onChange={() => handleFilterChange('neighborhoodStay')}
+                        />
+                        <label className="form-check-label" htmlFor="m_neighborhoodStay">
+                          Neighborhood Stay
+                        </label>
+                      </div>
+                      <div className="form-check mb-2">
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          id="m_groupFriendly"
+                          checked={selectedFilters.groupFriendly}
+                          onChange={() => handleFilterChange('groupFriendly')}
+                        />
+                        <label className="form-check-label" htmlFor="m_groupFriendly">
+                          Group Friendly
+                        </label>
+                      </div>
+                      <div className="form-check mb-2">
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          id="m_localIDAccepted"
+                          checked={selectedFilters.localIDAccepted}
+                          onChange={() => handleFilterChange('localIDAccepted')}
+                        />
+                        <label className="form-check-label" htmlFor="m_localIDAccepted">
+                          Local ID Accepted
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="mb-4">
+                      <h6 className="fw-bold mb-3">Other</h6>
+                      <div className="form-check mb-2">
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          id="m_featuredOnly"
+                          checked={featuredOnly}
+                          onChange={() => { setFeaturedOnly(!featuredOnly); setPage(1); }}
+                        />
+                        <label className="form-check-label" htmlFor="m_featuredOnly">
+                          Featured Only
+                        </label>
+                      </div>
+                    </div>
+
+                    {amenityOptions.length > 0 && (
+                      <div className="mb-1">
+                        <h6 className="fw-bold mb-3">Amenities</h6>
+                        {amenityOptions.map((a) => (
+                          <div className="form-check mb-2" key={`m_${a}`}>
+                            <input
+                              className="form-check-input"
+                              type="checkbox"
+                              id={`m_amen_${a}`}
+                              checked={selectedAmenities.includes(a)}
+                              onChange={() => toggleAmenity(a)}
+                            />
+                            <label className="form-check-label" htmlFor={`m_amen_${a}`}>
+                              {a}
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
             <div className="d-flex flex-column flex-lg-row justify-content-between align-items-start align-items-lg-center gap-3 mb-4">
               <h5 className="mb-0 text-nowrap">
                 {(pagination?.totalItems ?? hotels.length)} Hotels around you
