@@ -9,6 +9,9 @@ export default function MyBookings() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [pageSize, setPageSize] = useState(5);
+  const [upcomingPage, setUpcomingPage] = useState(1);
+  const [pastPage, setPastPage] = useState(1);
 
   // Fixed API base URL construction
   const apiUserBase = (() => {
@@ -332,6 +335,16 @@ export default function MyBookings() {
   const upcomingBookings = bookings.filter(b => !isCurrentBooking(b) && isUpcoming(b));
   const pastBookings = bookings.filter(b => !isCurrentBooking(b) && !isUpcoming(b));
 
+  useEffect(() => {
+    setUpcomingPage(1);
+    setPastPage(1);
+  }, [statusFilter, bookings.length, pageSize]);
+
+  const upcomingTotalPages = Math.max(1, Math.ceil(upcomingBookings.length / pageSize));
+  const pastTotalPages = Math.max(1, Math.ceil(pastBookings.length / pageSize));
+  const upcomingPaged = upcomingBookings.slice((upcomingPage - 1) * pageSize, upcomingPage * pageSize);
+  const pastPaged = pastBookings.slice((pastPage - 1) * pageSize, pastPage * pageSize);
+
   const handleCancelBooking = async (bookingId) => {
     const booking = bookings.find((b) => String(b.id) === String(bookingId));
     if (booking && isCancellationBlocked(booking)) {
@@ -562,20 +575,35 @@ export default function MyBookings() {
       <h1 className="text-2xl sm:text-3xl font-bold mb-4 sm:mb-8 text-gray-800">My Bookings</h1>
 
       {/* Status Filter */}
-      <div className="mb-6 flex gap-3 flex-wrap">
-        {['all', 'confirmed', 'pending', 'cancelled', 'completed'].map(status => (
-          <button
-            key={status}
-            onClick={() => setStatusFilter(status)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              statusFilter === status
-                ? 'bg-[#ee2e24] text-white'
-                : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-            }`}
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="flex gap-3 flex-wrap">
+          {['all', 'confirmed', 'pending', 'cancelled', 'completed'].map(status => (
+            <button
+              key={status}
+              onClick={() => setStatusFilter(status)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                statusFilter === status
+                  ? 'bg-[#ee2e24] text-white'
+                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              {status.charAt(0).toUpperCase() + status.slice(1)}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-600">Per page:</span>
+          <select
+            value={pageSize}
+            onChange={(e) => setPageSize(parseInt(e.target.value) || 5)}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#ee2e24] focus:outline-none bg-white"
           >
-            {status.charAt(0).toUpperCase() + status.slice(1)}
-          </button>
-        ))}
+            <option value={5}>5</option>
+            <option value={10}>10</option>
+            <option value={15}>15</option>
+          </select>
+        </div>
       </div>
       
       {bookings.length > 0 ? (
@@ -604,10 +632,33 @@ export default function MyBookings() {
                 Upcoming Bookings
               </h2>
               <div className="space-y-4">
-                {upcomingBookings.map((booking) => (
+                {upcomingPaged.map((booking) => (
                   <BookingCard key={booking.id} booking={booking} />
                 ))}
               </div>
+              {upcomingBookings.length > pageSize && (
+                <div className="flex items-center justify-between mt-4">
+                  <button
+                    type="button"
+                    className="border border-gray-300 text-gray-700 px-3 py-2 rounded text-sm hover:bg-gray-50 disabled:opacity-50"
+                    disabled={upcomingPage <= 1}
+                    onClick={() => setUpcomingPage((p) => Math.max(1, p - 1))}
+                  >
+                    Prev
+                  </button>
+                  <div className="text-sm text-gray-600">
+                    Page {upcomingPage} of {upcomingTotalPages}
+                  </div>
+                  <button
+                    type="button"
+                    className="border border-gray-300 text-gray-700 px-3 py-2 rounded text-sm hover:bg-gray-50 disabled:opacity-50"
+                    disabled={upcomingPage >= upcomingTotalPages}
+                    onClick={() => setUpcomingPage((p) => Math.min(upcomingTotalPages, p + 1))}
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -618,10 +669,33 @@ export default function MyBookings() {
                 Past Bookings
               </h2>
               <div className="space-y-4">
-                {pastBookings.map((booking) => (
+                {pastPaged.map((booking) => (
                   <BookingCard key={booking.id} booking={booking} />
                 ))}
               </div>
+              {pastBookings.length > pageSize && (
+                <div className="flex items-center justify-between mt-4">
+                  <button
+                    type="button"
+                    className="border border-gray-300 text-gray-700 px-3 py-2 rounded text-sm hover:bg-gray-50 disabled:opacity-50"
+                    disabled={pastPage <= 1}
+                    onClick={() => setPastPage((p) => Math.max(1, p - 1))}
+                  >
+                    Prev
+                  </button>
+                  <div className="text-sm text-gray-600">
+                    Page {pastPage} of {pastTotalPages}
+                  </div>
+                  <button
+                    type="button"
+                    className="border border-gray-300 text-gray-700 px-3 py-2 rounded text-sm hover:bg-gray-50 disabled:opacity-50"
+                    disabled={pastPage >= pastTotalPages}
+                    onClick={() => setPastPage((p) => Math.min(pastTotalPages, p + 1))}
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

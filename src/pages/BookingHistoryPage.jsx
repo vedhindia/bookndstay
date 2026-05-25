@@ -11,6 +11,8 @@ export default function BookingHistoryPage() {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [hiddenIds, setHiddenIds] = useState(() => new Set());
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
     try {
@@ -232,6 +234,17 @@ export default function BookingHistoryPage() {
     });
   }, [onlyHistory, query, statusFilter, hiddenIds]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [query, statusFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
+
   const clearHistory = () => {
     const toHide = onlyHistory
       .filter((b) => b?.status === 'cancelled' || b?.status === 'completed')
@@ -364,6 +377,18 @@ export default function BookingHistoryPage() {
               <option value="cancelled">Cancelled</option>
             </select>
           </div>
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-gray-600 font-medium">Per page:</label>
+            <select
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#ee2e24] focus:outline-none bg-white"
+              value={pageSize}
+              onChange={(e) => setPageSize(parseInt(e.target.value) || 10)}
+            >
+              <option value={5}>5</option>
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+            </select>
+          </div>
           <button
             type="button"
             className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50"
@@ -376,7 +401,7 @@ export default function BookingHistoryPage() {
 
       {filtered.length > 0 ? (
         <div className="space-y-4 sm:space-y-6">
-          {filtered.map((booking) => (
+          {paginated.map((booking) => (
             <div 
               key={booking.id} 
               className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
@@ -497,6 +522,35 @@ export default function BookingHistoryPage() {
               </div>
             </div>
           ))}
+
+          {filtered.length > pageSize && (
+            <div className="flex flex-col sm:flex-row gap-3 justify-between items-center pt-2">
+              <div className="text-sm text-gray-600">
+                Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, filtered.length)} of {filtered.length}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="border border-gray-300 text-gray-700 px-3 py-2 rounded text-sm hover:bg-gray-50 disabled:opacity-50"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  Prev
+                </button>
+                <div className="text-sm text-gray-700">
+                  Page {page} of {totalPages}
+                </div>
+                <button
+                  type="button"
+                  className="border border-gray-300 text-gray-700 px-3 py-2 rounded text-sm hover:bg-gray-50 disabled:opacity-50"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="bg-white rounded-lg shadow-md p-4 sm:p-8 text-center">
