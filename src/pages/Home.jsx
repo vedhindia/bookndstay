@@ -13,7 +13,7 @@ const Home = ({ state, actions }) => {
   const [showMap, setShowMap] = useState(false);
   const searchRef = useRef(null);
   const [popularPerPage, setPopularPerPage] = useState(4);
-  const [popularPage, setPopularPage] = useState(0);
+  const [popularIndex, setPopularIndex] = useState(0);
   const [popularPaused, setPopularPaused] = useState(false);
 
   // API Configuration
@@ -325,27 +325,25 @@ const Home = ({ state, actions }) => {
     return () => window.removeEventListener('resize', apply);
   }, []);
 
-  const popularPages = useMemo(() => {
-    const size = Math.max(1, Number(popularPerPage) || 4);
-    const out = [];
-    for (let i = 0; i < homeHotels.length; i += size) {
-      out.push(homeHotels.slice(i, i + size));
-    }
-    return out;
-  }, [homeHotels, popularPerPage]);
+  const popularVisibleCount = Math.max(1, Number(popularPerPage) || 4);
+  const popularMaxIndex = Math.max(0, homeHotels.length - popularVisibleCount);
 
   useEffect(() => {
-    setPopularPage(0);
-  }, [popularPerPage, homeHotels.length]);
+    setPopularIndex(0);
+  }, [popularVisibleCount, homeHotels.length]);
+
+  useEffect(() => {
+    if (popularIndex > popularMaxIndex) setPopularIndex(popularMaxIndex);
+  }, [popularIndex, popularMaxIndex]);
 
   useEffect(() => {
     if (popularPaused) return;
-    if (popularPages.length <= 1) return;
+    if (popularMaxIndex <= 0) return;
     const id = setInterval(() => {
-      setPopularPage((p) => (p + 1) % popularPages.length);
-    }, 3500);
+      setPopularIndex((i) => (i >= popularMaxIndex ? 0 : i + 1));
+    }, 2500);
     return () => clearInterval(id);
-  }, [popularPages.length, popularPaused]);
+  }, [popularMaxIndex, popularPaused]);
 
   // Search Handler
   const handleSearch = async () => {
@@ -605,118 +603,117 @@ const Home = ({ state, actions }) => {
               onMouseEnter={() => setPopularPaused(true)}
               onMouseLeave={() => setPopularPaused(false)}
             >
-              <div className="overflow-hidden">
+              <div className="overflow-hidden -mx-3">
                 <div
-                  className="flex transition-transform duration-500 ease-out"
-                  style={{ transform: `translateX(-${popularPage * 100}%)` }}
+                  className="flex transition-transform duration-700 ease-in-out"
+                  style={{ transform: `translateX(-${popularIndex * (100 / popularVisibleCount)}%)` }}
                 >
-                  {popularPages.map((pageItems, idx) => (
-                    <div key={idx} className="w-full flex-shrink-0">
-                      <div className="grid gap-6" style={{ gridTemplateColumns: `repeat(${popularPerPage}, minmax(0, 1fr))` }}>
-                        {pageItems.map(h => (
-                          <article
-                            key={h.id}
-                            className='border border-gray-200 rounded-xl overflow-hidden bg-white hover:shadow-lg transition-shadow duration-200 cursor-pointer group'
-                            onClick={() => { 
-                              sessionStorage.setItem('selectedRoom', JSON.stringify(h));
-                              actions.navigate('roomDetails', { id: h.id }); 
-                            }}
-                          >
-                            <div className='relative h-44 overflow-hidden'>
-                              {showMap ? (
-                                (() => {
-                                  const map = buildHotelMap(h);
-                                  return (
-                                    <iframe
-                                      title={`${h.name} Location`}
-                                      width="100%"
-                                      height="100%"
-                                      frameBorder="0"
-                                      style={{ border: 0 }}
-                                      src={map.embedSrc}
-                                      allowFullScreen
-                                      onClick={(e) => e.stopPropagation()}
-                                    ></iframe>
-                                  );
-                                })()
-                              ) : (
-                                <>
-                                  <img 
-                                    src={h.image} 
-                                    alt={h.name} 
-                                    className='absolute inset-0 w-full h-full object-cover transform transition-transform duration-300 group-hover:scale-105'
-                                    loading="lazy"
-                                    onError={(e) => { 
-                                      e.currentTarget.src = '/placeholder-hotel.jpg'; 
-                                    }}
-                                  />
-                                
-                                  {h.city && (
-                                    <div className='absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm text-[#ee2e24] text-xs px-2 py-1 rounded font-semibold'>
-                                      {h.city}
-                                    </div>
-                                  )}
-                                </>
-                              )}
-                            </div>
+                  {homeHotels.map((h) => (
+                    <div
+                      key={h.id}
+                      className="flex-shrink-0 px-3"
+                      style={{ flex: `0 0 ${100 / popularVisibleCount}%` }}
+                    >
+                      <article
+                        className='border border-gray-200 rounded-xl overflow-hidden bg-white hover:shadow-lg transition-shadow duration-200 cursor-pointer group h-full'
+                        onClick={() => { 
+                          sessionStorage.setItem('selectedRoom', JSON.stringify(h));
+                          actions.navigate('roomDetails', { id: h.id }); 
+                        }}
+                      >
+                        <div className='relative h-44 overflow-hidden'>
+                          {showMap ? (
+                            (() => {
+                              const map = buildHotelMap(h);
+                              return (
+                                <iframe
+                                  title={`${h.name} Location`}
+                                  width="100%"
+                                  height="100%"
+                                  frameBorder="0"
+                                  style={{ border: 0 }}
+                                  src={map.embedSrc}
+                                  allowFullScreen
+                                  onClick={(e) => e.stopPropagation()}
+                                ></iframe>
+                              );
+                            })()
+                          ) : (
+                            <>
+                              <img 
+                                src={h.image} 
+                                alt={h.name} 
+                                className='absolute inset-0 w-full h-full object-cover transform transition-transform duration-300 group-hover:scale-105'
+                                loading="lazy"
+                                onError={(e) => { 
+                                  e.currentTarget.src = '/placeholder-hotel.jpg'; 
+                                }}
+                              />
                             
-                            <div className='p-4'>
-                              <div className='flex items-start justify-between gap-3'>
-                                <div className='flex-1 min-w-0'>
-                                  <h3 className='font-semibold text-lg mb-1 truncate'>{h.name}</h3>
-                                  <p className='text-xs text-gray-500 mb-2 truncate'>Excellent Hospitality • Top Rated</p>
-                                  <div className='flex flex-wrap gap-2 mb-2'>
-                                    <span className='text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded'>Free Wifi</span>
-                                    <span className='text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded'>AC</span>
-                                    <span className='text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded'>Parking</span>
-                                  </div>
-                                  <div className='text-xs text-green-700 flex items-center gap-1'>
-                                    <span className='w-2 h-2 rounded-full bg-green-600 inline-block'></span>
-                                    Free Cancellation
-                                  </div>
+                              {h.city && (
+                                <div className='absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm text-[#ee2e24] text-xs px-2 py-1 rounded font-semibold'>
+                                  {h.city}
                                 </div>
-                                <div className='text-right flex-shrink-0'>
-                                  <div className='text-xs text-gray-500'>Rating</div>
-                                  <div className='text-base font-semibold'>{(h.rating > 0 ? (Number(h.rating) || 0).toFixed(1) + ' / 5' : 'New')}</div>
-                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                        
+                        <div className='p-4'>
+                          <div className='flex items-start justify-between gap-3'>
+                            <div className='flex-1 min-w-0'>
+                              <h3 className='font-semibold text-lg mb-1 truncate'>{h.name}</h3>
+                              <p className='text-xs text-gray-500 mb-2 truncate'>Excellent Hospitality • Top Rated</p>
+                              <div className='flex flex-wrap gap-2 mb-2'>
+                                <span className='text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded'>Free Wifi</span>
+                                <span className='text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded'>AC</span>
+                                <span className='text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded'>Parking</span>
                               </div>
-
-                              <div className='mt-4 flex items-end justify-between'>
-                                <div>
-                                  <div className='text-gray-400 text-xs line-through'>₹{Math.round(h.originalPrice)}</div>
-                                  <div className='text-2xl font-bold text-[#ee2e24]'>₹{Math.round(h.price)}</div>
-                                  <div className='text-xs text-gray-600'>per night</div>
-                                </div>
-                                <div className='flex flex-col items-end gap-2'>
-                                  <button 
-                                    onClick={(e) => { 
-                                      e.stopPropagation(); 
-                                      sessionStorage.setItem('selectedRoom', JSON.stringify(h));
-                                      actions.navigate('roomDetails', { id: h.id }); 
-                                    }} 
-                                    className='bg-[#ee2e24] text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-[#d5281f] transition-colors'
-                                    type="button"
-                                  >
-                                    View Details
-                                  </button>
-                                </div>
+                              <div className='text-xs text-green-700 flex items-center gap-1'>
+                                <span className='w-2 h-2 rounded-full bg-green-600 inline-block'></span>
+                                Free Cancellation
                               </div>
                             </div>
-                          </article>
-                        ))}
-                      </div>
+                            <div className='text-right flex-shrink-0'>
+                              <div className='text-xs text-gray-500'>Rating</div>
+                              <div className='text-base font-semibold'>{(h.rating > 0 ? (Number(h.rating) || 0).toFixed(1) + ' / 5' : 'New')}</div>
+                            </div>
+                          </div>
+
+                          <div className='mt-4 flex items-end justify-between'>
+                            <div>
+                              <div className='text-gray-400 text-xs line-through'>₹{Math.round(h.originalPrice)}</div>
+                              <div className='text-2xl font-bold text-[#ee2e24]'>₹{Math.round(h.price)}</div>
+                              <div className='text-xs text-gray-600'>per night</div>
+                            </div>
+                            <div className='flex flex-col items-end gap-2'>
+                              <button 
+                                onClick={(e) => { 
+                                  e.stopPropagation(); 
+                                  sessionStorage.setItem('selectedRoom', JSON.stringify(h));
+                                  actions.navigate('roomDetails', { id: h.id }); 
+                                }} 
+                                className='bg-[#ee2e24] text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-[#d5281f] transition-colors'
+                                type="button"
+                              >
+                                View Details
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </article>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {popularPages.length > 1 && (
+              {popularMaxIndex > 0 && (
                 <>
                   <button
                     type="button"
                     aria-label="Previous hotels"
                     className="hidden sm:flex items-center justify-center absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1/2 w-10 h-10 rounded-full bg-white shadow border border-gray-200 text-gray-700 hover:text-[#ee2e24] hover:border-[#ee2e24] transition-colors"
-                    onClick={() => setPopularPage((p) => (p - 1 + popularPages.length) % popularPages.length)}
+                    onClick={() => setPopularIndex((i) => (i <= 0 ? popularMaxIndex : i - 1))}
                   >
                     <FaChevronLeft />
                   </button>
@@ -724,19 +721,19 @@ const Home = ({ state, actions }) => {
                     type="button"
                     aria-label="Next hotels"
                     className="hidden sm:flex items-center justify-center absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-10 h-10 rounded-full bg-white shadow border border-gray-200 text-gray-700 hover:text-[#ee2e24] hover:border-[#ee2e24] transition-colors"
-                    onClick={() => setPopularPage((p) => (p + 1) % popularPages.length)}
+                    onClick={() => setPopularIndex((i) => (i >= popularMaxIndex ? 0 : i + 1))}
                   >
                     <FaChevronRight />
                   </button>
 
                   <div className="flex justify-center gap-2 mt-4">
-                    {popularPages.map((_, i) => (
+                    {Array.from({ length: popularMaxIndex + 1 }).map((_, i) => (
                       <button
                         key={i}
                         type="button"
                         aria-label={`Go to slide ${i + 1}`}
-                        onClick={() => setPopularPage(i)}
-                        className={`h-2.5 w-2.5 rounded-full transition-colors ${i === popularPage ? 'bg-[#ee2e24]' : 'bg-gray-300'}`}
+                        onClick={() => setPopularIndex(i)}
+                        className={`h-2.5 w-2.5 rounded-full transition-colors ${i === popularIndex ? 'bg-[#ee2e24]' : 'bg-gray-300'}`}
                       ></button>
                     ))}
                   </div>
