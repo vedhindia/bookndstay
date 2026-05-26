@@ -555,13 +555,9 @@ const Home = ({ state, actions }) => {
               </button>
             </div>
           </div>
-        </div>
-        
-       
+        </div>  
       </div>
-      
-     
-      
+
       {/* Popular Hotels Section */}
       <div className="py-4 sm:py-6 bg-white">
         <div className="container mx-auto px-1">
