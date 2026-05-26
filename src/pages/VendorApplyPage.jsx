@@ -9,6 +9,7 @@ export default function VendorApplyPage() {
     phone: '',
     business_name: '',
     business_address: '',
+    business_doc_type: '',
     gst_number: '',
     hotel_license_number: '',
   });
@@ -33,9 +34,10 @@ export default function VendorApplyPage() {
     if (!form.phone.trim()) return 'Phone is required';
     if (!form.business_name.trim()) return 'Business name is required';
     if (!form.business_address.trim()) return 'Business address is required';
-    if (!form.gst_number.trim()) return 'GST number is required';
+    if (!form.business_doc_type.trim()) return 'Business document type is required';
+    if (form.business_doc_type === 'GST_REGISTRATION_CERTIFICATE' && !form.gst_number.trim()) return 'GST number is required';
     if (!form.hotel_license_number.trim()) return 'Hotel license number is required';
-    if (!gstFile) return 'GST document is required';
+    if (!gstFile) return 'Business document is required';
     if (!hotelLicenseFile) return 'Hotel license document is required';
     if (!acceptTerms) return 'You must agree to the terms and conditions';
     return '';
@@ -67,6 +69,7 @@ export default function VendorApplyPage() {
         phone: '',
         business_name: '',
         business_address: '',
+        business_doc_type: '',
         gst_number: '',
         hotel_license_number: '',
       });
@@ -176,15 +179,20 @@ export default function VendorApplyPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">GST Number</label>
-              <input
-                type="text"
-                name="gst_number"
-                value={form.gst_number}
+              <label className="block text-sm font-medium text-gray-700 mb-1">Business Document Type</label>
+              <select
+                name="business_doc_type"
+                value={form.business_doc_type}
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#ee2e24]"
-                placeholder="GST number"
-              />
+              >
+                <option value="">Select document type</option>
+                <option value="GST_REGISTRATION_CERTIFICATE">GST Registration Certificate</option>
+                <option value="SHOP_ACT_LICENSE">Shop Act License</option>
+                <option value="MSME_UDYAM_CERTIFICATE">MSME/Udyam Certificate</option>
+                <option value="COMPANY_INCORPORATION_CERTIFICATE">Company Incorporation Certificate</option>
+                <option value="PARTNERSHIP_DEED">Partnership Deed (if partnership business)</option>
+              </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Hotel License Number</label>
@@ -199,9 +207,23 @@ export default function VendorApplyPage() {
             </div>
           </div>
 
+          {form.business_doc_type === 'GST_REGISTRATION_CERTIFICATE' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">GST Number</label>
+              <input
+                type="text"
+                name="gst_number"
+                value={form.gst_number}
+                onChange={handleChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#ee2e24]"
+                placeholder="GST number"
+              />
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">GST Document</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Business Document</label>
               <div className="flex items-center gap-2">
                 <FaFileUpload className="text-gray-400" />
                 <input

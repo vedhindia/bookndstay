@@ -11,6 +11,7 @@ module.exports = {
       phone,
       business_name,
       business_address,
+      business_doc_type,
       gst_number,
       hotel_license_number,
     } = req.body || {};
@@ -31,7 +32,7 @@ module.exports = {
       'phone',
       'business_name',
       'business_address',
-      'gst_number',
+      'business_doc_type',
       'hotel_license_number',
     ]);
     if (!validation.isValid) {
@@ -51,7 +52,31 @@ module.exports = {
     const gstFile = req.files?.gst?.[0];
     const hotelLicenseFile = req.files?.hotel_license?.[0];
     if (!gstFile || !hotelLicenseFile) {
-      return res.status(400).json({ message: 'GST and Hotel License documents are required' });
+      return res.status(400).json({ message: 'Business document and Hotel License documents are required' });
+    }
+
+    const normalizeDocType = (raw) => {
+      const v = String(raw || '').trim().toUpperCase().replace(/\s+/g, '_');
+      if (v === 'GST') return 'GST_REGISTRATION_CERTIFICATE';
+      if (v === 'GST_REGISTRATION') return 'GST_REGISTRATION_CERTIFICATE';
+      if (v === 'GST_REGISTRATION_CERTIFICATE') return 'GST_REGISTRATION_CERTIFICATE';
+      if (v === 'SHOP_ACT_LICENSE') return 'SHOP_ACT_LICENSE';
+      if (v === 'SHOP_ACT') return 'SHOP_ACT_LICENSE';
+      if (v === 'MSME') return 'MSME_UDYAM_CERTIFICATE';
+      if (v === 'UDYAM') return 'MSME_UDYAM_CERTIFICATE';
+      if (v === 'MSME_UDYAM_CERTIFICATE') return 'MSME_UDYAM_CERTIFICATE';
+      if (v === 'COMPANY_INCORPORATION_CERTIFICATE') return 'COMPANY_INCORPORATION_CERTIFICATE';
+      if (v === 'INCORPORATION_CERTIFICATE') return 'COMPANY_INCORPORATION_CERTIFICATE';
+      if (v === 'PARTNERSHIP_DEED') return 'PARTNERSHIP_DEED';
+      return '';
+    };
+
+    const normalizedDocType = normalizeDocType(business_doc_type);
+    if (!normalizedDocType) {
+      return res.status(400).json({ message: 'Invalid business document type' });
+    }
+    if (normalizedDocType === 'GST_REGISTRATION_CERTIFICATE' && !String(gst_number || '').trim()) {
+      return res.status(400).json({ message: 'GST number is required for GST Registration Certificate' });
     }
 
     const result = await sequelize.transaction(async (t) => {
@@ -66,7 +91,7 @@ module.exports = {
         phone: String(phone).trim(),
         business_name: String(business_name).trim(),
         business_address: String(business_address).trim(),
-        gst_number: String(gst_number).trim(),
+        gst_number: normalizedDocType === 'GST_REGISTRATION_CERTIFICATE' ? String(gst_number).trim() : null,
         hotel_license_number: String(hotel_license_number).trim(),
         status: 'SUBMITTED',
         rejection_reason: null,
@@ -91,7 +116,7 @@ module.exports = {
       const docs = [
         {
           application_id: application.id,
-          doc_type: 'GST',
+          doc_type: normalizedDocType,
           file_path: `/uploads/${gstFile.filename}`,
           original_name: gstFile.originalname,
           mime_type: gstFile.mimetype,

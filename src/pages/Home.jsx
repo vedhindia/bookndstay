@@ -564,7 +564,7 @@ const Home = ({ state, actions }) => {
       
       {/* Popular Hotels Section */}
       <div className="py-4 sm:py-6 bg-white">
-        <div className="container mx-auto px-4">
+        <div className="container mx-auto px-1">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold text-gray-900">Popular Hotels</h2>
             <button

@@ -269,6 +269,20 @@ const PORT = process.env.PORT || 3001;
       } catch (couponErr) {
          console.warn('Could not modify coupons table (might not exist yet):', couponErr.message);
       }
+
+      try {
+        const docs = await qi.describeTable('vendor_application_documents');
+        const docType = String(docs.doc_type?.type || '');
+        if (docType && docType.toUpperCase().includes('ENUM')) {
+          console.log('Updating vendor_application_documents.doc_type to VARCHAR');
+          await qi.changeColumn('vendor_application_documents', 'doc_type', {
+            type: DataTypes.STRING(60),
+            allowNull: false
+          });
+        }
+      } catch (docErr) {
+        console.warn('Could not modify vendor_application_documents table (might not exist yet):', docErr.message);
+      }
     } catch (e) {
       // Ignore describe/add errors; sync alter will attempt to fix
       console.warn('Schema check warning:', e.message);

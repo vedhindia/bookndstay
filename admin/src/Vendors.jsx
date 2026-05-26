@@ -868,7 +868,7 @@ const Vendors = () => {
                       <th>Email</th>
                       <th>Phone</th>
                       <th>Business Name</th>
-                      <th>GST</th>
+                      <th>Business Document</th>
                       <th>Hotel License</th>
                       <th>Status</th>
                       <th className="text-end">Actions</th>
@@ -886,7 +886,19 @@ const Vendors = () => {
                       </tr>
                     ) : applications.length > 0 ? (
                       applications.map((a, index) => {
-                        const gstDoc = a.documents.find((d) => String(d.doc_type).toUpperCase() === 'GST');
+                        const normalizeDocLabel = (t) => {
+                          const v = String(t || '').toUpperCase();
+                          if (v === 'GST') return 'GST Registration Certificate';
+                          if (v === 'GST_REGISTRATION_CERTIFICATE') return 'GST Registration Certificate';
+                          if (v === 'SHOP_ACT_LICENSE') return 'Shop Act License';
+                          if (v === 'MSME_UDYAM_CERTIFICATE') return 'MSME/Udyam Certificate';
+                          if (v === 'COMPANY_INCORPORATION_CERTIFICATE') return 'Company Incorporation Certificate';
+                          if (v === 'PARTNERSHIP_DEED') return 'Partnership Deed';
+                          if (v === 'HOTEL_LICENSE') return 'Hotel License';
+                          return v ? v.replace(/_/g, ' ') : '-';
+                        };
+
+                        const businessDoc = a.documents.find((d) => String(d.doc_type).toUpperCase() !== 'HOTEL_LICENSE');
                         const licenseDoc = a.documents.find((d) => String(d.doc_type).toUpperCase() === 'HOTEL_LICENSE');
                         return (
                           <tr key={`${a.id}-${a.email}`}>
@@ -898,10 +910,13 @@ const Vendors = () => {
                               {a.business_name}
                             </td>
                             <td>
-                              {gstDoc?.file_path ? (
-                                <a href={gstDoc.file_path} target="_blank" rel="noreferrer">
-                                  View
-                                </a>
+                              {businessDoc?.file_path ? (
+                                <div className="d-flex flex-column">
+                                  <a href={businessDoc.file_path} target="_blank" rel="noreferrer">
+                                    View
+                                  </a>
+                                  <span className="text-muted small">{normalizeDocLabel(businessDoc.doc_type)}</span>
+                                </div>
                               ) : (
                                 <span className="text-muted">-</span>
                               )}
