@@ -12,6 +12,8 @@ on:
 jobs:
   build-and-package:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout repository
@@ -22,6 +24,11 @@ jobs:
         with:
           node-version: 20
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            admin/package-lock.json
+            vendor/package-lock.json
+            backend/package-lock.json
 
       - name: Install admin dependencies
         working-directory: admin
@@ -33,7 +40,7 @@ jobs:
 
       - name: Install root dependencies and build frontends
         run: |
-          npm install
+          npm ci
           npm run deploy
 
       - name: Upload backend bundle with built frontends
@@ -45,35 +52,63 @@ jobs:
             !backend/node_modules/**
             !backend/**/*.log
 
+      - name: Validate deployment secrets
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [ -z "${VPS_HOST:-}" ] && missing+=("VPS_HOST")
+          [ -z "${VPS_USER:-}" ] && missing+=("VPS_USER")
+          [ -z "${VPS_PORT:-}" ] && missing+=("VPS_PORT")
+          [ -z "${SSH_PRIVATE_KEY:-}" ] && missing+=("SSH_PRIVATE_KEY")
+          if [ "${#missing[@]}" -ne 0 ]; then
+            echo "Missing GitHub secrets required for deployment: ${missing[*]}"
+            exit 1
+          fi
+
       - name: Check VPS connectivity
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: nc -zv ${{ secrets.VPS_HOST }} ${{ secrets.VPS_PORT }}
 
+      - name: Configure SSH
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -p "${{ secrets.VPS_PORT }}" "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+
       - name: Deploy backend to VPS server
-        uses: appleboy/scp-action@v1.0.0
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.VPS_PORT }}
-          source: "backend/**"
-          target: "/var/www/bookndstay"
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          scp -P "${{ secrets.VPS_PORT }}" -r backend "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/var/www/bookndstay"
 
       - name: Install backend dependencies on VPS
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.VPS_PORT }}
-          script: |
-            cd /var/www/bookndstay/backend
-            npm install --omit=dev
-            if ! command -v pm2 >/dev/null 2>&1; then
-              npm install -g pm2
-            fi
-            if pm2 describe bookndstay-backend >/dev/null 2>&1; then
-              pm2 restart bookndstay-backend --update-env
-            else
-              pm2 start server.js --name bookndstay-backend
-            fi
-            pm2 save
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "${{ secrets.VPS_PORT }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" 'bash -s' << 'EOF'
+          set -euo pipefail
+          cd /var/www/bookndstay/backend
+          npm install --omit=dev
+          if ! command -v pm2 >/dev/null 2>&1; then
+            npm install -g pm2
+          fi
+          if pm2 describe bookndstay-backend >/dev/null 2>&1; then
+            pm2 restart bookndstay-backend --update-env
+          else
+            pm2 start server.js --name bookndstay-backend
+          fi
+          pm2 save
+          EOF
