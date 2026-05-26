@@ -241,9 +241,7 @@ const Home = ({ state, actions }) => {
              }
         }
 
-        // Take the first 4 (Newest)
-        const tail = uniqueList.slice(0, 4);
-        const mapped = tail.map((item, idx) => {
+        const mapped = uniqueList.slice(0, 12).map((item, idx) => {
             const id = item.id ?? item.nid ?? item._id ?? `hotel_${idx + 1}`;
             const name = item.name ?? item.title ?? `Hotel ${idx + 1}`;
             const cityLoc = item.city ?? item.location ?? '';
