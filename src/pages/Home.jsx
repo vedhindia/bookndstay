@@ -15,6 +15,8 @@ const Home = ({ state, actions }) => {
   const [popularPerPage, setPopularPerPage] = useState(4);
   const [popularIndex, setPopularIndex] = useState(0);
   const [popularPaused, setPopularPaused] = useState(false);
+  const popularViewportRef = useRef(null);
+  const [popularViewportWidth, setPopularViewportWidth] = useState(0);
 
   // API Configuration
   const apiVendorPublicBase = (import.meta.env.VITE_VENDOR_PUBLIC_BASE || '/api/vendor/public').replace(/\/+$/, '');
@@ -327,6 +329,25 @@ const Home = ({ state, actions }) => {
 
   const popularVisibleCount = Math.max(1, Number(popularPerPage) || 4);
   const popularMaxIndex = Math.max(0, homeHotels.length - popularVisibleCount);
+  const popularGapPx = 24;
+  const popularItemWidthPx = useMemo(() => {
+    const w = Number(popularViewportWidth) || 0;
+    if (!w) return 0;
+    const totalGaps = popularGapPx * (popularVisibleCount - 1);
+    return Math.max(0, Math.floor((w - totalGaps) / popularVisibleCount));
+  }, [popularViewportWidth, popularVisibleCount]);
+
+  useEffect(() => {
+    const el = popularViewportRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver((entries) => {
+      const cr = entries?.[0]?.contentRect;
+      const w = cr?.width;
+      if (typeof w === 'number' && Number.isFinite(w)) setPopularViewportWidth(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     setPopularIndex(0);
@@ -603,16 +624,19 @@ const Home = ({ state, actions }) => {
               onMouseEnter={() => setPopularPaused(true)}
               onMouseLeave={() => setPopularPaused(false)}
             >
-              <div className="overflow-hidden -mx-3">
+              <div className="overflow-hidden" ref={popularViewportRef}>
                 <div
                   className="flex transition-transform duration-700 ease-in-out"
-                  style={{ transform: `translateX(-${popularIndex * (100 / popularVisibleCount)}%)` }}
+                  style={{
+                    gap: `${popularGapPx}px`,
+                    transform: `translateX(-${popularIndex * (popularItemWidthPx + popularGapPx)}px)`
+                  }}
                 >
                   {homeHotels.map((h) => (
                     <div
                       key={h.id}
-                      className="flex-shrink-0 px-3"
-                      style={{ flex: `0 0 ${100 / popularVisibleCount}%` }}
+                      className="flex-shrink-0"
+                      style={{ width: popularItemWidthPx ? `${popularItemWidthPx}px` : undefined }}
                     >
                       <article
                         className='border border-gray-200 rounded-xl overflow-hidden bg-white hover:shadow-lg transition-shadow duration-200 cursor-pointer group h-full'
