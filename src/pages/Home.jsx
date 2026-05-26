@@ -571,9 +571,10 @@ const Home = ({ state, actions }) => {
             >
               Explore more
             </button>
+            
           </div>
 
-          
+
 
 
 
