@@ -360,7 +360,7 @@ const Home = ({ state, actions }) => {
       if (!w) return;
       setPopularItemWidth(w / popularVisibleCount);
     };
-    computeWidth();
+    const rafId = requestAnimationFrame(computeWidth);
     let ro;
     if (typeof window !== 'undefined' && 'ResizeObserver' in window) {
       ro = new ResizeObserver(() => computeWidth());
@@ -368,10 +368,11 @@ const Home = ({ state, actions }) => {
     }
     window.addEventListener('resize', computeWidth);
     return () => {
+      cancelAnimationFrame(rafId);
       window.removeEventListener('resize', computeWidth);
       if (ro) ro.disconnect();
     };
-  }, [popularVisibleCount]);
+  }, [homeHotels.length, popularIsMobile, popularVisibleCount]);
 
   useEffect(() => {
     if (!popularIsMobile) return;
@@ -664,9 +665,11 @@ const Home = ({ state, actions }) => {
                 <div
                   className={popularIsMobile ? 'flex' : 'flex transition-transform duration-700 ease-in-out'}
                   style={
-                    popularIsMobile || !popularItemWidth
+                    popularIsMobile
                       ? undefined
-                      : { transform: `translateX(-${popularIndex * popularItemWidth}px)` }
+                      : popularItemWidth
+                      ? { transform: `translateX(-${popularIndex * popularItemWidth}px)` }
+                      : { transform: `translateX(-${popularIndex * (100 / popularVisibleCount)}%)` }
                   }
                 >
                   {homeHotels.map((h) => (
