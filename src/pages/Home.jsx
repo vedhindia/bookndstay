@@ -15,6 +15,11 @@ const Home = ({ state, actions }) => {
   const [popularPerPage, setPopularPerPage] = useState(4);
   const [popularIndex, setPopularIndex] = useState(0);
   const [popularPaused, setPopularPaused] = useState(false);
+  const [popularIsMobile, setPopularIsMobile] = useState(false);
+  const popularViewportRef = useRef(null);
+  const popularRafRef = useRef(0);
+  const popularProgrammaticScrollUntilRef = useRef(0);
+  const [popularItemWidth, setPopularItemWidth] = useState(0);
 
   // API Configuration
   const apiVendorPublicBase = (import.meta.env.VITE_VENDOR_PUBLIC_BASE || '/api/vendor/public').replace(/\/+$/, '');
@@ -315,6 +320,7 @@ const Home = ({ state, actions }) => {
   useEffect(() => {
     const compute = () => {
       const w = typeof window !== 'undefined' ? window.innerWidth : 1200;
+      setPopularIsMobile(w < 640);
       if (w < 640) return 1;
       if (w < 1024) return 2;
       return 4;
@@ -338,12 +344,44 @@ const Home = ({ state, actions }) => {
 
   useEffect(() => {
     if (popularPaused) return;
+    if (popularIsMobile) return;
     if (popularMaxIndex <= 0) return;
     const id = setInterval(() => {
       setPopularIndex((i) => (i >= popularMaxIndex ? 0 : i + 1));
     }, 2500);
     return () => clearInterval(id);
-  }, [popularMaxIndex, popularPaused]);
+  }, [popularIsMobile, popularMaxIndex, popularPaused]);
+
+  useEffect(() => {
+    const el = popularViewportRef.current;
+    if (!el) return;
+    const computeWidth = () => {
+      const w = el.getBoundingClientRect().width || 0;
+      if (!w) return;
+      setPopularItemWidth(w / popularVisibleCount);
+    };
+    computeWidth();
+    let ro;
+    if (typeof window !== 'undefined' && 'ResizeObserver' in window) {
+      ro = new ResizeObserver(() => computeWidth());
+      ro.observe(el);
+    }
+    window.addEventListener('resize', computeWidth);
+    return () => {
+      window.removeEventListener('resize', computeWidth);
+      if (ro) ro.disconnect();
+    };
+  }, [popularVisibleCount]);
+
+  useEffect(() => {
+    if (!popularIsMobile) return;
+    const el = popularViewportRef.current;
+    if (!el) return;
+    if (!popularItemWidth) return;
+    const left = Math.max(0, Math.min(popularIndex, popularMaxIndex)) * popularItemWidth;
+    popularProgrammaticScrollUntilRef.current = Date.now() + 500;
+    el.scrollTo({ left, behavior: 'smooth' });
+  }, [popularIndex, popularIsMobile, popularItemWidth, popularMaxIndex]);
 
   // Search Handler
   const handleSearch = async () => {
@@ -560,8 +598,8 @@ const Home = ({ state, actions }) => {
 
       {/* Popular Hotels Section */}
       <div className="py-4 sm:py-6 bg-white">
-        <div className="container mx-auto px-1">
-          <div className="flex items-center justify-between mb-4">
+        <div className="container mx-auto px-3 sm:px-4">
+          <div className="flex items-center justify-between mb-4 px-3">
             <h2 className="text-xl font-bold text-gray-900">Popular Hotels</h2>
             <button
               className="text-[#ee2e24] text-xs sm:text-sm font-medium hover:underline"
@@ -603,105 +641,133 @@ const Home = ({ state, actions }) => {
               onMouseEnter={() => setPopularPaused(true)}
               onMouseLeave={() => setPopularPaused(false)}
             >
-              <div className="overflow-hidden -mx-3">
+              <div
+                ref={popularViewportRef}
+                className={popularIsMobile ? 'overflow-x-auto scroll-smooth snap-x snap-mandatory' : 'overflow-hidden'}
+                onTouchStart={() => setPopularPaused(true)}
+                onTouchEnd={() => setPopularPaused(false)}
+                onScroll={() => {
+                  if (!popularIsMobile) return;
+                  if (!popularViewportRef.current) return;
+                  if (Date.now() < (popularProgrammaticScrollUntilRef.current || 0)) return;
+                  if (!popularItemWidth) return;
+                  if (popularRafRef.current) cancelAnimationFrame(popularRafRef.current);
+                  popularRafRef.current = requestAnimationFrame(() => {
+                    const el = popularViewportRef.current;
+                    if (!el) return;
+                    const next = Math.round(el.scrollLeft / popularItemWidth);
+                    const clamped = Math.max(0, Math.min(next, popularMaxIndex));
+                    setPopularIndex(clamped);
+                  });
+                }}
+              >
                 <div
-                  className="flex transition-transform duration-700 ease-in-out"
-                  style={{ transform: `translateX(-${popularIndex * (100 / popularVisibleCount)}%)` }}
+                  className={popularIsMobile ? 'flex' : 'flex transition-transform duration-700 ease-in-out'}
+                  style={
+                    popularIsMobile || !popularItemWidth
+                      ? undefined
+                      : { transform: `translateX(-${popularIndex * popularItemWidth}px)` }
+                  }
                 >
                   {homeHotels.map((h) => (
                     <div
                       key={h.id}
-                      className="flex-shrink-0 px-3"
-                      style={{ flex: `0 0 ${100 / popularVisibleCount}%` }}
+                      className={popularIsMobile ? 'flex-shrink-0 snap-start' : 'flex-shrink-0'}
+                      style={{
+                        width: popularItemWidth ? `${popularItemWidth}px` : `${100 / popularVisibleCount}%`,
+                        flex: '0 0 auto',
+                      }}
                     >
-                      <article
-                        className='border border-gray-200 rounded-xl overflow-hidden bg-white hover:shadow-lg transition-shadow duration-200 cursor-pointer group h-full'
-                        onClick={() => { 
-                          sessionStorage.setItem('selectedRoom', JSON.stringify(h));
-                          actions.navigate('roomDetails', { id: h.id }); 
-                        }}
-                      >
-                        <div className='relative h-44 overflow-hidden'>
-                          {showMap ? (
-                            (() => {
-                              const map = buildHotelMap(h);
-                              return (
-                                <iframe
-                                  title={`${h.name} Location`}
-                                  width="100%"
-                                  height="100%"
-                                  frameBorder="0"
-                                  style={{ border: 0 }}
-                                  src={map.embedSrc}
-                                  allowFullScreen
-                                  onClick={(e) => e.stopPropagation()}
-                                ></iframe>
-                              );
-                            })()
-                          ) : (
-                            <>
-                              <img 
-                                src={h.image} 
-                                alt={h.name} 
-                                className='absolute inset-0 w-full h-full object-cover transform transition-transform duration-300 group-hover:scale-105'
-                                loading="lazy"
-                                onError={(e) => { 
-                                  e.currentTarget.src = '/placeholder-hotel.jpg'; 
-                                }}
-                              />
-                            
-                              {h.city && (
-                                <div className='absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm text-[#ee2e24] text-xs px-2 py-1 rounded font-semibold'>
-                                  {h.city}
+                      <div className="px-3 h-full">
+                        <article
+                          className='border border-gray-200 rounded-xl overflow-hidden bg-white hover:shadow-lg transition-shadow duration-200 cursor-pointer group h-full'
+                          onClick={() => { 
+                            sessionStorage.setItem('selectedRoom', JSON.stringify(h));
+                            actions.navigate('roomDetails', { id: h.id }); 
+                          }}
+                        >
+                          <div className='relative h-44 overflow-hidden'>
+                            {showMap ? (
+                              (() => {
+                                const map = buildHotelMap(h);
+                                return (
+                                  <iframe
+                                    title={`${h.name} Location`}
+                                    width="100%"
+                                    height="100%"
+                                    frameBorder="0"
+                                    style={{ border: 0 }}
+                                    src={map.embedSrc}
+                                    allowFullScreen
+                                    onClick={(e) => e.stopPropagation()}
+                                  ></iframe>
+                                );
+                              })()
+                            ) : (
+                              <>
+                                <img 
+                                  src={h.image} 
+                                  alt={h.name} 
+                                  className='absolute inset-0 w-full h-full object-cover transform transition-transform duration-300 group-hover:scale-105'
+                                  loading="lazy"
+                                  onError={(e) => { 
+                                    e.currentTarget.src = '/placeholder-hotel.jpg'; 
+                                  }}
+                                />
+                              
+                                {h.city && (
+                                  <div className='absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm text-[#ee2e24] text-xs px-2 py-1 rounded font-semibold'>
+                                    {h.city}
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </div>
+                          
+                          <div className='p-4'>
+                            <div className='flex items-start justify-between gap-3'>
+                              <div className='flex-1 min-w-0'>
+                                <h3 className='font-semibold text-lg mb-1 truncate'>{h.name}</h3>
+                                <p className='text-xs text-gray-500 mb-2 truncate'>Excellent Hospitality • Top Rated</p>
+                                <div className='flex flex-wrap gap-2 mb-2'>
+                                  <span className='text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded'>Free Wifi</span>
+                                  <span className='text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded'>AC</span>
+                                  <span className='text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded'>Parking</span>
                                 </div>
-                              )}
-                            </>
-                          )}
-                        </div>
-                        
-                        <div className='p-4'>
-                          <div className='flex items-start justify-between gap-3'>
-                            <div className='flex-1 min-w-0'>
-                              <h3 className='font-semibold text-lg mb-1 truncate'>{h.name}</h3>
-                              <p className='text-xs text-gray-500 mb-2 truncate'>Excellent Hospitality • Top Rated</p>
-                              <div className='flex flex-wrap gap-2 mb-2'>
-                                <span className='text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded'>Free Wifi</span>
-                                <span className='text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded'>AC</span>
-                                <span className='text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded'>Parking</span>
+                                <div className='text-xs text-green-700 flex items-center gap-1'>
+                                  <span className='w-2 h-2 rounded-full bg-green-600 inline-block'></span>
+                                  Free Cancellation
+                                </div>
                               </div>
-                              <div className='text-xs text-green-700 flex items-center gap-1'>
-                                <span className='w-2 h-2 rounded-full bg-green-600 inline-block'></span>
-                                Free Cancellation
+                              <div className='text-right flex-shrink-0'>
+                                <div className='text-xs text-gray-500'>Rating</div>
+                                <div className='text-base font-semibold'>{(h.rating > 0 ? (Number(h.rating) || 0).toFixed(1) + ' / 5' : 'New')}</div>
                               </div>
                             </div>
-                            <div className='text-right flex-shrink-0'>
-                              <div className='text-xs text-gray-500'>Rating</div>
-                              <div className='text-base font-semibold'>{(h.rating > 0 ? (Number(h.rating) || 0).toFixed(1) + ' / 5' : 'New')}</div>
-                            </div>
-                          </div>
 
-                          <div className='mt-4 flex items-end justify-between'>
-                            <div>
-                              <div className='text-gray-400 text-xs line-through'>₹{Math.round(h.originalPrice)}</div>
-                              <div className='text-2xl font-bold text-[#ee2e24]'>₹{Math.round(h.price)}</div>
-                              <div className='text-xs text-gray-600'>per night</div>
-                            </div>
-                            <div className='flex flex-col items-end gap-2'>
-                              <button 
-                                onClick={(e) => { 
-                                  e.stopPropagation(); 
-                                  sessionStorage.setItem('selectedRoom', JSON.stringify(h));
-                                  actions.navigate('roomDetails', { id: h.id }); 
-                                }} 
-                                className='bg-[#ee2e24] text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-[#d5281f] transition-colors'
-                                type="button"
-                              >
-                                View Details
-                              </button>
+                            <div className='mt-4 flex items-end justify-between'>
+                              <div>
+                                <div className='text-gray-400 text-xs line-through'>₹{Math.round(h.originalPrice)}</div>
+                                <div className='text-2xl font-bold text-[#ee2e24]'>₹{Math.round(h.price)}</div>
+                                <div className='text-xs text-gray-600'>per night</div>
+                              </div>
+                              <div className='flex flex-col items-end gap-2'>
+                                <button 
+                                  onClick={(e) => { 
+                                    e.stopPropagation(); 
+                                    sessionStorage.setItem('selectedRoom', JSON.stringify(h));
+                                    actions.navigate('roomDetails', { id: h.id }); 
+                                  }} 
+                                  className='bg-[#ee2e24] text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-[#d5281f] transition-colors'
+                                  type="button"
+                                >
+                                  View Details
+                                </button>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </article>
+                        </article>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -732,7 +798,15 @@ const Home = ({ state, actions }) => {
                         key={i}
                         type="button"
                         aria-label={`Go to slide ${i + 1}`}
-                        onClick={() => setPopularIndex(i)}
+                        onClick={() => {
+                          if (popularIsMobile && popularViewportRef.current && popularItemWidth) {
+                            popularProgrammaticScrollUntilRef.current = Date.now() + 500;
+                            popularViewportRef.current.scrollTo({ left: i * popularItemWidth, behavior: 'smooth' });
+                            setPopularIndex(i);
+                            return;
+                          }
+                          setPopularIndex(i);
+                        }}
                         className={`h-2.5 w-2.5 rounded-full transition-colors ${i === popularIndex ? 'bg-[#ee2e24]' : 'bg-gray-300'}`}
                       ></button>
                     ))}
