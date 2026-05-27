@@ -495,7 +495,7 @@ const SearchHotel = ({ state, actions }) => {
               <div className="d-lg-none">
                 <button
                   type="button"
-                  className="btn btn-outline-danger btn-sm"
+                  className="btn btn-outline-danger bg-danger btn-sm"
                   onClick={() => setMobileFiltersOpen((v) => !v)}
                 >
                   Filters
@@ -522,15 +522,7 @@ const SearchHotel = ({ state, actions }) => {
                 <option value="price_high_low">Price: High to Low</option>
                 <option value="rating">Rating</option>
               </select>
-              <div className="d-lg-none">
-                <button
-                  type="button"
-                  className="btn btn-link text-danger text-decoration-none p-0 ms-1"
-                  onClick={clearAllFilters}
-                >
-                  Clear All
-                </button>
-              </div>
+              
             </div>
           </div>
         </div>

@@ -903,11 +903,6 @@ module.exports = {
   getCommissionSummary: asyncHandler(async (req, res) => {
     const percentFallback = getCommissionPercent();
 
-    const pahBaseExpr = 'COALESCE(payment_received_amount, 0)';
-    const pahPercentExpr = `COALESCE(NULLIF(commission_percent, 0), ${percentFallback})`;
-    const pahCommissionExpr = `COALESCE(NULLIF(commission_amount, 0), (${pahBaseExpr} * ${pahPercentExpr} / 100))`;
-    const pahNetExpr = `(${pahBaseExpr} - ${pahCommissionExpr})`;
-
     const onlineBaseExpr = 'COALESCE(payment_received_amount, amount, 0)';
     const onlinePercentExpr = `COALESCE(NULLIF(commission_percent, 0), ${percentFallback})`;
     const onlineCommissionExpr = `COALESCE(NULLIF(commission_amount, 0), (${onlineBaseExpr} * ${onlinePercentExpr} / 100))`;
@@ -926,26 +921,15 @@ module.exports = {
     if (weekEnd) weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
     const thisWeekEndStr = weekEnd ? weekEnd.toISOString().slice(0, 10) : null;
 
-    const [pahAgg, onlineAgg, pahThisWeekAgg] = await Promise.all([
+    const onlineWhere = {
+      ...baseWhere,
+      payment_received_at: { [Op.ne]: null },
+      [Op.or]: [{ payment_method: { [Op.ne]: 'PAY_AT_HOTEL' } }, { payment_method: null }]
+    };
+
+    const [onlineAgg, onlineUnsettledThisWeekAgg] = await Promise.all([
       Booking.findOne({
-        where: {
-          ...baseWhere,
-          payment_method: 'PAY_AT_HOTEL',
-          checked_in_at: { [Op.ne]: null },
-          payment_received_at: { [Op.ne]: null }
-        },
-        attributes: [
-          [fn('SUM', literal(pahBaseExpr)), 'gross_amount'],
-          [fn('SUM', literal(pahCommissionExpr)), 'commission_amount'],
-          [fn('SUM', literal(pahNetExpr)), 'net_amount']
-        ]
-      }),
-      Booking.findOne({
-        where: {
-          ...baseWhere,
-          payment_received_at: { [Op.ne]: null },
-          [Op.or]: [{ payment_method: { [Op.ne]: 'PAY_AT_HOTEL' } }, { payment_method: null }]
-        },
+        where: onlineWhere,
         attributes: [
           [fn('SUM', literal(onlineBaseExpr)), 'gross_amount'],
           [fn('SUM', literal(onlineCommissionExpr)), 'commission_amount'],
@@ -954,10 +938,7 @@ module.exports = {
       }),
       Booking.findOne({
         where: {
-          ...baseWhere,
-          payment_method: 'PAY_AT_HOTEL',
-          checked_in_at: { [Op.ne]: null },
-          payment_received_at: { [Op.ne]: null },
+          ...onlineWhere,
           [Op.or]: [{ settlement_status: null }, { settlement_status: 'UNSETTLED' }],
           ...(thisWeekStart && ws && we
             ? {
@@ -972,45 +953,50 @@ module.exports = {
             : {})
         },
         attributes: [
-          [fn('SUM', literal(pahCommissionExpr)), 'commission_amount'],
-          [fn('SUM', literal(pahBaseExpr)), 'gross_amount']
+          [fn('SUM', literal(onlineBaseExpr)), 'gross_amount'],
+          [fn('SUM', literal(onlineCommissionExpr)), 'commission_amount'],
+          [fn('SUM', literal(onlineNetExpr)), 'net_amount']
         ]
       })
     ]);
-
-    const pahGross = parseFloat(pahAgg?.get?.('gross_amount') || pahAgg?.dataValues?.gross_amount || 0) || 0;
-    const pahCommission = parseFloat(pahAgg?.get?.('commission_amount') || pahAgg?.dataValues?.commission_amount || 0) || 0;
-    const pahNet = parseFloat(pahAgg?.get?.('net_amount') || pahAgg?.dataValues?.net_amount || 0) || 0;
 
     const onlineGross = parseFloat(onlineAgg?.get?.('gross_amount') || onlineAgg?.dataValues?.gross_amount || 0) || 0;
     const onlineCommission = parseFloat(onlineAgg?.get?.('commission_amount') || onlineAgg?.dataValues?.commission_amount || 0) || 0;
     const onlineNet = parseFloat(onlineAgg?.get?.('net_amount') || onlineAgg?.dataValues?.net_amount || 0) || 0;
 
-    const thisWeekPahCommission = parseFloat(pahThisWeekAgg?.get?.('commission_amount') || pahThisWeekAgg?.dataValues?.commission_amount || 0) || 0;
-    const thisWeekPahGross = parseFloat(pahThisWeekAgg?.get?.('gross_amount') || pahThisWeekAgg?.dataValues?.gross_amount || 0) || 0;
+    const thisWeekOnlineGross =
+      parseFloat(
+        onlineUnsettledThisWeekAgg?.get?.('gross_amount') || onlineUnsettledThisWeekAgg?.dataValues?.gross_amount || 0
+      ) || 0;
+    const thisWeekOnlineCommission =
+      parseFloat(
+        onlineUnsettledThisWeekAgg?.get?.('commission_amount') ||
+          onlineUnsettledThisWeekAgg?.dataValues?.commission_amount ||
+          0
+      ) || 0;
+    const thisWeekOnlineNet =
+      parseFloat(
+        onlineUnsettledThisWeekAgg?.get?.('net_amount') || onlineUnsettledThisWeekAgg?.dataValues?.net_amount || 0
+      ) || 0;
 
     sendSuccess(res, {
       percent: percentFallback,
-      pay_at_hotel: {
-        gross_amount: round2(pahGross),
-        commission_amount: round2(pahCommission),
-        net_amount: round2(pahNet)
-      },
       online: {
         gross_amount: round2(onlineGross),
         commission_amount: round2(onlineCommission),
         net_amount: round2(onlineNet)
       },
-      settlement_due_this_week: {
+      unsettled_this_week: {
         week_start: thisWeekStart,
         week_end: thisWeekEndStr,
-        pay_at_hotel_gross_amount: round2(thisWeekPahGross),
-        pay_at_hotel_commission_due: round2(thisWeekPahCommission)
+        gross_amount: round2(thisWeekOnlineGross),
+        commission_amount: round2(thisWeekOnlineCommission),
+        net_amount: round2(thisWeekOnlineNet)
       },
       totals: {
-        gross_amount: round2(pahGross + onlineGross),
-        commission_amount: round2(pahCommission + onlineCommission),
-        net_amount: round2(pahNet + onlineNet)
+        gross_amount: round2(onlineGross),
+        commission_amount: round2(onlineCommission),
+        net_amount: round2(onlineNet)
       }
     }, 'Commission summary retrieved');
   }),

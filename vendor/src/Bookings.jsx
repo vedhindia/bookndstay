@@ -41,9 +41,8 @@ const Bookings = () => {
   const [checkInLoading, setCheckInLoading] = useState(false);
   const [commissionSummary, setCommissionSummary] = useState({
     percent: 10,
-    onlineGross: 0,
-    totalCommission: 0,
-    totalNet: 0
+    allTime: { gross: 0, commission: 0, net: 0 },
+    thisWeek: { weekStart: null, weekEnd: null, gross: 0, commission: 0, net: 0 }
   });
 
   const formatDateIST = (dateString) => {
@@ -285,11 +284,21 @@ const Bookings = () => {
       const data = resp?.data?.data || {};
       const online = data.online || {};
       const totals = data.totals || {};
+      const thisWeek = data.unsettled_this_week || {};
       setCommissionSummary({
         percent: Number(data.percent || 10),
-        onlineGross: Number(online.gross_amount || 0),
-        totalCommission: Number(totals.commission_amount || 0),
-        totalNet: Number(totals.net_amount || 0)
+        allTime: {
+          gross: Number(online.gross_amount || totals.gross_amount || 0),
+          commission: Number(totals.commission_amount || online.commission_amount || 0),
+          net: Number(totals.net_amount || online.net_amount || 0)
+        },
+        thisWeek: {
+          weekStart: thisWeek.week_start || null,
+          weekEnd: thisWeek.week_end || null,
+          gross: Number(thisWeek.gross_amount || 0),
+          commission: Number(thisWeek.commission_amount || 0),
+          net: Number(thisWeek.net_amount || 0)
+        }
       });
     } catch {
       void 0;
@@ -410,12 +419,15 @@ const Bookings = () => {
         </div>
       </div>
 
-      <div className="row g-3 mb-3">
+      <div className="d-flex justify-content-between align-items-center mb-2">
+        <div className="fw-semibold">All-Time Totals</div>
+      </div>
+      <div className="row g-3 mb-4">
         <div className="col-md-4">
           <div className="card border-0 shadow-sm h-100">
             <div className="card-body text-center">
               <div className="text-muted small">Online Booking Amount</div>
-              <div className="fs-4 fw-bold">₹{Number(commissionSummary.onlineGross || 0).toLocaleString()}</div>
+              <div className="fs-4 fw-bold">₹{Number(commissionSummary.allTime.gross || 0).toLocaleString()}</div>
             </div>
           </div>
         </div>
@@ -423,7 +435,7 @@ const Bookings = () => {
           <div className="card border-0 shadow-sm h-100">
             <div className="card-body text-center">
               <div className="text-muted small">Total Admin Commission ({Number(commissionSummary.percent || 10)}%)</div>
-              <div className="fs-4 fw-bold">₹{Number(commissionSummary.totalCommission || 0).toLocaleString()}</div>
+              <div className="fs-4 fw-bold">₹{Number(commissionSummary.allTime.commission || 0).toLocaleString()}</div>
             </div>
           </div>
         </div>
@@ -431,7 +443,42 @@ const Bookings = () => {
           <div className="card border-0 shadow-sm h-100">
             <div className="card-body text-center">
               <div className="text-muted small">Net Amount (After Commission)</div>
-              <div className="fs-4 fw-bold text-success">₹{Number(commissionSummary.totalNet || 0).toLocaleString()}</div>
+              <div className="fs-4 fw-bold text-success">₹{Number(commissionSummary.allTime.net || 0).toLocaleString()}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="d-flex justify-content-between align-items-center mb-2">
+        <div className="fw-semibold">This Week Totals (Unsettled)</div>
+        {commissionSummary.thisWeek.weekStart && commissionSummary.thisWeek.weekEnd ? (
+          <div className="text-muted small">
+            {commissionSummary.thisWeek.weekStart} to {commissionSummary.thisWeek.weekEnd}
+          </div>
+        ) : null}
+      </div>
+      <div className="row g-3 mb-3">
+        <div className="col-md-4">
+          <div className="card border-0 shadow-sm h-100">
+            <div className="card-body text-center">
+              <div className="text-muted small">Online Booking Amount</div>
+              <div className="fs-4 fw-bold">₹{Number(commissionSummary.thisWeek.gross || 0).toLocaleString()}</div>
+            </div>
+          </div>
+        </div>
+        <div className="col-md-4">
+          <div className="card border-0 shadow-sm h-100">
+            <div className="card-body text-center">
+              <div className="text-muted small">Admin Commission ({Number(commissionSummary.percent || 10)}%)</div>
+              <div className="fs-4 fw-bold">₹{Number(commissionSummary.thisWeek.commission || 0).toLocaleString()}</div>
+            </div>
+          </div>
+        </div>
+        <div className="col-md-4">
+          <div className="card border-0 shadow-sm h-100">
+            <div className="card-body text-center">
+              <div className="text-muted small">Vendor Payable (After Commission)</div>
+              <div className="fs-4 fw-bold text-success">₹{Number(commissionSummary.thisWeek.net || 0).toLocaleString()}</div>
             </div>
           </div>
         </div>
