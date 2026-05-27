@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FaCreditCard, FaWallet, FaMoneyBillWave, FaLock, FaShieldAlt, FaCheckCircle, FaClock } from 'react-icons/fa';
+import { FaCreditCard, FaLock, FaShieldAlt, FaCheckCircle, FaClock } from 'react-icons/fa';
 import { getToken, clearToken } from '../api/auth';
 
 export default function PaymentPage() {
   const navigate = useNavigate();
-  const [paymentMethod, setPaymentMethod] = useState('razorpay');
   const [summary, setSummary] = useState(null);
   const [amount, setAmount] = useState(0);
   const [bookingId, setBookingId] = useState(null);
@@ -35,9 +34,6 @@ export default function PaymentPage() {
   useEffect(() => {
     if (timeLeft === null) return;
     
-    // Disable timer redirection for Pay at Hotel
-    if (paymentMethod === 'hotel') return;
-
     if (timeLeft <= 0) {
       alert('Payment window expired! Please create a new booking.');
       navigate('/');
@@ -49,7 +45,7 @@ export default function PaymentPage() {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [timeLeft, navigate, paymentMethod]);
+  }, [timeLeft, navigate]);
 
   const formatTime = (seconds) => {
     const m = Math.floor(seconds / 60);
@@ -262,137 +258,6 @@ export default function PaymentPage() {
       document.body.appendChild(script);
     });
 
-  const handlePayAtHotel = async () => {
-    const token = getToken();
-    if (!token) {
-      console.error('PaymentPage: No token found for payment');
-      try {
-        if (typeof window !== 'undefined') {
-          sessionStorage.setItem('redirectUrl', window.location.pathname + window.location.search);
-        }
-      } catch {}
-      alert('Authentication required: Please login to proceed.');
-      navigate('/login');
-      return;
-    }
-
-    if (!bookingId) {
-      alert('Booking ID not found');
-      return;
-    }
-
-    setProcessing(true);
-    try {
-      // Step 1: Create a payment record (required by backend)
-      // Even for Pay at Hotel, we need to initialize the payment record
-      // We use the initiate endpoint which creates a pending payment
-      try {
-        const initRes = await fetch(`${apiUserBase}/bookings/${bookingId}/pay`, {
-          method: 'POST',
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({ amount: amount, payment_method: 'PAY_AT_HOTEL' })
-        });
-        if (initRes.status === 401) {
-          clearToken();
-          try {
-            if (typeof window !== 'undefined') {
-              sessionStorage.setItem('redirectUrl', window.location.pathname + window.location.search);
-            }
-          } catch {}
-          alert('Your session has expired. Please login again.');
-          navigate('/login');
-          return;
-        }
-      } catch (e) {
-        if (e.message && e.message.includes('401')) {
-          clearToken();
-          try {
-            if (typeof window !== 'undefined') {
-              sessionStorage.setItem('redirectUrl', window.location.pathname + window.location.search);
-            }
-          } catch {}
-          navigate('/login');
-          return;
-        }
-        // Continue anyway, as some backends might auto-create on complete
-      }
-
-      // Step 2: Mark payment as success (Pay at Hotel confirmed)
-      const response = await fetch(`${apiUserBase}/bookings/${bookingId}/payment/complete`, {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          status: 'success',
-          amount: amount,
-          payment_method: 'PAY_AT_HOTEL'
-        })
-      });
-      
-      if (response.status === 401) {
-        clearToken();
-        try {
-          if (typeof window !== 'undefined') {
-            sessionStorage.setItem('redirectUrl', window.location.pathname + window.location.search);
-          }
-        } catch {}
-        alert('Your session has expired. Please login again.');
-        navigate('/login');
-        return;
-      }
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Failed to confirm booking');
-      }
-
-      const data = await response.json();
-      const confirmedBooking = data?.booking || data?.data?.booking;
-
-      // Prepare confirmation data
-      const confirmationData = {
-        id: confirmedBooking?.id || bookingId,
-        hotelId: summary?.hotelId || confirmedBooking?.hotel_id || confirmedBooking?.hotelId,
-        hotelName: summary?.hotelName,
-        address: summary?.address,
-        city: summary?.city,
-        latitude: summary?.latitude,
-        longitude: summary?.longitude,
-        checkIn: summary?.checkIn,
-        checkOut: summary?.checkOut,
-        guests: summary?.guests || 2,
-        rooms: summary?.rooms || 1,
-        amount: confirmedBooking?.amount || amount,
-        base_amount: confirmedBooking?.base_amount || breakdown?.base_amount || amount,
-        discount_amount: confirmedBooking?.discount_amount || breakdown?.discount_amount || 0,
-        coupon_code: confirmedBooking?.coupon_code || breakdown?.coupon_applied,
-        status: 'confirmed',
-        image: summary?.image,
-        paymentMethod: 'PAY_AT_HOTEL'
-      };
-
-      try {
-        sessionStorage.setItem('selectedBooking', JSON.stringify(confirmationData));
-        sessionStorage.removeItem('paymentIntent');
-      } catch (e) {
-        console.error('Failed to save booking:', e);
-      }
-
-      navigate('/booking');
-    } catch (error) {
-      alert(error.message || 'Failed to confirm booking');
-    } finally {
-      setProcessing(false);
-    }
-  };
-
   const handleRazorpayPayment = async () => {
     const ok = await loadRazorpay();
     if (!ok) {
@@ -448,7 +313,7 @@ export default function PaymentPage() {
         
         // Handle specific error codes
         if (payResponse.status === 503 || payResponse.status === 502) {
-          throw new Error(errorData.message || 'Payment gateway temporarily unavailable. Please try "Pay at Hotel" or try again later.');
+          throw new Error(errorData.message || 'Payment gateway temporarily unavailable. Please try again later.');
         }
         
         throw new Error(errorData.message || 'Failed to initiate payment');
@@ -462,7 +327,7 @@ export default function PaymentPage() {
         throw new Error('Order ID not received from server');
       }
       if (!keyId) {
-        throw new Error('Razorpay key missing. Please try Pay at Hotel.');
+        throw new Error('Razorpay key missing. Please contact support.');
       }
 
       const options = {
@@ -605,11 +470,7 @@ export default function PaymentPage() {
   };
 
   const handlePayment = () => {
-    if (paymentMethod === 'hotel') {
-      handlePayAtHotel();
-    } else {
-      handleRazorpayPayment();
-    }
+    handleRazorpayPayment();
   };
 
   if (loading) {
@@ -635,7 +496,7 @@ export default function PaymentPage() {
       </div>
       
       {/* Timer Warning - Fixed Overlay */}
-      {timeLeft !== null && timeLeft > 0 && paymentMethod !== 'hotel' && (
+      {timeLeft !== null && timeLeft > 0 && (
         <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-6 flex items-center justify-between text-orange-800">
           <div className="flex items-center">
             <FaClock className="mr-2 text-xl" />
@@ -733,89 +594,33 @@ export default function PaymentPage() {
       
       {/* Payment Methods */}
       <div className="bg-white border rounded-lg mb-6">
-        <h2 className="font-semibold p-4 sm:p-6 border-b">Select Payment Method</h2>
-        
-        {/* Payment Method Tabs */}
-        <div className="flex border-b">
-          <button 
-            className={`flex-1 py-3 px-4 flex items-center justify-center transition-colors ${
-              paymentMethod === 'razorpay' 
-                ? 'border-b-2 border-[#ee2e24] text-[#ee2e24] bg-red-50' 
-                : 'text-gray-600 hover:bg-gray-50'
-            }`}
-            onClick={() => setPaymentMethod('razorpay')}
-          >
-            <FaCreditCard className="mr-2" />
-            <span className="font-medium">Pay Now</span>
-          </button>
-          <button 
-            className={`flex-1 py-3 px-4 flex items-center justify-center transition-colors ${
-              paymentMethod === 'hotel' 
-                ? 'border-b-2 border-[#ee2e24] text-[#ee2e24] bg-red-50' 
-                : 'text-gray-600 hover:bg-gray-50'
-            }`}
-            onClick={() => setPaymentMethod('hotel')}
-          >
-            <FaMoneyBillWave className="mr-2" />
-            <span className="font-medium">Pay at Hotel</span>
-          </button>
-        </div>
+        <h2 className="font-semibold p-4 sm:p-6 border-b">Online Payment</h2>
         
         {/* Payment Method Content */}
         <div className="p-4 sm:p-6">
-          {paymentMethod === 'razorpay' ? (
-            <div>
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 flex items-start">
-                <FaCreditCard className="text-blue-500 mt-1 mr-3 flex-shrink-0" />
-                <div>
-                  <p className="font-medium text-blue-900 mb-1">Secure Online Payment</p>
-                  <p className="text-sm text-blue-700">Pay securely using Credit/Debit Card, UPI, Net Banking, or Wallets via Razorpay</p>
-                </div>
-              </div>
-              <div className="text-sm text-gray-600 space-y-1">
-                <p className="flex items-center">
-                  <FaCheckCircle className="text-green-500 mr-2" />
-                  Instant booking confirmation
-                </p>
-                <p className="flex items-center">
-                  <FaCheckCircle className="text-green-500 mr-2" />
-                  100% secure payment
-                </p>
-                <p className="flex items-center">
-                  <FaCheckCircle className="text-green-500 mr-2" />
-                  Multiple payment options available
-                </p>
+          <div>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 flex items-start">
+              <FaCreditCard className="text-blue-500 mt-1 mr-3 flex-shrink-0" />
+              <div>
+                <p className="font-medium text-blue-900 mb-1">Secure Online Payment</p>
+                <p className="text-sm text-blue-700">Pay securely using Credit/Debit Card, UPI, Net Banking, or Wallets via Razorpay</p>
               </div>
             </div>
-          ) : (
-            <div>
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4 flex items-start">
-                <FaCheckCircle className="text-green-500 mt-1 mr-3 flex-shrink-0" />
-                <div>
-                  <p className="font-medium text-green-900 mb-1">Pay at Hotel Available</p>
-                  <p className="text-sm text-green-700">Pay the full amount at the hotel during check-in with cash or card</p>
-                </div>
-              </div>
-              <div className="text-sm text-gray-600 space-y-1">
-                <p className="flex items-center">
-                  <FaCheckCircle className="text-green-500 mr-2" />
-                  No advance payment required
-                </p>
-                <p className="flex items-center">
-                  <FaCheckCircle className="text-green-500 mr-2" />
-                  Booking confirmed instantly
-                </p>
-                <p className="flex items-center">
-                  <FaCheckCircle className="text-green-500 mr-2" />
-                  Flexible payment at check-in
-                </p>
-                <p className="flex items-center">
-                  <FaCheckCircle className="text-green-500 mr-2" />
-                  Please carry valid ID proof
-                </p>
-              </div>
+            <div className="text-sm text-gray-600 space-y-1">
+              <p className="flex items-center">
+                <FaCheckCircle className="text-green-500 mr-2" />
+                Instant booking confirmation
+              </p>
+              <p className="flex items-center">
+                <FaCheckCircle className="text-green-500 mr-2" />
+                100% secure payment
+              </p>
+              <p className="flex items-center">
+                <FaCheckCircle className="text-green-500 mr-2" />
+                Multiple payment options available
+              </p>
             </div>
-          )}
+          </div>
         </div>
       </div>
       
@@ -846,9 +651,7 @@ export default function PaymentPage() {
             Processing...
           </span>
         ) : (
-          paymentMethod === 'hotel' 
-            ? 'Confirm Booking (Pay at Hotel)' 
-            : `Pay ₹${amount}`
+          `Pay ₹${amount}`
         )}
       </button>
 

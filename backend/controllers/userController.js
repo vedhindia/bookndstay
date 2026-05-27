@@ -1485,22 +1485,9 @@ module.exports = {
 
     const { payment_method } = req.body || {};
 
-    // If Pay at Hotel, skip Razorpay order creation
-    if (payment_method === 'PAY_AT_HOTEL') {
-      // Check if payment already exists
-      let payment = await Payment.findOne({ where: { booking_id: booking.id } });
-      
-      if (!payment) {
-        payment = await Payment.create({
-          booking_id: booking.id,
-          gateway: 'PAY_AT_HOTEL',
-          gateway_payment_id: `PAH_${booking.id}_${Date.now()}`,
-          amount: booking.amount,
-          status: 'INITIATED'
-        });
-      }
-      
-      return sendSuccess(res, { payment }, 'Payment initiated (Pay at Hotel)');
+    const requestedMethod = String(payment_method || '').trim().toUpperCase();
+    if (requestedMethod === 'PAY_AT_HOTEL') {
+      throw createError('Pay at Hotel is not available. Please use online payment.', 400);
     }
 
     // Verify Razorpay credentials
@@ -1509,7 +1496,7 @@ module.exports = {
 
     if (!razorpay || !key_id) {
       console.error('Razorpay credentials missing or invalid.');
-      throw createError('Online payment service is temporarily unavailable. Please try Pay at Hotel.', 503);
+      throw createError('Online payment service is temporarily unavailable. Please try again later.', 503);
     }
     
     // Validate secret length for sanity check

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaCrosshairs } from 'react-icons/fa';
 import { getToken } from '../api/auth';
@@ -14,6 +14,15 @@ const SearchHotel = ({ state, actions }) => {
   const [sort, setSort] = useState('popularity');
   const [showMap, setShowMap] = useState(false);
   const [nearMeLoading, setNearMeLoading] = useState(false);
+  const [minPrice, setMinPrice] = useState(0);
+  const [maxPrice, setMaxPrice] = useState(10000);
+  const [priceRange, setPriceRange] = useState([0, 10000]);
+  const [selectedAmenities, setSelectedAmenities] = useState([]);
+  const [selectedFilters, setSelectedFilters] = useState({
+    companyServiced: false,
+    wizardMember: false
+  });
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   useEffect(() => {
     if (state?.city && state.city !== city) {
@@ -213,6 +222,53 @@ const SearchHotel = ({ state, actions }) => {
     fetchResults();
     return () => { active = false; };
   }, [apiVendorPublicBase]); // Removed page/limit/city from deps as we fetch all now
+
+  useEffect(() => {
+    if (loading) return;
+    if (!Array.isArray(hotels) || hotels.length === 0) return;
+    const prices = hotels.map((h) => Number(h.price || 0)).filter((n) => Number.isFinite(n) && n > 0);
+    const max = prices.length ? Math.max(...prices) : 0;
+    const effectiveMax = max > 0 ? max : 10000;
+    setMinPrice(0);
+    setMaxPrice(effectiveMax);
+    setPriceRange([0, effectiveMax]);
+  }, [loading, hotels.length]);
+
+  const amenityOptions = useMemo(() => {
+    const counts = new Map();
+    for (const h of hotels) {
+      const list = Array.isArray(h.amenities) ? h.amenities : [];
+      for (const a of list) {
+        const key = String(a || '').trim();
+        if (!key) continue;
+        counts.set(key, (counts.get(key) || 0) + 1);
+      }
+    }
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([name]) => name)
+      .slice(0, 10);
+  }, [hotels]);
+
+  const handleFilterChange = (filter) => {
+    setSelectedFilters((prev) => ({ ...prev, [filter]: !prev[filter] }));
+    setPage(1);
+  };
+
+  const toggleAmenity = (name) => {
+    setSelectedAmenities((prev) => {
+      const exists = prev.includes(name);
+      return exists ? prev.filter((x) => x !== name) : [...prev, name];
+    });
+    setPage(1);
+  };
+
+  const clearAllFilters = () => {
+    setSelectedFilters({ companyServiced: false, wizardMember: false });
+    setSelectedAmenities([]);
+    setPriceRange([minPrice, maxPrice]);
+    setPage(1);
+  };
  
   const handleImageNavigation = (hotelId, direction, e) => {
     e.stopPropagation();
@@ -348,17 +404,47 @@ const SearchHotel = ({ state, actions }) => {
   // Search + Pagination Logic
   const normalized = (s) => (s || '').toString().toLowerCase();
   const query = normalized(city);
-  const filteredHotels = hotels.filter(h => {
+  let filteredHotels = hotels.filter(h => {
     if (!query) return true;
     const name = normalized(h.name);
     const loc = normalized(h.location);
     const addr = normalized(h.address);
     return name.includes(query) || loc.includes(query) || addr.includes(query);
   });
-  const totalItems = filteredHotels.length;
+  filteredHotels = filteredHotels.filter((h) => {
+    const p = Number(h.price || 0);
+    return p >= Number(priceRange[0] || 0) && p <= Number(priceRange[1] || 0);
+  });
+  if (selectedAmenities.length) {
+    const selectedLc = selectedAmenities.map((x) => String(x).toLowerCase());
+    filteredHotels = filteredHotels.filter((h) => {
+      const hotelAmens = Array.isArray(h.amenities) ? h.amenities : [];
+      const set = new Set(hotelAmens.map((x) => String(x).toLowerCase()));
+      return selectedLc.every((a) => set.has(a));
+    });
+  }
+  if (selectedFilters.companyServiced) {
+    filteredHotels = filteredHotels.filter((h) => Boolean(h.companyServiced));
+  }
+  if (selectedFilters.wizardMember) {
+    filteredHotels = filteredHotels.filter((h) => Boolean(h.wizardMember));
+  }
+
+  const sortedHotels = (() => {
+    const arr = [...filteredHotels];
+    if (sort === "price_low_high") {
+      arr.sort((a, b) => a.price - b.price);
+    } else if (sort === "price_high_low") {
+      arr.sort((a, b) => b.price - a.price);
+    } else if (sort === "rating") {
+      arr.sort((a, b) => b.rating - a.rating);
+    }
+    return arr;
+  })();
+  const totalItems = sortedHotels.length;
   const totalPages = Math.ceil(totalItems / limit) || 1;
   const startIndex = (page - 1) * limit;
-  const paginatedHotels = filteredHotels.slice(startIndex, startIndex + limit);
+  const paginatedHotels = sortedHotels.slice(startIndex, startIndex + limit);
 
   console.log('SearchHotel Render (v2):', { hotels: hotels.length, loading, error, page, totalPages });
 
@@ -367,7 +453,7 @@ const SearchHotel = ({ state, actions }) => {
      
       <div className="container-fluid px-3 px-lg-5 py-4 flex-grow-1">
         <div className="d-flex flex-column flex-lg-row justify-content-between align-items-start align-items-lg-center gap-3 mb-4">
-          <h5 className="mb-0 text-nowrap">{filteredHotels.length} Hotels around you</h5>
+          <h5 className="mb-0 text-nowrap">{sortedHotels.length} Hotels around you</h5>
           <div className="d-flex flex-wrap gap-2 gap-md-3 align-items-center w-100 w-lg-auto">
             <div className="form-check form-switch me-2">
               <input 
@@ -406,6 +492,15 @@ const SearchHotel = ({ state, actions }) => {
               </button>
             </div>
             <div className="d-flex gap-2 flex-grow-1 flex-md-grow-0">
+              <div className="d-lg-none">
+                <button
+                  type="button"
+                  className="btn btn-outline-danger btn-sm"
+                  onClick={() => setMobileFiltersOpen((v) => !v)}
+                >
+                  Filters
+                </button>
+              </div>
               <select
                 className="form-select form-select-sm"
                 style={{ minWidth: '80px' }}
@@ -427,6 +522,15 @@ const SearchHotel = ({ state, actions }) => {
                 <option value="price_high_low">Price: High to Low</option>
                 <option value="rating">Rating</option>
               </select>
+              <div className="d-lg-none">
+                <button
+                  type="button"
+                  className="btn btn-link text-danger text-decoration-none p-0 ms-1"
+                  onClick={clearAllFilters}
+                >
+                  Clear All
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -438,47 +542,196 @@ const SearchHotel = ({ state, actions }) => {
           </div>
         )}
  
-        {filteredHotels.length === 0 ? (
-          <div className="alert alert-info">No hotels found. Try another search.</div>
-        ) : (
-          <>
-          {paginatedHotels.map(hotel => (
-            <div 
-              key={hotel.id} 
-              className="card mb-3 border-0 shadow-sm" 
-              onClick={() => handleViewDetails(hotel)}
-              style={{ cursor: 'pointer' }}
-            >
-              <div className="row g-0">
-                <div className="col-md-4">
-                  <div className="position-relative" style={{ height: '250px' }}>
-                    {showMap ? (
-                      (() => {
-                        const map = buildHotelMap(hotel);
-                        return (
-                          <iframe
-                            title={`${hotel.name} Location`}
-                            width="100%"
-                            height="100%"
-                            frameBorder="0"
-                            style={{ border: 0 }}
-                            src={map.embedSrc}
-                            allowFullScreen
-                          ></iframe>
-                        );
-                      })()
-                    ) : (
-                      <>
-                        <img 
-                          src={hotel.images[hotel.currentImageIndex]} 
-                          className="img-fluid rounded-start h-100 w-100" 
-                          alt={hotel.name}
-                          style={{ objectFit: 'cover', cursor: 'pointer' }}
-                          onClick={() => handleViewDetails(hotel)}
-                          onError={(e) => {
-                            e.target.src = '/placeholder-hotel.jpg';
-                          }}
+        {mobileFiltersOpen && (
+          <div className="card border-0 shadow-sm mb-3 d-lg-none">
+            <div className="card-body">
+              <div className="d-flex justify-content-between align-items-center mb-3">
+                <h6 className="mb-0 fw-bold">Filters</h6>
+                <button type="button" className="btn-close" aria-label="Close" onClick={() => setMobileFiltersOpen(false)}></button>
+              </div>
+              <div className="d-flex justify-content-between align-items-center mb-3">
+                <button className="btn btn-link text-danger text-decoration-none p-0" onClick={clearAllFilters}>
+                  Clear All
+                </button>
+              </div>
+              <div className="mb-4">
+                <h6 className="fw-bold mb-3">Price</h6>
+                <div className="d-flex justify-content-between mb-2">
+                  <small>Min: ₹{minPrice}</small>
+                  <small>Max: ₹{maxPrice}</small>
+                </div>
+                <input 
+                  type="range" 
+                  className="form-range" 
+                  min={minPrice} 
+                  max={maxPrice}
+                  step={1}
+                  value={priceRange[1]}
+                  onChange={(e) => { setPriceRange([minPrice, parseInt(e.target.value)]); setPage(1); }}
+                />
+                <div className="text-end mt-1">
+                  <small className="text-muted">Up to ₹{priceRange[1]}</small>
+                </div>
+              </div>
+              <div className="mb-4">
+                <h6 className="fw-bold mb-3">Features</h6>
+                <div className="form-check mb-2">
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    id="m_companyServiced"
+                    checked={selectedFilters.companyServiced}
+                    onChange={() => handleFilterChange('companyServiced')}
+                  />
+                  <label className="form-check-label" htmlFor="m_companyServiced">Company Serviced</label>
+                </div>
+                <div className="form-check mb-2">
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    id="m_wizardMember"
+                    checked={selectedFilters.wizardMember}
+                    onChange={() => handleFilterChange('wizardMember')}
+                  />
+                  <label className="form-check-label" htmlFor="m_wizardMember">Wizard Member</label>
+                </div>
+              </div>
+              {amenityOptions.length > 0 && (
+                <div className="mb-1">
+                  <h6 className="fw-bold mb-3">Amenities</h6>
+                  {amenityOptions.map((a) => (
+                    <div className="form-check mb-2" key={`m_amen_${a}`}>
+                      <input
+                        className="form-check-input"
+                        type="checkbox"
+                        id={`m_amen_${a}`}
+                        checked={selectedAmenities.includes(a)}
+                        onChange={() => toggleAmenity(a)}
+                      />
+                      <label className="form-check-label" htmlFor={`m_amen_${a}`}>{a}</label>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div className="row">
+          <div className="col-lg-3 mb-4 mb-lg-0 d-none d-lg-block">
+            <div className="card border-0 shadow-sm position-sticky" style={{ top: '90px', zIndex: 2 }}>
+              <div className="card-body">
+                <div className="d-flex justify-content-between align-items-center mb-3">
+                  <h5 className="mb-0 fw-bold">Filters</h5>
+                  <button className="btn btn-link text-danger text-decoration-none p-0" onClick={clearAllFilters}>
+                    Clear All
+                  </button>
+                </div>
+                <div className="mb-4">
+                  <h6 className="fw-bold mb-3">Price</h6>
+                  <div className="d-flex justify-content-between mb-2">
+                    <small>Min: ₹{minPrice}</small>
+                    <small>Max: ₹{maxPrice}</small>
+                  </div>
+                  <input 
+                    type="range" 
+                    className="form-range" 
+                    min={minPrice} 
+                    max={maxPrice}
+                    step={1}
+                    value={priceRange[1]}
+                    onChange={(e) => { setPriceRange([minPrice, parseInt(e.target.value)]); setPage(1); }}
+                  />
+                  <div className="text-end mt-1">
+                    <small className="text-muted">Up to ₹{priceRange[1]}</small>
+                  </div>
+                </div>
+                <div className="mb-4">
+                  <h6 className="fw-bold mb-3">Features</h6>
+                  <div className="form-check mb-2">
+                    <input
+                      className="form-check-input"
+                      type="checkbox"
+                      id="companyServiced"
+                      checked={selectedFilters.companyServiced}
+                      onChange={() => handleFilterChange('companyServiced')}
+                    />
+                    <label className="form-check-label" htmlFor="companyServiced">Company Serviced</label>
+                  </div>
+                  <div className="form-check mb-2">
+                    <input
+                      className="form-check-input"
+                      type="checkbox"
+                      id="wizardMember"
+                      checked={selectedFilters.wizardMember}
+                      onChange={() => handleFilterChange('wizardMember')}
+                    />
+                    <label className="form-check-label" htmlFor="wizardMember">Wizard Member</label>
+                  </div>
+                </div>
+                {amenityOptions.length > 0 && (
+                  <div className="mb-1">
+                    <h6 className="fw-bold mb-3">Amenities</h6>
+                    {amenityOptions.map((a) => (
+                      <div className="form-check mb-2" key={a}>
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          id={`amen_${a}`}
+                          checked={selectedAmenities.includes(a)}
+                          onChange={() => toggleAmenity(a)}
                         />
+                        <label className="form-check-label" htmlFor={`amen_${a}`}>{a}</label>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="col-lg-9">
+            {sortedHotels.length === 0 ? (
+              <div className="alert alert-info">No hotels found. Try another search.</div>
+            ) : (
+              <>
+                {paginatedHotels.map(hotel => (
+                  <div 
+                    key={hotel.id} 
+                    className="card mb-3 border-0 shadow-sm" 
+                    onClick={() => handleViewDetails(hotel)}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <div className="row g-0">
+                      <div className="col-md-4">
+                        <div className="position-relative" style={{ height: '250px' }}>
+                          {showMap ? (
+                            (() => {
+                              const map = buildHotelMap(hotel);
+                              return (
+                                <iframe
+                                  title={`${hotel.name} Location`}
+                                  width="100%"
+                                  height="100%"
+                                  frameBorder="0"
+                                  style={{ border: 0 }}
+                                  src={map.embedSrc}
+                                  allowFullScreen
+                                ></iframe>
+                              );
+                            })()
+                          ) : (
+                            <>
+                              <img 
+                                src={hotel.images[hotel.currentImageIndex]} 
+                                className="img-fluid rounded-start h-100 w-100" 
+                                alt={hotel.name}
+                                style={{ objectFit: 'cover', cursor: 'pointer' }}
+                                onClick={() => handleViewDetails(hotel)}
+                                onError={(e) => {
+                                  e.target.src = '/placeholder-hotel.jpg';
+                                }}
+                              />
                         
                         {hotel.images.length > 1 && (
                           <>
@@ -604,7 +857,7 @@ const SearchHotel = ({ state, actions }) => {
           ))}
           
           {/* Pagination Controls */}
-          {hotels.length > 0 && (
+          {totalItems > 0 && (
             <div className="d-flex flex-column flex-md-row justify-content-between align-items-center mt-4 pt-3 border-top">
               <div className="text-muted mb-2 mb-md-0 small">
                 Showing <span className="fw-semibold">{startIndex + 1}</span>-
@@ -653,6 +906,8 @@ const SearchHotel = ({ state, actions }) => {
           )}
           </>
         )}
+          </div>
+        </div>
       </div>
     </div>
   );

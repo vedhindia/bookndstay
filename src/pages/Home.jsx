@@ -17,8 +17,6 @@ const Home = ({ state, actions }) => {
   const [popularPaused, setPopularPaused] = useState(false);
   const [popularIsMobile, setPopularIsMobile] = useState(false);
   const popularViewportRef = useRef(null);
-  const popularRafRef = useRef(0);
-  const popularProgrammaticScrollUntilRef = useRef(0);
   const [popularItemWidth, setPopularItemWidth] = useState(0);
 
   // API Configuration
@@ -344,7 +342,6 @@ const Home = ({ state, actions }) => {
 
   useEffect(() => {
     if (popularPaused) return;
-    if (popularIsMobile) return;
     if (popularMaxIndex <= 0) return;
     const id = setInterval(() => {
       setPopularIndex((i) => (i >= popularMaxIndex ? 0 : i + 1));
@@ -373,16 +370,6 @@ const Home = ({ state, actions }) => {
       if (ro) ro.disconnect();
     };
   }, [homeHotels.length, popularIsMobile, popularVisibleCount]);
-
-  useEffect(() => {
-    if (!popularIsMobile) return;
-    const el = popularViewportRef.current;
-    if (!el) return;
-    if (!popularItemWidth) return;
-    const left = Math.max(0, Math.min(popularIndex, popularMaxIndex)) * popularItemWidth;
-    popularProgrammaticScrollUntilRef.current = Date.now() + 500;
-    el.scrollTo({ left, behavior: 'smooth' });
-  }, [popularIndex, popularIsMobile, popularItemWidth, popularMaxIndex]);
 
   // Search Handler
   const handleSearch = async () => {
@@ -644,30 +631,14 @@ const Home = ({ state, actions }) => {
             >
               <div
                 ref={popularViewportRef}
-                className={popularIsMobile ? 'overflow-x-auto scroll-smooth snap-x snap-mandatory' : 'overflow-hidden'}
+                className="overflow-hidden"
                 onTouchStart={() => setPopularPaused(true)}
                 onTouchEnd={() => setPopularPaused(false)}
-                onScroll={() => {
-                  if (!popularIsMobile) return;
-                  if (!popularViewportRef.current) return;
-                  if (Date.now() < (popularProgrammaticScrollUntilRef.current || 0)) return;
-                  if (!popularItemWidth) return;
-                  if (popularRafRef.current) cancelAnimationFrame(popularRafRef.current);
-                  popularRafRef.current = requestAnimationFrame(() => {
-                    const el = popularViewportRef.current;
-                    if (!el) return;
-                    const next = Math.round(el.scrollLeft / popularItemWidth);
-                    const clamped = Math.max(0, Math.min(next, popularMaxIndex));
-                    setPopularIndex(clamped);
-                  });
-                }}
               >
                 <div
-                  className={popularIsMobile ? 'flex' : 'flex transition-transform duration-700 ease-in-out'}
+                  className="flex transition-transform duration-700 ease-in-out"
                   style={
-                    popularIsMobile
-                      ? undefined
-                      : popularItemWidth
+                    popularItemWidth
                       ? { transform: `translateX(-${popularIndex * popularItemWidth}px)` }
                       : { transform: `translateX(-${popularIndex * (100 / popularVisibleCount)}%)` }
                   }
@@ -675,7 +646,7 @@ const Home = ({ state, actions }) => {
                   {homeHotels.map((h) => (
                     <div
                       key={h.id}
-                      className={popularIsMobile ? 'flex-shrink-0 snap-start' : 'flex-shrink-0'}
+                      className="flex-shrink-0"
                       style={{
                         width: popularItemWidth ? `${popularItemWidth}px` : `${100 / popularVisibleCount}%`,
                         flex: '0 0 auto',
@@ -781,6 +752,22 @@ const Home = ({ state, actions }) => {
                   <button
                     type="button"
                     aria-label="Previous hotels"
+                    className="sm:hidden flex items-center justify-center absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white shadow border border-gray-200 text-gray-700 hover:text-[#ee2e24] hover:border-[#ee2e24] transition-colors"
+                    onClick={() => setPopularIndex((i) => (i <= 0 ? popularMaxIndex : i - 1))}
+                  >
+                    <FaChevronLeft />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Next hotels"
+                    className="sm:hidden flex items-center justify-center absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white shadow border border-gray-200 text-gray-700 hover:text-[#ee2e24] hover:border-[#ee2e24] transition-colors"
+                    onClick={() => setPopularIndex((i) => (i >= popularMaxIndex ? 0 : i + 1))}
+                  >
+                    <FaChevronRight />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Previous hotels"
                     className="hidden sm:flex items-center justify-center absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1/2 w-10 h-10 rounded-full bg-white shadow border border-gray-200 text-gray-700 hover:text-[#ee2e24] hover:border-[#ee2e24] transition-colors"
                     onClick={() => setPopularIndex((i) => (i <= 0 ? popularMaxIndex : i - 1))}
                   >
@@ -801,15 +788,7 @@ const Home = ({ state, actions }) => {
                         key={i}
                         type="button"
                         aria-label={`Go to slide ${i + 1}`}
-                        onClick={() => {
-                          if (popularIsMobile && popularViewportRef.current && popularItemWidth) {
-                            popularProgrammaticScrollUntilRef.current = Date.now() + 500;
-                            popularViewportRef.current.scrollTo({ left: i * popularItemWidth, behavior: 'smooth' });
-                            setPopularIndex(i);
-                            return;
-                          }
-                          setPopularIndex(i);
-                        }}
+                        onClick={() => setPopularIndex(i)}
                         className={`h-2.5 w-2.5 rounded-full transition-colors ${i === popularIndex ? 'bg-[#ee2e24]' : 'bg-gray-300'}`}
                       ></button>
                     ))}

@@ -15,6 +15,10 @@ module.exports = {
     const t = await sequelize.transaction();
     try {
       const { hotel_id, room_id, room_type, check_in, check_out, guests, rooms, payment_method, coupon_code } = req.body;
+      if (String(payment_method || '').trim().toUpperCase() === 'PAY_AT_HOTEL') {
+        await t.rollback();
+        return res.status(400).json({ message: 'Pay at Hotel is not available. Please use online payment.' });
+      }
       
       let price = 0;
       let vendor_id = 0;

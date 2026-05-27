@@ -185,7 +185,7 @@ const BookingConfirmationPage = () => {
               )}
 
               <div className="border-t pt-4 flex justify-between font-bold">
-                <span>{paymentMethod === 'PAY_AT_HOTEL' ? 'Total Payable Amount' : 'Total Amount Paid'}</span>
+                <span>Total Amount Paid</span>
                 <span className="text-[#ee2e24]">₹{Math.round(price)}</span>
               </div>
               
@@ -272,7 +272,7 @@ const BookingConfirmationPage = () => {
               <p className="text-sm text-gray-600 mb-3">Need help? Contact our support team</p>
               <button 
                 className="text-[#ee2e24] text-sm font-semibold hover:underline"
-                onClick={() => alert('Support: +91 1234567890 | support@hotel.com')}
+                onClick={() => alert('Support: +91 7057062000 | bookndstay@gmail.com')}
               >
                 Get Help →
               </button>

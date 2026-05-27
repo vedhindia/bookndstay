@@ -39,18 +39,11 @@ const Bookings = () => {
   const [total, setTotal] = useState(0);
   const [seenBookingIds, setSeenBookingIds] = useState(() => new Set());
   const [checkInLoading, setCheckInLoading] = useState(false);
-  const [paymentReceivedLoading, setPaymentReceivedLoading] = useState(false);
-  const [paymentReceivedMethod, setPaymentReceivedMethod] = useState('CASH');
-  const [paymentReceivedAmount, setPaymentReceivedAmount] = useState('');
   const [commissionSummary, setCommissionSummary] = useState({
     percent: 10,
-    payAtHotelGross: 0,
     onlineGross: 0,
     totalCommission: 0,
-    totalNet: 0,
-    settlementDueThisWeek: 0,
-    settlementWeekStart: null,
-    settlementWeekEnd: null
+    totalNet: 0
   });
 
   const formatDateIST = (dateString) => {
@@ -188,10 +181,6 @@ const Bookings = () => {
       if (raw) {
         const normalized = normalizeBookingFromApi(raw);
         setSelected(normalized);
-        const pm = String(raw?.payment_method || raw?.paymentMethod || '').toUpperCase();
-        setPaymentReceivedMethod(pm === 'PAY_AT_HOTEL' ? 'CASH' : 'ONLINE');
-        const amt = raw?.payment_received_amount ?? raw?.amount ?? '';
-        setPaymentReceivedAmount(amt === null || amt === undefined ? '' : String(amt));
       }
     } catch (e) {
       setError('Failed to load booking details.');
@@ -204,12 +193,6 @@ const Bookings = () => {
     if (!payload) return;
     const normalized = normalizeBookingFromApi(payload);
     setSelected(normalized);
-    const pm = String(payload?.payment_method || payload?.paymentMethod || normalized?.paymentMethod || '').toUpperCase();
-    if (pm) {
-      setPaymentReceivedMethod(pm === 'PAY_AT_HOTEL' ? 'CASH' : 'ONLINE');
-    }
-    const amt = payload?.payment_received_amount ?? payload?.amount ?? normalized?.price ?? '';
-    setPaymentReceivedAmount(amt === null || amt === undefined ? '' : String(amt));
   };
 
   const markCheckedIn = async () => {
@@ -231,32 +214,6 @@ const Bookings = () => {
       setError('Failed to record checked-in.');
     } finally {
       setCheckInLoading(false);
-    }
-  };
-
-  const markPaymentReceived = async () => {
-    if (!selected?.id) return;
-    setPaymentReceivedLoading(true);
-    setError('');
-    setSuccess('');
-    try {
-      const amt = paymentReceivedAmount === '' ? undefined : Number(paymentReceivedAmount);
-      const resp = await api.put(`/vendor/bookings/${selected.id}/payment-received`, {
-        payment_received_method: paymentReceivedMethod,
-        payment_received_amount: Number.isFinite(amt) ? amt : undefined
-      });
-      const raw = resp?.data?.data?.booking ?? resp?.data?.data ?? null;
-      if (raw) refreshSelectedFromApiPayload(raw);
-      setSuccess('Payment received recorded');
-      try {
-        await fetchCommissionSummary();
-      } catch {
-        void 0;
-      }
-    } catch (e) {
-      setError('Failed to record payment received.');
-    } finally {
-      setPaymentReceivedLoading(false);
     }
   };
 
@@ -326,19 +283,13 @@ const Bookings = () => {
     try {
       const resp = await api.get('/vendor/reports/commission-summary');
       const data = resp?.data?.data || {};
-      const pah = data.pay_at_hotel || {};
       const online = data.online || {};
       const totals = data.totals || {};
-      const settlement = data.settlement_due_this_week || {};
       setCommissionSummary({
         percent: Number(data.percent || 10),
-        payAtHotelGross: Number(pah.gross_amount || 0),
         onlineGross: Number(online.gross_amount || 0),
         totalCommission: Number(totals.commission_amount || 0),
-        totalNet: Number(totals.net_amount || 0),
-        settlementDueThisWeek: Number(settlement.pay_at_hotel_commission_due || 0),
-        settlementWeekStart: settlement.week_start || null,
-        settlementWeekEnd: settlement.week_end || null
+        totalNet: Number(totals.net_amount || 0)
       });
     } catch {
       void 0;
@@ -460,28 +411,7 @@ const Bookings = () => {
       </div>
 
       <div className="row g-3 mb-3">
-        <div className="col-md-3">
-          <div className="card border-0 shadow-sm h-100">
-            <div className="card-body text-center">
-              <div className="text-muted small">Pay at Hotel Amount (Checked-in + Payment Received)</div>
-              <div className="fs-4 fw-bold">₹{Number(commissionSummary.payAtHotelGross || 0).toLocaleString()}</div>
-            </div>
-          </div>
-        </div>
-        <div className="col-md-3">
-          <div className="card border-0 shadow-sm h-100">
-            <div className="card-body text-center">
-              <div className="text-muted small">Settlement Due (This Week)</div>
-              <div className="fs-4 fw-bold text-danger">₹{Number(commissionSummary.settlementDueThisWeek || 0).toLocaleString()}</div>
-              {commissionSummary.settlementWeekStart && commissionSummary.settlementWeekEnd ? (
-                <div className="text-muted small mt-1">
-                  {commissionSummary.settlementWeekStart} to {commissionSummary.settlementWeekEnd}
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </div>
-        <div className="col-md-3">
+        <div className="col-md-4">
           <div className="card border-0 shadow-sm h-100">
             <div className="card-body text-center">
               <div className="text-muted small">Online Booking Amount</div>
@@ -489,7 +419,7 @@ const Bookings = () => {
             </div>
           </div>
         </div>
-        <div className="col-md-3">
+        <div className="col-md-4">
           <div className="card border-0 shadow-sm h-100">
             <div className="card-body text-center">
               <div className="text-muted small">Total Admin Commission ({Number(commissionSummary.percent || 10)}%)</div>
@@ -497,7 +427,7 @@ const Bookings = () => {
             </div>
           </div>
         </div>
-        <div className="col-md-3">
+        <div className="col-md-4">
           <div className="card border-0 shadow-sm h-100">
             <div className="card-body text-center">
               <div className="text-muted small">Net Amount (After Commission)</div>
@@ -754,24 +684,18 @@ const Bookings = () => {
                     </div>
                     <div className="col-md-6">
                       <h6 className="text-muted text-uppercase small mb-2">Commission</h6>
-                      {String(selected.paymentMethod || '').toUpperCase() === 'PAY_AT_HOTEL' ? (
-                        <>
-                          <div className="mb-2">
-                            <span className="text-muted me-2">Commission %:</span>
-                            <span className="fw-semibold">{selected.commissionPercent ?? '-'}</span>
-                          </div>
-                          <div className="mb-2">
-                            <span className="text-muted me-2">Commission Amount:</span>
-                            <span className="fw-semibold">₹{selected.commissionAmount ?? '-'}</span>
-                          </div>
-                          <div>
-                            <span className="text-muted me-2">Payment Received Amount:</span>
-                            <span className="fw-semibold">₹{selected.paymentReceivedAmount ?? '-'}</span>
-                          </div>
-                        </>
-                      ) : (
-                        <div className="text-muted">Not applicable</div>
-                      )}
+                      <div className="mb-2">
+                        <span className="text-muted me-2">Commission %:</span>
+                        <span className="fw-semibold">{selected.commissionPercent ?? '-'}</span>
+                      </div>
+                      <div className="mb-2">
+                        <span className="text-muted me-2">Commission Amount:</span>
+                        <span className="fw-semibold">₹{selected.commissionAmount ?? '-'}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted me-2">Payment Received Amount:</span>
+                        <span className="fw-semibold">₹{selected.paymentReceivedAmount ?? '-'}</span>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -792,38 +716,6 @@ const Bookings = () => {
                     >
                       {selected.checkedInAt ? 'Checked-in' : checkInLoading ? 'Saving...' : 'Mark Checked-in'}
                     </button>
-
-                    <div className="d-flex flex-wrap gap-2 align-items-center">
-                      <select
-                        className="form-select"
-                        style={{ width: 'auto' }}
-                        value={paymentReceivedMethod}
-                        onChange={(e) => setPaymentReceivedMethod(e.target.value)}
-                        disabled={detailLoading || paymentReceivedLoading || !!selected.paymentReceivedAt}
-                      >
-                        <option value="CASH">Cash</option>
-                        <option value="UPI">UPI</option>
-                        <option value="CARD">Card</option>
-                        <option value="ONLINE">Online</option>
-                      </select>
-                      <input
-                        type="number"
-                        className="form-control"
-                        style={{ width: '160px' }}
-                        value={paymentReceivedAmount}
-                        onChange={(e) => setPaymentReceivedAmount(e.target.value)}
-                        disabled={detailLoading || paymentReceivedLoading || !!selected.paymentReceivedAt}
-                        placeholder="Amount"
-                      />
-                      <button
-                        type="button"
-                        className="btn btn-primary"
-                        onClick={markPaymentReceived}
-                        disabled={detailLoading || paymentReceivedLoading || !!selected.paymentReceivedAt}
-                      >
-                        {selected.paymentReceivedAt ? 'Payment Received' : paymentReceivedLoading ? 'Saving...' : 'Mark Payment Received'}
-                      </button>
-                    </div>
                   </div>
 
                   <button type="button" className="btn btn-secondary" onClick={() => setSelected(null)}>Close</button>

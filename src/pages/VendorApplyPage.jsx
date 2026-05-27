@@ -253,7 +253,7 @@ export default function VendorApplyPage() {
           <div className="border border-gray-200 rounded-md p-3 bg-gray-50">
             <div className="text-sm font-semibold text-gray-800 mb-2">Terms &amp; Conditions</div>
             <ul className="text-sm text-gray-700 list-disc pl-5 space-y-1">
-              <li>Admin gets 10% commission on each booking (Online or Pay at Hotel).</li>
+              <li>Admin gets 10% commission on each booking (Online).</li>
               <li>Admin can approve or reject the hotel at any time if any problems occur.</li>
             </ul>
             <label className="flex items-start gap-2 mt-3 text-sm text-gray-800 select-none">

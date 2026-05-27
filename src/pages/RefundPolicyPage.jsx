@@ -139,15 +139,7 @@ export default function RefundPolicyPage() {
         </section>
 
         <section className="space-y-3">
-          <h2 className="text-xl font-semibold text-gray-900">7. Pay at Hotel Bookings</h2>
-          <p className="text-gray-700 text-sm sm:text-base">
-            For bookings made using the “Pay at Hotel” option: No online payment refund will be processed
-            because no online transaction was made. Cancellation policies may still apply as per hotel/property rules.
-          </p>
-        </section>
-
-        <section className="space-y-3">
-          <h2 className="text-xl font-semibold text-gray-900">8. Failed or Pending Refunds</h2>
+          <h2 className="text-xl font-semibold text-gray-900">7. Failed or Pending Refunds</h2>
           <p className="text-gray-700 text-sm sm:text-base">
             In rare situations, refunds may remain pending due to:
           </p>
@@ -162,7 +154,7 @@ export default function RefundPolicyPage() {
         </section>
 
         <section className="space-y-3">
-          <h2 className="text-xl font-semibold text-gray-900">9. Booking Status After Cancellation</h2>
+          <h2 className="text-xl font-semibold text-gray-900">8. Booking Status After Cancellation</h2>
           <p className="text-gray-700 text-sm sm:text-base">
             Once cancellation is successful:
           </p>
@@ -173,7 +165,7 @@ export default function RefundPolicyPage() {
         </section>
 
         <section className="space-y-3">
-          <h2 className="text-xl font-semibold text-gray-900">10. Contact Support</h2>
+          <h2 className="text-xl font-semibold text-gray-900">9. Contact Support</h2>
           <p className="text-gray-700 text-sm sm:text-base">
             For refund-related queries or delays, users may contact customer support through the website
             contact page or support email.
