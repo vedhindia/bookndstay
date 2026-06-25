@@ -133,14 +133,6 @@ const AdminLogin = () => {
     try {
       if (isSignUp) {
         // Admin Registration
-        console.log("Attempting admin registration...");
-        console.log("API URL:", `${API_BASE_URL}${AUTH_ENDPOINTS.REGISTER}`);
-        console.log("Registration data:", {
-          full_name: formData.full_name,
-          email: formData.email,
-          phone: formData.phone
-        });
-
         const registrationData = {
           full_name: formData.full_name.trim(),
           email: formData.email.trim().toLowerCase(),
@@ -161,12 +153,9 @@ const AdminLogin = () => {
             timeout: 10000 // 10 seconds timeout
           }
         );
-
-        console.log("Registration response:", response.data);
         
         if (response.data && response.data.message) {
           const { message, admin, token } = response.data; // Changed from 'user' to 'admin'
-          console.log("Admin registration successful:", message);
           
           if (token && admin) {
             // Store token and admin info immediately after registration
@@ -192,10 +181,6 @@ const AdminLogin = () => {
         }
       } else {
         // Admin Login
-        console.log("Attempting admin login...");
-        console.log("API URL:", `${API_BASE_URL}${AUTH_ENDPOINTS.LOGIN}`);
-        console.log("Login data:", { email: formData.email });
-
         const loginData = {
           email: formData.email.trim().toLowerCase(),
           password: formData.password
@@ -215,8 +200,6 @@ const AdminLogin = () => {
           }
         );
 
-        console.log("Login response:", response.data);
-
         if (response.data && response.status === 200) {
           const { token, admin, message } = response.data; // Changed from 'user' to 'admin'
 
@@ -224,12 +207,8 @@ const AdminLogin = () => {
             throw new Error("Invalid response format from server");
           }
 
-          console.log("Login successful:", message);
-          console.log("Admin data:", admin);
-
           // Verify admin role
           const role = (admin.role || '').toUpperCase();
-          console.log("Admin role:", role);
           
           if (role !== 'ADMIN' && role !== 'SUPER_ADMIN') {
             setErrors({
@@ -245,8 +224,6 @@ const AdminLogin = () => {
           // Set axios default header for future requests
           axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
 
-          console.log("Redirecting to dashboard...");
-
           // Add a small delay to ensure state is properly set
           setTimeout(() => {
             navigate("/dashboard", { replace: true });
@@ -254,19 +231,6 @@ const AdminLogin = () => {
         }
       }
     } catch (error) {
-      console.error(`Admin ${isSignUp ? 'registration' : 'login'} failed:`, error);
-      
-      // Log detailed error information
-      if (error.response) {
-        console.error('Response data:', error.response.data);
-        console.error('Response status:', error.response.status);
-        console.error('Response headers:', error.response.headers);
-      } else if (error.request) {
-        console.error('No response received:', error.request);
-      } else {
-        console.error('Error message:', error.message);
-      }
-      
       let errorMessage = `${isSignUp ? 'Registration' : 'Login'} failed. Please try again.`;
       
       if (error.response) {

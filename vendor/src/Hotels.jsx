@@ -628,6 +628,7 @@ const Hotels = () => {
 
       const postResp = await api.post(`/vendor/hotels/${imagesHotel.id}/images`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 300000,
       });
 
       const postPayload = postResp?.data;

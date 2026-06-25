@@ -99,8 +99,6 @@ export default function BookingHistoryPage() {
         params.set('page', '1');
         params.set('limit', '100');
 
-        console.log('Fetching from:', `${apiUserBase}/bookings?${params.toString()}`);
-
         let response = await fetch(`${apiUserBase}/bookings?${params.toString()}`, {
           method: 'GET',
           headers: {
@@ -111,7 +109,6 @@ export default function BookingHistoryPage() {
 
         // Fallback: retry without pagination params if initial request fails with 400
         if (!response.ok && response.status === 400) {
-          console.warn('Pagination fetch failed, retrying without params');
           response = await fetch(`${apiUserBase}/bookings`, {
             method: 'GET',
             headers: {
@@ -158,13 +155,9 @@ export default function BookingHistoryPage() {
                     hotelImagesMap[hid] = hotel;
                   }
                 }
-              } catch (e) {
-                console.warn(`Failed to fetch image for hotel ${hid}`, e);
-              }
+              } catch {}
             }));
-          } catch (e) {
-             console.warn('Error fetching hotel images', e);
-          }
+          } catch {}
         }
 
         // Transform API data to component format
@@ -194,7 +187,6 @@ export default function BookingHistoryPage() {
 
         setAllBookings(transformedBookings);
       } catch (err) {
-        console.error('Error fetching bookings:', err);
         if (err.message === 'Session expired' || err.message.includes('401')) {
            setError('Your session has expired. Please login again.');
            setTimeout(() => navigate('/login'), 2000);
@@ -409,7 +401,6 @@ export default function BookingHistoryPage() {
                 if (booking.hotelId) {
                   navigate(`/roomDetails?id=${booking.hotelId}`);
                 } else {
-                  console.warn('Hotel ID missing', booking);
                   alert('Hotel details not available');
                 }
               }}
@@ -466,9 +457,7 @@ export default function BookingHistoryPage() {
                         e.stopPropagation();
                         try { 
                           sessionStorage.setItem('selectedBooking', JSON.stringify(booking)); 
-                        } catch (e) {
-                          console.error('Failed to save booking:', e);
-                        }
+                        } catch {}
                         navigate('/viewBooking');
                       }}
                     >
@@ -480,14 +469,12 @@ export default function BookingHistoryPage() {
                         onClick={(e) => {
                           e.stopPropagation();
                           try {
-                      sessionStorage.setItem('selectedBooking', JSON.stringify(booking));
-                    } catch (e) {
-                      console.error('Failed to save booking:', e);
-                    }
-                    navigate(`/invoice?id=${booking.id}`);
-                  }}
-                >
-                  View Invoice
+                            sessionStorage.setItem('selectedBooking', JSON.stringify(booking));
+                          } catch {}
+                          navigate(`/invoice?id=${booking.id}`);
+                        }}
+                      >
+                        View Invoice
                       </button>
                     )}
                     {booking.status === 'completed' && (
@@ -497,9 +484,7 @@ export default function BookingHistoryPage() {
                           e.stopPropagation();
                           try { 
                             sessionStorage.setItem('selectedBooking', JSON.stringify(booking)); 
-                          } catch (e) {
-                            console.error('Failed to save booking:', e);
-                          }
+                        } catch {}
                           navigate('/writeReview');
                         }}
                       >

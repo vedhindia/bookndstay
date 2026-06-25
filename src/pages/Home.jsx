@@ -84,7 +84,7 @@ const Home = ({ state, actions }) => {
           }
         }
       } catch (e) {
-        console.warn('Failed to fetch coupons', e);
+        void e;
       }
     };
     fetchCoupons();
@@ -214,7 +214,6 @@ const Home = ({ state, actions }) => {
         
         if (active && res.ok) {
           const data = await res.json();
-          console.log('Home: fetch response', data);
           const list = Array.isArray(data?.data?.hotels)
             ? data.data.hotels
             : Array.isArray(data?.hotels)
@@ -225,7 +224,6 @@ const Home = ({ state, actions }) => {
             
           allHotels = list;
         } else if (active) {
-            console.error('Home: fetch failed', res.status, res.statusText);
             setHomeError(`Fetch failed: ${res.status} ${res.statusText}`);
         }
         

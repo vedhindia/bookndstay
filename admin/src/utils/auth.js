@@ -22,8 +22,7 @@ export const getSession = () => {
     
     const user = normalizeUser(JSON.parse(userStr));
     return { token, user };
-  } catch (error) {
-    console.error('Error getting session:', error);
+  } catch {
     return null;
   }
 };
@@ -41,8 +40,7 @@ export const saveSession = (token, user) => {
     localStorage.setItem(SESSION_KEYS.TOKEN, token);
     localStorage.setItem(SESSION_KEYS.USER, JSON.stringify(normalized));
     return true;
-  } catch (error) {
-    console.error('Error saving session:', error);
+  } catch {
     return false;
   }
 };
@@ -55,8 +53,7 @@ export const clearSession = () => {
     localStorage.removeItem(SESSION_KEYS.ADMIN_TOKEN);
     localStorage.removeItem(SESSION_KEYS.ADMIN_USER);
     return true;
-  } catch (error) {
-    console.error('Error clearing session:', error);
+  } catch {
     return false;
   }
 };
@@ -83,8 +80,7 @@ export const logoutVendor = () => {
       sessionStorage.clear();
     }
     return true;
-  } catch (error) {
-    console.error('Error during logout:', error);
+  } catch {
     return false;
   }
 };
@@ -107,10 +103,7 @@ export const setupAxiosInterceptor = (axiosInstance) => {
       }
       return config;
     },
-    (error) => {
-      console.error('Request interceptor error:', error);
-      return Promise.reject(error);
-    }
+    (error) => Promise.reject(error)
   );
 
   // Response interceptor
@@ -120,7 +113,6 @@ export const setupAxiosInterceptor = (axiosInstance) => {
       // Handle authentication errors
       // Skip redirect if this was an auth request (skipAuth is true)
       if ((error.response?.status === 401 || error.response?.status === 403) && !error.config?.skipAuth && !error.config?.headers?.['X-Skip-Auth']) {
-        console.log('Authentication error - clearing session');
         clearSession();
         if (axiosInstance.defaults?.headers?.common) {
           delete axiosInstance.defaults.headers.common['Authorization'];
@@ -153,8 +145,7 @@ export const validateSession = async (axiosInstance) => {
     // const response = await axiosInstance.get('/auth/validate');
     // return response.status === 200;
     return true;
-  } catch (error) {
-    console.error('Session validation failed:', error);
+  } catch {
     clearSession();
     return false;
   }

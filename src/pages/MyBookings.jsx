@@ -79,8 +79,6 @@ export default function MyBookings() {
           params.set('status', statusFilter.toUpperCase());
         }
 
-        console.log('Fetching from:', `${apiUserBase}/bookings?${params.toString()}`);
-
         let response = await fetch(`${apiUserBase}/bookings?${params.toString()}`, {
           method: 'GET',
           headers: {
@@ -91,7 +89,6 @@ export default function MyBookings() {
 
         // Fallback: retry without pagination params if initial request fails with 400
         if (!response.ok && response.status === 400) {
-           console.warn('Pagination fetch failed, retrying without params');
            response = await fetch(`${apiUserBase}/bookings`, {
               method: 'GET',
               headers: {
@@ -144,13 +141,9 @@ export default function MyBookings() {
                     hotelImagesMap[hid] = hotel;
                   }
                 }
-              } catch (e) {
-                console.warn(`Failed to fetch image for hotel ${hid}`, e);
-              }
+              } catch {}
             }));
-          } catch (e) {
-             console.warn('Error fetching hotel images', e);
-          }
+          } catch {}
         }
 
         // Transform API data to component format
@@ -184,7 +177,6 @@ export default function MyBookings() {
 
         setBookings(transformedBookings);
       } catch (err) {
-        console.error('Error fetching bookings:', err);
         setError(err.message || 'Failed to load bookings');
       } finally {
         setLoading(false);
@@ -410,7 +402,6 @@ export default function MyBookings() {
         if (booking.hotelId) {
           navigate(`/roomDetails?id=${booking.hotelId}`);
         } else {
-          console.warn('Hotel ID missing', booking);
           alert('Hotel details not available');
         }
       }}
@@ -464,9 +455,7 @@ export default function MyBookings() {
                 e.stopPropagation();
                 try {
                   sessionStorage.setItem('selectedBooking', JSON.stringify(booking));
-                } catch (e) {
-                  console.error('Failed to save booking:', e);
-                }
+                } catch {}
                 navigate('/viewBooking');
               }}
             >
@@ -495,9 +484,7 @@ export default function MyBookings() {
                   try {
                     sessionStorage.setItem('paymentIntent', JSON.stringify(paymentIntent));
                     sessionStorage.setItem('selectedBooking', JSON.stringify(paymentIntent));
-                  } catch (e) {
-                    console.error('Failed to save payment intent:', e);
-                  }
+                  } catch {}
                   navigate('/payment');
                 }}
               >
@@ -528,9 +515,7 @@ export default function MyBookings() {
                   e.stopPropagation();
                   try {
                     sessionStorage.setItem('selectedBooking', JSON.stringify(booking));
-                  } catch (e) {
-                    console.error('Failed to save booking:', e);
-                  }
+                  } catch {}
                   navigate('/writeReview');
                 }}
               >

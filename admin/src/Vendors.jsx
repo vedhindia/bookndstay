@@ -160,7 +160,6 @@ const Vendors = () => {
       setTotal(Number(computedTotal));
 
     } catch (err) {
-      console.error('Fetch vendors failed:', err);
       const errorMsg = err?.response?.data?.message || err?.message || 'Failed to fetch vendors';
       
       if (err?.response?.status === 401 || err?.response?.status === 403) {
@@ -219,7 +218,6 @@ const Vendors = () => {
       const computedTotal = raw?.total ?? raw?.pagination?.totalItems ?? raw?.pagination?.total ?? raw?.count ?? normalized.length;
       setAppTotal(Number(computedTotal));
     } catch (err) {
-      console.error('Fetch vendor applications failed:', err);
       const errorMsg = err?.response?.data?.message || err?.message || 'Failed to fetch vendor applications';
       if (err?.response?.status === 401 || err?.response?.status === 403) {
         localStorage.removeItem('adminToken');
@@ -386,8 +384,7 @@ const Vendors = () => {
       
       setVendorHotels(Array.isArray(hotels) ? hotels : []);
       setHotelsTotalPages(pagination.totalPages || 1);
-    } catch (err) {
-      console.error('Failed to fetch vendor hotels:', err);
+    } catch {
       setError('Failed to fetch vendor hotels');
     } finally {
       setLoadingHotels(false);
@@ -400,12 +397,8 @@ const Vendors = () => {
     if (!vendorId) throw new Error('Vendor ID is required for activation.');
     
     try {
-      console.log('Activating vendor with ID:', vendorId);
-      const res = await adminVendors.activate(vendorId);
-      console.log('Activate vendor response:', res);
-      return res;
+      return await adminVendors.activate(vendorId);
     } catch (error) {
-      console.error('Activate vendor error:', error);
       if (error?.response?.status === 404) {
         throw new Error('Vendor not found. It may have been deleted.');
       } else if (error?.response?.status === 403) {
@@ -422,12 +415,8 @@ const Vendors = () => {
     if (!vendorId) throw new Error('Vendor ID is required for deactivation.');
     
     try {
-      console.log('Deactivating vendor with ID:', vendorId);
-      const res = await adminVendors.deactivate(vendorId);
-      console.log('Deactivate vendor response:', res);
-      return res;
+      return await adminVendors.deactivate(vendorId);
     } catch (error) {
-      console.error('Deactivate vendor error:', error);
       if (error?.response?.status === 404) {
         throw new Error('Vendor not found. It may have been deleted.');
       } else if (error?.response?.status === 403) {
@@ -503,8 +492,6 @@ const Vendors = () => {
       }, 1000);
       
     } catch (error) {
-      console.error(`${action} vendor failed:`, error);
-      
       let errorMsg = `Failed to ${action} vendor`;
       
       if (error?.response?.status === 401) {
@@ -586,7 +573,6 @@ const Vendors = () => {
       fetchApplications();
       fetchVendors();
     } catch (err) {
-      console.error('Approve application failed:', err);
       const errorMsg = err?.response?.data?.message || err?.message || 'Failed to approve application';
       setError(errorMsg);
     } finally {
@@ -606,7 +592,6 @@ const Vendors = () => {
       setSuccess(`Application rejected for ${application.email}`);
       fetchApplications();
     } catch (err) {
-      console.error('Reject application failed:', err);
       const errorMsg = err?.response?.data?.message || err?.message || 'Failed to reject application';
       setError(errorMsg);
     } finally {

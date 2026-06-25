@@ -7,7 +7,6 @@ const VendorLoginPage = () => {
   const handleLogin = (e) => {
     e.preventDefault();
     // Handle vendor login logic here
-    console.log('Vendor Login:', { email, password });
   };
 
   return (

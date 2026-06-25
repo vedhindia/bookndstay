@@ -49,7 +49,6 @@ function DashboardHome() {
       setLoading(true);
       setError('');
       try {
-        console.log('Fetching dashboard data...');
         // Fetch counts from respective APIs to ensure accuracy
         const [statsRes, hotelsRes, bookingsRes, usersRes] = await Promise.all([
           adminDashboard.stats().catch(err => ({ error: err.message || 'Stats failed' })),
@@ -166,8 +165,6 @@ function DashboardHome() {
                 }
             }
         }
-
-        console.log('Calculated Totals:', { realTotalHotels, realTotalBookings, realActiveUsers });
 
         setStats(prev => ({
           totalBookings: Number(realTotalBookings ?? prev.totalBookings),

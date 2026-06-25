@@ -319,7 +319,6 @@ const SearchHotel = ({ state, actions }) => {
         setNearMeLoading(false);
       },
       (err) => {
-        console.error('Geolocation error:', err);
         if (err.code === 1) {
           setError('Location permission denied. Please allow access to use Near me.');
         } else if (err.code === 2) {
@@ -445,8 +444,6 @@ const SearchHotel = ({ state, actions }) => {
   const totalPages = Math.ceil(totalItems / limit) || 1;
   const startIndex = (page - 1) * limit;
   const paginatedHotels = sortedHotels.slice(startIndex, startIndex + limit);
-
-  console.log('SearchHotel Render (v2):', { hotels: hotels.length, loading, error, page, totalPages });
 
   return (
     <div className="bg-light min-h-screen flex flex-col">

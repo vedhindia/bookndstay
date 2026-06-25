@@ -415,7 +415,7 @@ const Sidebar = ({ isCollapsed, onClose }) => {
         </div>
       </div>
 
-      <style jsx>{`
+      <style>{`
         /* Base Sidebar Styles */
 
         .sidebar {

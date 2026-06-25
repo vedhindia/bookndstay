@@ -66,21 +66,13 @@ const MyInfo = () => {
     setError('');
     
     try {
-      console.log('Fetching vendor profile for ID:', currentUser.id);
-      console.log('Using endpoint: /api/admin/vendors/' + currentUser.id);
-      
       // Use the vendor profile endpoint
       const response = await api.get('/vendor/profile');
-      
-      console.log('API Response:', response);
-      console.log('Response data:', response.data);
-      
+
       // Extract vendor data from response
       // The response structure is: { success: true, message: "...", data: { vendor: {...} } }
       const vendorData = response.data?.data?.vendor || response.data?.vendor || response.data?.data || response.data;
-      
-      console.log('Extracted vendor data:', vendorData);
-      
+
       if (!vendorData || !vendorData.id) {
         throw new Error('Invalid vendor data received from server');
       }
@@ -99,8 +91,6 @@ const MyInfo = () => {
         hotels_count: vendorData.hotelsCount || vendorData.hotels_count || 0
       };
 
-      console.log('Normalized vendor data:', normalizedVendor);
-
       setVendor(normalizedVendor);
       setFormData({
         full_name: normalizedVendor.full_name,
@@ -114,9 +104,6 @@ const MyInfo = () => {
       
       setError('');
     } catch (err) {
-      console.error('Fetch vendor failed:', err);
-      console.error('Error response:', err?.response);
-      
       // Handle different error types
       if (err?.response?.status === 500) {
         setError('Server error occurred. The backend API is not responding correctly. Please contact support or try again later.');
@@ -133,7 +120,7 @@ const MyInfo = () => {
         // Don't redirect immediately for 403, give user time to read the message
         setTimeout(() => {
           // Optionally redirect after showing message
-          console.error('403 Forbidden - Check backend middleware configuration');
+          void 0;
         }, 5000);
       } else if (err?.response?.status === 404) {
         setError('Vendor profile not found. This vendor ID may not exist in the database, or the endpoint route is not properly configured.');
@@ -218,18 +205,11 @@ const MyInfo = () => {
         business_address: formData.business_address.trim(),
       };
 
-      console.log('Update payload:', updatePayload);
-      console.log('Updating vendor via: PUT /api/vendor/profile');
-
       // Use the vendor profile endpoint
       const response = await api.put('/vendor/profile', updatePayload);
-      
-      console.log('Update response:', response);
-      
+
       // Extract updated vendor data
       const updatedVendor = response.data?.data?.vendor || response.data?.vendor || response.data?.data || response.data;
-      
-      console.log('Updated vendor data:', updatedVendor);
 
       // Check if update was successful
       if (updatedVendor || response?.status === 200 || response?.status === 204) {
@@ -244,9 +224,7 @@ const MyInfo = () => {
           status: updatedVendor?.status || formData.status,
           updated_at: updatedVendor?.updatedAt || updatedVendor?.updated_at || new Date().toISOString()
         };
-        
-        console.log('New vendor data after update:', newVendorData);
-        
+
         setVendor(newVendorData);
         
         // Update session with new data
@@ -261,7 +239,6 @@ const MyInfo = () => {
             business_address: newVendorData.business_address,
           };
           saveSession(session.token, updatedUser);
-          console.log('Session updated with new user data');
         }
         
         setSuccess('Profile updated successfully!');
@@ -276,14 +253,6 @@ const MyInfo = () => {
         throw new Error('Update failed - no valid response received');
       }
     } catch (err) {
-      console.error('Update failed:', err);
-      console.error('Error details:', {
-        status: err?.response?.status,
-        statusText: err?.response?.statusText,
-        data: err?.response?.data,
-        message: err?.message
-      });
-      
       let errorMsg = 'Failed to update profile';
       
       if (err?.response?.status === 401) {

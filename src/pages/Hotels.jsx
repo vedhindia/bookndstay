@@ -300,8 +300,7 @@ const Hotels = ({ state, actions }) => {
               } else {
                 hasMore = false;
               }
-            } catch (e) {
-              console.error('Public API fetch error:', e);
+            } catch {
               hasMore = false;
             }
             // Safety break
@@ -357,8 +356,7 @@ const Hotels = ({ state, actions }) => {
               } else {
                 hasMore = false;
               }
-            } catch (e) {
-              console.error('User API fetch error:', e);
+            } catch {
               hasMore = false;
             }
             if (page > 20) hasMore = false;
@@ -464,15 +462,6 @@ const Hotels = ({ state, actions }) => {
               // Priority: API fields > properties
               const v = item.bookingsToday ?? item.bookings_today ?? item.bookingsCount ?? item.todayBookings;
               const n = typeof v === 'string' ? parseInt(v) : v;
-              // Debugging log (check browser console)
-              if (item.name === 'Blue Lagoon Resort') {
-                console.log('Blue Lagoon Data:', { 
-                  bookingsToday: item.bookingsToday, 
-                  reviewCount: item.reviewCount, 
-                  reviews: item.reviews,
-                  n
-                });
-              }
               return n && n > 0 ? `${n} people booked this hotel today` : null;
             })(),
             familyFriendly: Boolean(item.familyFriendly ?? (features.length ? hasFeature('family') : false)),
@@ -513,7 +502,6 @@ const Hotels = ({ state, actions }) => {
         }
         
       } catch (e) {
-        console.error('Error fetching hotels:', e);
         if (!active) return;
         setError(e?.message || 'Failed to load hotels');
       } finally {

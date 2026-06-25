@@ -202,15 +202,17 @@ const DashboardHome = () => {
               <h6 className="mb-0">Revenue (Weekly)</h6>
             </div>
             <div className="card-body">
-              <Line
-                data={revenueSparkline}
-                options={{
-                  responsive: true,
-                  plugins: { legend: { display: false } },
-                  scales: { y: { beginAtZero: true } }
-                }}
-                height={120}
-              />
+              <div style={{ position: 'relative', height: 260 }}>
+                <Line
+                  data={revenueSparkline}
+                  options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true } }
+                  }}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -221,11 +223,16 @@ const DashboardHome = () => {
               <h6 className="mb-0">Bookings Breakdown</h6>
             </div>
             <div className="card-body d-flex align-items-center justify-content-center">
-              <Pie
-                data={bookingsPie}
-                options={{ responsive: true, plugins: { legend: { position: 'bottom' } } }}
-                height={180}
-              />
+              <div style={{ position: 'relative', height: 260, width: '100%' }}>
+                <Pie
+                  data={bookingsPie}
+                  options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'bottom' } }
+                  }}
+                />
+              </div>
             </div>
           </div>
         </div>

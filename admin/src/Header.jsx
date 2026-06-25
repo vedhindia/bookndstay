@@ -23,19 +23,16 @@ const Header = ({ toggleSidebar, isSidebarCollapsed, toggleMobileSidebar, isMobi
 
   const handleLogout = async () => {
     if (isLoggingOut) {
-      console.log('[Header] Logout already in progress');
       return;
     }
 
-    console.log('[Header] Starting logout process');
     setIsLoggingOut(true);
 
     try {
       const token = localStorage.getItem('adminToken');
       
       if (token) {
-        console.log('[Header] Calling logout API');
-        const response = await axios.post(
+        await axios.post(
           `${API_BASE_URL}${AUTH_ENDPOINTS.LOGOUT}`,
           {},
           {
@@ -46,18 +43,13 @@ const Header = ({ toggleSidebar, isSidebarCollapsed, toggleMobileSidebar, isMobi
             timeout: 10000,
           }
         );
-        console.log('[Header] Logout API response:', response.data);
-      } else {
-        console.log('[Header] No token found, skipping API call');
       }
-    } catch (error) {
-      console.error('[Header] Logout API error:', error);
+    } catch {
       // Continue with logout even if API fails
     }
 
     // Clear all storage and state
     try {
-      console.log('[Header] Clearing local storage and session');
       localStorage.removeItem('adminToken');
       localStorage.removeItem('adminUser');
       localStorage.removeItem('refreshToken');
@@ -71,14 +63,11 @@ const Header = ({ toggleSidebar, isSidebarCollapsed, toggleMobileSidebar, isMobi
       // Reset state
       setAdminUser(null);
       setIsProfileOpen(false);
-      
-      console.log('[Header] Storage cleared successfully');
-    } catch (storageError) {
-      console.error('[Header] Error clearing storage:', storageError);
+    } catch {
+      void 0;
     }
 
     // Redirect to login page
-    console.log('[Header] Redirecting to login page');
     setIsLoggingOut(false);
     
     // Use navigate instead of window.location.replace for better React Router integration
@@ -106,10 +95,9 @@ const Header = ({ toggleSidebar, isSidebarCollapsed, toggleMobileSidebar, isMobi
       if (userStr) {
         const user = JSON.parse(userStr);
         setAdminUser(user);
-        console.log('[Header] Admin user loaded:', user);
       }
-    } catch (error) {
-      console.error('[Header] Error loading admin user:', error);
+    } catch {
+      void 0;
     }
   }, []);
 
@@ -157,7 +145,6 @@ const Header = ({ toggleSidebar, isSidebarCollapsed, toggleMobileSidebar, isMobi
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log('[Header] Profile dropdown toggle clicked');
                 setIsProfileOpen(!isProfileOpen);
               }}
               aria-expanded={isProfileOpen}
@@ -207,7 +194,6 @@ const Header = ({ toggleSidebar, isSidebarCollapsed, toggleMobileSidebar, isMobi
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    console.log('[Header] Logout button clicked');
                     handleLogout();
                   }}
                   disabled={isLoggingOut}

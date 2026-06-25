@@ -60,8 +60,6 @@ const Coupons = () => {
           limit: pageSize
         }
       });
-
-      console.log('API Response:', response?.data);
       
       const res = response?.data;
       
@@ -96,8 +94,6 @@ const Coupons = () => {
         }
       }
 
-      console.log('Extracted coupon list:', couponList);
-
       // Normalize all coupons
       const normalized = couponList.map(normalizeCoupon);
       setItems(normalized);
@@ -113,13 +109,7 @@ const Coupons = () => {
       
       setTotal(Number(computedTotal));
 
-      console.log('Normalized coupons:', normalized);
-      console.log('Total:', computedTotal);
-
     } catch (err) {
-      console.error('Failed to load coupons:', err);
-      console.error('Error response:', err?.response);
-      
       const errorMsg = err?.response?.data?.message || 
                        (typeof err?.response?.data?.data === 'string' ? err?.response?.data?.data : 
                        err?.message || 'Failed to load coupons from server');
@@ -248,16 +238,12 @@ const Coupons = () => {
         active: Number(form.active)
       };
 
-      console.log('Saving coupon with payload:', payload);
-
       let response;
       
       if (form.id) {
         // Update existing coupon - PUT /api/admin/coupons/{couponId}
         response = await api.put(`/admin/coupons/${form.id}`, payload);
-        
-        console.log('Update response:', response?.data);
-        
+
         // Handle response format
         const successMsg = response?.data?.message || 
                           (typeof response?.data?.data === 'string' ? response?.data?.data : 'Coupon updated successfully');
@@ -265,9 +251,7 @@ const Coupons = () => {
       } else {
         // Create new coupon - POST /api/admin/coupons
         response = await api.post('/admin/coupons', payload);
-        
-        console.log('Create response:', response?.data);
-        
+
         // Handle response format
         const successMsg = response?.data?.message || 
                           (typeof response?.data?.data === 'string' ? response?.data?.data : 'Coupon created successfully');
@@ -290,9 +274,6 @@ const Coupons = () => {
       }, 3000);
       
     } catch (err) {
-      console.error('Failed to save coupon:', err);
-      console.error('Error response:', err?.response);
-      
       const errorMsg = err?.response?.data?.message || 
                        (typeof err?.response?.data?.data === 'string' ? err?.response?.data?.data : 
                        err?.response?.data?.error || err?.message || 'Failed to save coupon');
@@ -314,9 +295,7 @@ const Coupons = () => {
     
     try {
       const response = await api.delete(`/admin/coupons/${coupon.id}`);
-      
-      console.log('Delete response:', response?.data);
-      
+
       // Handle response format
       const successMsg = response?.data?.message || 
                         (typeof response?.data?.data === 'string' ? response?.data?.data : `Coupon "${coupon.code}" deleted successfully`);
@@ -335,9 +314,6 @@ const Coupons = () => {
       }, 3000);
       
     } catch (err) {
-      console.error('Failed to delete coupon:', err);
-      console.error('Error response:', err?.response);
-      
       const errorMsg = err?.response?.data?.message || 
                        (typeof err?.response?.data?.data === 'string' ? err?.response?.data?.data : 
                        err?.response?.data?.error || err?.message || 'Failed to delete coupon');
