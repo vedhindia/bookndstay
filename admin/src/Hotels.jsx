@@ -28,6 +28,7 @@ const Hotels = ({ vendorId }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [availabilityError, setAvailabilityError] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
@@ -130,7 +131,7 @@ const Hotels = ({ vendorId }) => {
         total_rooms: h.total_rooms || h.totalRooms || 0,
         rating: h.rating || h.averageRating || 0,
         address: h.address || "",
-        amenities: h.amenities ? JSON.parse(h.amenities) : [],
+        amenities: asArray(h.amenities, []),
         vendorDetails: h.vendor || {},
         // Preserve other raw data if needed
         email: h.email || "",
@@ -165,9 +166,30 @@ const Hotels = ({ vendorId }) => {
 
   const filtered = items;
 
+  const asArray = (value, fallback = []) => {
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed : fallback;
+      } catch {
+        return fallback;
+      }
+    }
+    return fallback;
+  };
+
+  const asImagesArray = (value, fallback = []) => {
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string') return asArray(value, fallback);
+    if (value && typeof value === 'object' && Array.isArray(value.images)) return value.images;
+    return fallback;
+  };
+
   const handleViewDetails = async (hotel) => {
     setSelected(hotel);
     setLoadingDetails(true);
+    setAvailabilityError("");
     try {
       const from = new Date().toISOString().slice(0, 10);
       const toDate = new Date();
@@ -191,8 +213,6 @@ const Hotels = ({ vendorId }) => {
         data = res;
       }
 
-      console.log("Fetched hotel details:", data);
-
       // Merge fetched details with existing basic info
       // Note: We prioritize data from API (data) over list data (hotel)
       const fullDetails = {
@@ -200,8 +220,8 @@ const Hotels = ({ vendorId }) => {
         ...data,
         // Ensure critical fields are preserved/mapped if API returns different structure
         vendorDetails: data.vendor || data.vendorDetails || hotel.vendorDetails || {},
-        amenities: data.amenities ? (typeof data.amenities === 'string' ? JSON.parse(data.amenities) : data.amenities) : hotel.amenities,
-        images: data.images ? (typeof data.images === 'string' ? JSON.parse(data.images) : data.images) : [],
+        amenities: data.amenities !== undefined ? asArray(data.amenities, asArray(hotel.amenities, [])) : asArray(hotel.amenities, []),
+        images: data.images !== undefined ? asImagesArray(data.images, []) : asImagesArray(hotel.images, []),
         description: data.description || hotel.description || "No description available.",
         phone: data.phone || data.contact_number || hotel.phone || "N/A",
         email: data.email || hotel.email || "N/A",
@@ -231,21 +251,19 @@ const Hotels = ({ vendorId }) => {
         gst_number: data.gst_number || hotel.gst_number || "N/A",
         cancellation_policy: data.cancellation_policy || hotel.cancellation_policy || "No policy specified",
         
-        hotel_features: data.hotel_features ? (typeof data.hotel_features === 'string' ? JSON.parse(data.hotel_features) : data.hotel_features) : (hotel.hotel_features ? (typeof hotel.hotel_features === 'string' ? JSON.parse(hotel.hotel_features) : hotel.hotel_features) : []),
+        hotel_features: data.hotel_features !== undefined ? asArray(data.hotel_features, asArray(hotel.hotel_features, [])) : asArray(hotel.hotel_features, []),
         featured: data.featured !== undefined ? data.featured : (hotel.featured || false),
         createdAt: data.createdAt || hotel.createdAt || null,
         updatedAt: data.updatedAt || hotel.updatedAt || null,
       };
-      console.log("Full details object:", fullDetails);
       setSelected(fullDetails);
     } catch (err) {
-      console.error("Failed to fetch hotel details:", err);
       // Fallback to list data with calculated fields if API fails
       const fallbackDetails = {
         ...hotel,
         vendorDetails: hotel.vendorDetails || {},
-        amenities: hotel.amenities ? (typeof hotel.amenities === 'string' ? JSON.parse(hotel.amenities) : hotel.amenities) : [],
-        images: hotel.images ? (typeof hotel.images === 'string' ? JSON.parse(hotel.images) : hotel.images) : [],
+        amenities: asArray(hotel.amenities, []),
+        images: asImagesArray(hotel.images, []),
         description: hotel.description || "No description available.",
         phone: hotel.phone || hotel.contact_number || "N/A",
         email: hotel.email || "N/A",
@@ -269,7 +287,7 @@ const Hotels = ({ vendorId }) => {
         base_price: hotel.base_price || "N/A",
         gst_number: hotel.gst_number || "N/A",
         cancellation_policy: hotel.cancellation_policy || "No policy specified",
-        hotel_features: hotel.hotel_features ? (typeof hotel.hotel_features === 'string' ? JSON.parse(hotel.hotel_features) : hotel.hotel_features) : [],
+        hotel_features: asArray(hotel.hotel_features, []),
         featured: hotel.featured || false,
         createdAt: hotel.createdAt || null,
         updatedAt: hotel.updatedAt || null,
@@ -283,7 +301,12 @@ const Hotels = ({ vendorId }) => {
   const refreshAvailability = async () => {
     if (!selected?.id) return;
     if (!availabilityFrom || !availabilityTo) return;
+    if (availabilityFrom && availabilityTo && availabilityTo <= availabilityFrom) {
+      setAvailabilityError("Check-out must be after check-in.");
+      return;
+    }
     setLoadingDetails(true);
+    setAvailabilityError("");
     try {
       const res = await adminHotels.getById(selected.id, { check_in: availabilityFrom, check_out: availabilityTo });
       let data = {};
@@ -300,14 +323,18 @@ const Hotels = ({ vendorId }) => {
       setSelected((prev) => ({
         ...(prev || {}),
         ...data,
+        amenities: data.amenities !== undefined ? asArray(data.amenities, asArray(prev?.amenities, [])) : asArray(prev?.amenities, []),
+        images: data.images !== undefined ? asImagesArray(data.images, asImagesArray(prev?.images, [])) : asImagesArray(prev?.images, []),
+        hotel_features: data.hotel_features !== undefined ? asArray(data.hotel_features, asArray(prev?.hotel_features, [])) : asArray(prev?.hotel_features, []),
         capacity_total_rooms: prev?.capacity_total_rooms ?? data.total_rooms ?? prev?.rooms ?? 0,
         capacity_sellable_total: prev?.capacity_sellable_total ?? data.available_rooms ?? 0,
         capacity_ac: prev?.capacity_ac ?? data.ac_rooms ?? 0,
         capacity_non_ac: prev?.capacity_non_ac ?? data.non_ac_rooms ?? 0,
         availability: data.availability || null
       }));
-    } catch {
-      void 0;
+    } catch (err) {
+      const msg = err?.response?.data?.message || err?.message || "Failed to check availability.";
+      setAvailabilityError(msg);
     } finally {
       setLoadingDetails(false);
     }
@@ -440,7 +467,7 @@ const Hotels = ({ vendorId }) => {
                           className="btn btn-sm btn-outline-primary"
                           onClick={() => {
                             markHotelAsSeen(h.id);
-                            setSelected(h);
+                            handleViewDetails(h);
                           }}
                           title="View Details"
                         >
@@ -642,6 +669,10 @@ const Hotels = ({ vendorId }) => {
                       Check Availability
                     </button>
                   </div>
+
+                  {availabilityError && (
+                    <div className="alert alert-warning py-2 small">{availabilityError}</div>
+                  )}
 
                   {selected.availability ? (
                     <div className="row g-3">

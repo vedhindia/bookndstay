@@ -1979,6 +1979,119 @@ module.exports = {
     sendSuccess(res, { vendor_id: vendorId, week_start: weekStart, settled_count: settledCount }, 'Vendor week marked as settled');
   }),
 
+  getVendorSettlementHistory: asyncHandler(async (req, res) => {
+    const vendorIdRaw = req.query?.vendor_id ?? req.query?.vendorId ?? null;
+    const vendorId = vendorIdRaw !== null && vendorIdRaw !== undefined && String(vendorIdRaw).trim() !== ''
+      ? Number(vendorIdRaw)
+      : null;
+
+    const pageRaw = Number(req.query?.page ?? 1);
+    const limitRaw = Number(req.query?.limit ?? 10);
+    const page = Number.isFinite(pageRaw) && pageRaw > 0 ? Math.floor(pageRaw) : 1;
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(50, Math.floor(limitRaw)) : 10;
+    const offset = (page - 1) * limit;
+
+    const percentFallback = getCommissionPercent();
+    const onlineBaseExpr = 'COALESCE(payment_received_amount, amount, 0)';
+    const onlinePercentExpr = `COALESCE(NULLIF(commission_percent, 0), ${percentFallback})`;
+    const onlineCommissionExpr = `COALESCE(NULLIF(commission_amount, 0), (${onlineBaseExpr} * ${onlinePercentExpr} / 100))`;
+    const onlineNetExpr = `(${onlineBaseExpr} - ${onlineCommissionExpr})`;
+
+    const where = {
+      status: { [Op.ne]: 'CANCELLED' },
+      payment_received_at: { [Op.ne]: null },
+      settlement_status: 'SETTLED',
+      settlement_week_start: { [Op.ne]: null },
+      [Op.or]: [{ payment_method: { [Op.ne]: 'PAY_AT_HOTEL' } }, { payment_method: null }]
+    };
+    if (Number.isFinite(vendorId) && vendorId > 0) where.vendor_id = vendorId;
+
+    const countExpr = vendorId
+      ? 'COUNT(DISTINCT settlement_week_start)'
+      : `COUNT(DISTINCT CONCAT(vendor_id, '-', settlement_week_start))`;
+    const countRow = await Booking.findOne({
+      where,
+      attributes: [[sequelize.literal(countExpr), 'groups']]
+    });
+    const totalItems = Number(countRow?.get?.('groups') ?? countRow?.dataValues?.groups ?? 0) || 0;
+    const totalPages = Math.max(1, Math.ceil(totalItems / limit));
+
+    const rows = await Booking.findAll({
+      where,
+      attributes: [
+        'vendor_id',
+        'settlement_week_start',
+        [sequelize.fn('MAX', sequelize.col('settled_at')), 'settled_at'],
+        [sequelize.fn('MAX', sequelize.col('settlement_ref')), 'settlement_ref'],
+        [sequelize.fn('COUNT', sequelize.col('id')), 'booking_count'],
+        [sequelize.fn('SUM', sequelize.literal(onlineBaseExpr)), 'gross_amount'],
+        [sequelize.fn('SUM', sequelize.literal(onlineCommissionExpr)), 'commission_amount'],
+        [sequelize.fn('SUM', sequelize.literal(onlineNetExpr)), 'net_amount']
+      ],
+      group: ['vendor_id', 'settlement_week_start'],
+      order: [['settlement_week_start', 'DESC'], ['vendor_id', 'ASC']],
+      limit,
+      offset,
+      raw: true
+    });
+
+    const vendorIds = Array.from(
+      new Set((Array.isArray(rows) ? rows : []).map((r) => Number(r.vendor_id)).filter((n) => Number.isFinite(n) && n > 0))
+    );
+    const vendors = vendorIds.length
+      ? await Vendor.findAll({
+          where: { id: { [Op.in]: vendorIds } },
+          attributes: ['id', 'full_name', 'business_name', 'email', 'phone']
+        })
+      : [];
+    const vendorMap = new Map(vendors.map((v) => [Number(v.id), v.toJSON()]));
+
+    const items = (Array.isArray(rows) ? rows : []).map((r) => {
+      const ws = String(r.settlement_week_start || '').slice(0, 10) || null;
+      let weekEnd = null;
+      if (ws) {
+        const d = new Date(`${ws}T00:00:00.000Z`);
+        if (!Number.isNaN(d.getTime())) {
+          d.setUTCDate(d.getUTCDate() + 6);
+          weekEnd = d.toISOString().slice(0, 10);
+        }
+      }
+      const vid = Number(r.vendor_id) || null;
+      const vendorInfo = vid ? vendorMap.get(vid) : null;
+
+      return {
+        vendor_id: vid,
+        vendor: vendorInfo
+          ? {
+              id: vendorInfo.id,
+              full_name: vendorInfo.full_name,
+              business_name: vendorInfo.business_name,
+              email: vendorInfo.email,
+              phone: vendorInfo.phone
+            }
+          : null,
+        week_start: ws,
+        week_end: weekEnd,
+        settled_at: r.settled_at || null,
+        settlement_ref: r.settlement_ref || null,
+        booking_count: Number(r.booking_count || 0) || 0,
+        gross_amount: round2(r.gross_amount || 0),
+        commission_amount: round2(r.commission_amount || 0),
+        net_amount: round2(r.net_amount || 0)
+      };
+    });
+
+    sendSuccess(
+      res,
+      {
+        percent: percentFallback,
+        items,
+        pagination: { page, limit, totalItems, totalPages }
+      },
+      'Vendor settlement history retrieved'
+    );
+  }),
+
   // ============ REVIEW MODERATION ============
   getReviews: asyncHandler(async (req, res) => {
     const { page, limit } = validatePagination(req.query.page, req.query.limit);

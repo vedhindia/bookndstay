@@ -769,6 +769,8 @@ router.get('/dashboard/stats', vendorCtrl.getDashboardStats);
  *         description: Revenue report data
  */
 router.get('/reports/revenue', vendorCtrl.getRevenueReport);
+router.get('/reports/revenue/weekly', vendorCtrl.getWeeklyRevenue);
+router.get('/reports/settlements/history', vendorCtrl.getSettlementHistory);
 router.get('/reports/commission-summary', vendorCtrl.getCommissionSummary);
 
 /**

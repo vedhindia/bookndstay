@@ -18,6 +18,7 @@ const Sidebar = ({ isCollapsed, onClose }) => {
     { title: 'Hotels', icon: 'fas fa-hotel', path: '/dashboard/hotels' },
     { title: 'My Info', icon: 'fas fa-user-tie', path: '/dashboard/myInfo' },
     { title: 'Bookings', icon: 'fas fa-calendar-check', path: '/dashboard/bookings' },
+    { title: 'Reports', icon: 'fas fa-chart-line', path: '/dashboard/reports' },
     // { title: 'Payments', icon: 'fas fa-credit-card', path: '/dashboard/payments' },
     { title: 'Settings', icon: 'fas fa-cog', path: '/dashboard/settings', hasSubmenu: true },
   ];

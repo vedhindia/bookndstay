@@ -900,6 +900,173 @@ module.exports = {
     }, 'Revenue report generated');
   }),
 
+  getWeeklyRevenue: asyncHandler(async (req, res) => {
+    const labelDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const rawRef = req.query?.date || req.query?.start_date || null;
+    const refDateOnly = rawRef ? String(rawRef).slice(0, 10) : null;
+    const refDate =
+      (refDateOnly ? parseDateTimeInputAsIST(`${refDateOnly}T12:00`) : null) || new Date();
+
+    const weekStart = weekStartMondayIST(refDate);
+    if (!weekStart) throw createError('Invalid reference date', 400);
+    const weekStartUtcBase = new Date(`${weekStart}T00:00:00.000Z`);
+    const weekEndUtcBase = new Date(weekStartUtcBase.getTime());
+    weekEndUtcBase.setUTCDate(weekEndUtcBase.getUTCDate() + 6);
+    const weekEnd = weekEndUtcBase.toISOString().slice(0, 10);
+
+    const percentFallback = getCommissionPercent();
+    const onlineBaseExpr = 'COALESCE(payment_received_amount, amount, 0)';
+    const onlinePercentExpr = `COALESCE(NULLIF(commission_percent, 0), ${percentFallback})`;
+    const onlineCommissionExpr = `COALESCE(NULLIF(commission_amount, 0), (${onlineBaseExpr} * ${onlinePercentExpr} / 100))`;
+    const onlineNetExpr = `(${onlineBaseExpr} - ${onlineCommissionExpr})`;
+
+    const dates = Array.from({ length: 7 }).map((_, i) => {
+      const d = new Date(weekStartUtcBase.getTime());
+      d.setUTCDate(d.getUTCDate() + i);
+      return d.toISOString().slice(0, 10);
+    });
+
+    const buckets = await Promise.all(
+      dates.map(async (dayStr) => {
+        const utcStart = parseDateTimeInputAsIST(`${dayStr}T00:00`);
+        const utcEnd = utcStart ? new Date(utcStart.getTime() + 24 * 60 * 60 * 1000) : null;
+        if (!utcStart || !utcEnd) return { gross: 0, commission: 0, net: 0 };
+
+        const row = await Booking.findOne({
+          where: {
+            vendor_id: req.user.id,
+            status: { [Op.ne]: 'CANCELLED' },
+            payment_received_at: { [Op.gte]: utcStart, [Op.lt]: utcEnd },
+            [Op.or]: [{ payment_method: { [Op.ne]: 'PAY_AT_HOTEL' } }, { payment_method: null }]
+          },
+          attributes: [
+            [fn('SUM', literal(onlineBaseExpr)), 'gross_amount'],
+            [fn('SUM', literal(onlineCommissionExpr)), 'commission_amount'],
+            [fn('SUM', literal(onlineNetExpr)), 'net_amount']
+          ]
+        });
+
+        const gross = parseFloat(row?.get?.('gross_amount') ?? row?.dataValues?.gross_amount ?? 0) || 0;
+        const commission = parseFloat(row?.get?.('commission_amount') ?? row?.dataValues?.commission_amount ?? 0) || 0;
+        const net = parseFloat(row?.get?.('net_amount') ?? row?.dataValues?.net_amount ?? 0) || 0;
+        return { gross: round2(gross), commission: round2(commission), net: round2(net) };
+      })
+    );
+
+    const grossByDay = buckets.map((b) => round2(b.gross || 0));
+    const commissionByDay = buckets.map((b) => round2(b.commission || 0));
+    const netByDay = buckets.map((b) => round2(b.net || 0));
+
+    const totalGross = round2(grossByDay.reduce((sum, n) => sum + (Number(n) || 0), 0));
+    const totalCommission = round2(commissionByDay.reduce((sum, n) => sum + (Number(n) || 0), 0));
+    const totalNet = round2(netByDay.reduce((sum, n) => sum + (Number(n) || 0), 0));
+
+    sendSuccess(
+      res,
+      {
+        week_start: weekStart,
+        week_end: weekEnd,
+        labels: labelDays,
+        dates,
+        gross: grossByDay,
+        commission: commissionByDay,
+        revenue: netByDay,
+        total_gross: totalGross,
+        total_commission: totalCommission,
+        total_revenue: totalNet,
+        currency: 'INR',
+        metric: 'NET_PAYOUT'
+      },
+      'Weekly revenue retrieved'
+    );
+  }),
+
+  getSettlementHistory: asyncHandler(async (req, res) => {
+    const pageRaw = Number(req.query?.page ?? 1);
+    const limitRaw = Number(req.query?.limit ?? 10);
+    const page = Number.isFinite(pageRaw) && pageRaw > 0 ? Math.floor(pageRaw) : 1;
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(50, Math.floor(limitRaw)) : 10;
+    const offset = (page - 1) * limit;
+
+    const percentFallback = getCommissionPercent();
+    const onlineBaseExpr = 'COALESCE(payment_received_amount, amount, 0)';
+    const onlinePercentExpr = `COALESCE(NULLIF(commission_percent, 0), ${percentFallback})`;
+    const onlineCommissionExpr = `COALESCE(NULLIF(commission_amount, 0), (${onlineBaseExpr} * ${onlinePercentExpr} / 100))`;
+    const onlineNetExpr = `(${onlineBaseExpr} - ${onlineCommissionExpr})`;
+
+    const where = {
+      vendor_id: req.user.id,
+      status: { [Op.ne]: 'CANCELLED' },
+      payment_received_at: { [Op.ne]: null },
+      settlement_status: 'SETTLED',
+      settlement_week_start: { [Op.ne]: null },
+      [Op.or]: [{ payment_method: { [Op.ne]: 'PAY_AT_HOTEL' } }, { payment_method: null }]
+    };
+
+    const countRow = await Booking.findOne({
+      where,
+      attributes: [[literal('COUNT(DISTINCT settlement_week_start)'), 'weeks']]
+    });
+    const totalWeeks = Number(countRow?.get?.('weeks') ?? countRow?.dataValues?.weeks ?? 0) || 0;
+    const totalPages = Math.max(1, Math.ceil(totalWeeks / limit));
+
+    const rows = await Booking.findAll({
+      where,
+      attributes: [
+        'settlement_week_start',
+        [fn('MAX', col('settled_at')), 'settled_at'],
+        [fn('MAX', col('settlement_ref')), 'settlement_ref'],
+        [fn('COUNT', col('id')), 'booking_count'],
+        [fn('SUM', literal(onlineBaseExpr)), 'gross_amount'],
+        [fn('SUM', literal(onlineCommissionExpr)), 'commission_amount'],
+        [fn('SUM', literal(onlineNetExpr)), 'net_amount']
+      ],
+      group: ['settlement_week_start'],
+      order: [['settlement_week_start', 'DESC']],
+      limit,
+      offset,
+      raw: true
+    });
+
+    const items = (Array.isArray(rows) ? rows : []).map((r) => {
+      const ws = String(r.settlement_week_start || '').slice(0, 10) || null;
+      let weekEnd = null;
+      if (ws) {
+        const d = new Date(`${ws}T00:00:00.000Z`);
+        if (!Number.isNaN(d.getTime())) {
+          d.setUTCDate(d.getUTCDate() + 6);
+          weekEnd = d.toISOString().slice(0, 10);
+        }
+      }
+
+      return {
+        week_start: ws,
+        week_end: weekEnd,
+        settled_at: r.settled_at || null,
+        settlement_ref: r.settlement_ref || null,
+        booking_count: Number(r.booking_count || 0) || 0,
+        gross_amount: round2(r.gross_amount || 0),
+        commission_amount: round2(r.commission_amount || 0),
+        net_amount: round2(r.net_amount || 0)
+      };
+    });
+
+    sendSuccess(
+      res,
+      {
+        percent: percentFallback,
+        items,
+        pagination: {
+          page,
+          limit,
+          totalItems: totalWeeks,
+          totalPages
+        }
+      },
+      'Settlement history retrieved'
+    );
+  }),
+
   getCommissionSummary: asyncHandler(async (req, res) => {
     const percentFallback = getCommissionPercent();
 

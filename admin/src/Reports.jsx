@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Alert, Button, Card, Col, Modal, Row, Spinner, Table } from 'react-bootstrap';
 import api from './services/apiClient';
+import Pagination from './components/Pagination';
 
 const istDateOnly = (d) => {
   const dt = d instanceof Date ? d : new Date(d);
@@ -29,6 +30,13 @@ function Reports() {
   const [selectedSettlementVendor, setSelectedSettlementVendor] = useState(null);
   const [settlementRef, setSettlementRef] = useState('');
   const [settlingSettlementVendorId, setSettlingSettlementVendorId] = useState(null);
+  const [historyQuery, setHistoryQuery] = useState('');
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyPageSize, setHistoryPageSize] = useState(10);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [historyError, setHistoryError] = useState('');
+  const [historyItems, setHistoryItems] = useState([]);
+  const [historyTotal, setHistoryTotal] = useState(0);
 
   const loadSettlementReport = async () => {
     setLoadingSettlement(true);
@@ -53,6 +61,30 @@ function Reports() {
   useEffect(() => {
     loadSettlementReport();
   }, [weekStart]);
+
+  const loadSettlementHistory = async () => {
+    setLoadingHistory(true);
+    setHistoryError('');
+    try {
+      const resp = await api.get('/admin/reports/vendor-settlement/history', {
+        params: { page: historyPage, limit: historyPageSize }
+      });
+      const data = resp?.data?.data || {};
+      const pagination = data.pagination || {};
+      setHistoryItems(Array.isArray(data.items) ? data.items : []);
+      setHistoryTotal(Number(pagination.totalItems || 0));
+    } catch (e) {
+      setHistoryError('Failed to load settled payouts history.');
+      setHistoryItems([]);
+      setHistoryTotal(0);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  useEffect(() => {
+    loadSettlementHistory();
+  }, [historyPage, historyPageSize]);
 
   const settleVendorSettlementWeek = async (vendorId) => {
     setSettlingSettlementVendorId(vendorId);
@@ -184,6 +216,137 @@ function Reports() {
             </div>
           )}
         </Card.Body>
+      </Card>
+
+      <div className="mt-4 mb-2">
+        <h5 className="mb-0">Settled Payouts History</h5>
+        <small className="text-muted">All weekly payouts that were marked as settled</small>
+      </div>
+
+      {historyError && <Alert variant="danger">{historyError}</Alert>}
+
+      <Card className="mb-3">
+        <Card.Body>
+          <Row className="g-3 align-items-end">
+            <Col md={6}>
+              <label className="form-label small text-muted mb-1">Search Vendor</label>
+              <input
+                className="form-control"
+                placeholder="Search by vendor name / business / email"
+                value={historyQuery}
+                onChange={(e) => {
+                  setHistoryQuery(e.target.value);
+                  setHistoryPage(1);
+                }}
+              />
+            </Col>
+            <Col md={2}>
+              <label className="form-label small text-muted mb-1">Page Size</label>
+              <select
+                className="form-select"
+                value={historyPageSize}
+                onChange={(e) => {
+                  setHistoryPageSize(Number(e.target.value));
+                  setHistoryPage(1);
+                }}
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+            </Col>
+            <Col md={2}>
+              <Button
+                variant="outline-primary"
+                className="w-100"
+                onClick={loadSettlementHistory}
+                disabled={loadingHistory}
+              >
+                {loadingHistory ? 'Refreshing...' : 'Refresh'}
+              </Button>
+            </Col>
+          </Row>
+        </Card.Body>
+      </Card>
+
+      <Card>
+        <Card.Body className="p-0">
+          {loadingHistory ? (
+            <div className="text-center py-5">
+              <Spinner animation="border" />
+              <div className="mt-2 text-muted">Loading settled payouts...</div>
+            </div>
+          ) : (
+            <div className="table-responsive">
+              <Table hover bordered className="mb-0 align-middle">
+                <thead className="table-light">
+                  <tr>
+                    <th>Vendor</th>
+                    <th>Week</th>
+                    <th className="text-end">Gross</th>
+                    <th className="text-end">Commission</th>
+                    <th className="text-end">Net Paid</th>
+                    <th>Reference</th>
+                    <th>Settled At</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {historyItems
+                    .filter((it) => {
+                      const q = historyQuery.trim().toLowerCase();
+                      if (!q) return true;
+                      const v = it.vendor || {};
+                      const values = [
+                        v.full_name,
+                        v.business_name,
+                        v.email,
+                        String(it.vendor_id || ''),
+                      ]
+                        .filter(Boolean)
+                        .map((x) => String(x).toLowerCase());
+                      return values.some((x) => x.includes(q));
+                    })
+                    .map((it) => (
+                      <tr key={`${it.vendor_id}-${it.week_start}`}>
+                        <td>
+                          <div className="fw-semibold">
+                            {it.vendor?.business_name || it.vendor?.full_name || `Vendor #${it.vendor_id}`}
+                          </div>
+                          <div className="text-muted small">
+                            {it.vendor?.email || ''}{it.vendor?.phone ? ` • ${it.vendor.phone}` : ''}
+                          </div>
+                        </td>
+                        <td>
+                          <div className="fw-semibold">{it.week_start} to {it.week_end}</div>
+                          <div className="text-muted small">{Number(it.booking_count || 0)} bookings</div>
+                        </td>
+                        <td className="text-end">₹{Number(it.gross_amount || 0).toLocaleString()}</td>
+                        <td className="text-end">₹{Number(it.commission_amount || 0).toLocaleString()}</td>
+                        <td className="text-end fw-semibold text-success">₹{Number(it.net_amount || 0).toLocaleString()}</td>
+                        <td className="text-truncate" style={{ maxWidth: 160 }}>{it.settlement_ref || '-'}</td>
+                        <td>{it.settled_at ? new Date(it.settled_at).toLocaleString('en-IN') : '-'}</td>
+                      </tr>
+                    ))}
+                  {!loadingHistory && historyItems.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="text-center text-muted py-4">
+                        No settled payouts found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </Table>
+            </div>
+          )}
+        </Card.Body>
+        <div className="p-3 border-top d-flex justify-content-end">
+          <Pagination
+            current={historyPage}
+            total={historyTotal}
+            pageSize={historyPageSize}
+            onChange={setHistoryPage}
+          />
+        </div>
       </Card>
 
       <Modal show={!!selectedSettlementVendor} onHide={() => setSelectedSettlementVendor(null)} size="lg" centered>

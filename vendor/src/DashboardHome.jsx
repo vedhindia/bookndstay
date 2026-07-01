@@ -47,6 +47,14 @@ const DashboardHome = () => {
   const [loadingBookings, setLoadingBookings] = useState(false);
   const [errorStats, setErrorStats] = useState('');
   const [errorBookings, setErrorBookings] = useState('');
+  const [weeklyRevenue, setWeeklyRevenue] = useState({
+    weekStart: null,
+    weekEnd: null,
+    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+    series: [0, 0, 0, 0, 0, 0, 0]
+  });
+  const [loadingWeeklyRevenue, setLoadingWeeklyRevenue] = useState(false);
+  const [errorWeeklyRevenue, setErrorWeeklyRevenue] = useState('');
   
   // Pagination state
   const [page, setPage] = useState(1);
@@ -129,15 +137,40 @@ const DashboardHome = () => {
     fetchRecent();
   }, [page]);
 
+  const fetchWeeklyRevenue = async () => {
+    setLoadingWeeklyRevenue(true);
+    setErrorWeeklyRevenue('');
+    try {
+      const resp = await api.get('/vendor/reports/revenue/weekly');
+      const payload = resp?.data;
+      const data = payload?.data || payload || {};
+      const labels = Array.isArray(data.labels) && data.labels.length === 7 ? data.labels : weeklyRevenue.labels;
+      const series = Array.isArray(data.revenue) && data.revenue.length === 7 ? data.revenue : weeklyRevenue.series;
+
+      setWeeklyRevenue({
+        weekStart: data.week_start || null,
+        weekEnd: data.week_end || null,
+        labels,
+        series: series.map((n) => Number(n || 0))
+      });
+    } catch (e) {
+      setErrorWeeklyRevenue(e?.response?.data?.message || e?.message || 'Failed to load weekly revenue.');
+    } finally {
+      setLoadingWeeklyRevenue(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchWeeklyRevenue();
+  }, []);
+
   const revenueSparkline = useMemo(() => {
-    const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const data = [12, 19, 3, 5, 2, 3, 9].map(n => n * (Math.max(stats.revenue, 1) / 50));
     return {
-      labels,
+      labels: weeklyRevenue.labels,
       datasets: [
         {
-          label: 'Revenue',
-          data,
+          label: 'Net Payout',
+          data: weeklyRevenue.series,
           borderColor: 'rgba(54, 162, 235, 1)',
           backgroundColor: 'rgba(54, 162, 235, 0.25)',
           tension: 0.4,
@@ -145,7 +178,7 @@ const DashboardHome = () => {
         }
       ]
     };
-  }, [stats.revenue]);
+  }, [weeklyRevenue.labels, weeklyRevenue.series]);
 
   const bookingsPie = useMemo(() => {
     const confirmed = Number(stats.confirmed) || 0;
@@ -199,9 +232,27 @@ const DashboardHome = () => {
         <div className="col-lg-8">
           <div className="card border-0 shadow-sm h-100">
             <div className="card-header bg-white border-0">
-              <h6 className="mb-0">Revenue (Weekly)</h6>
+              <div className="d-flex justify-content-between align-items-center">
+                <div>
+                  <h6 className="mb-0">Net Payout (Weekly)</h6>
+                  {weeklyRevenue.weekStart && weeklyRevenue.weekEnd && (
+                    <small className="text-muted">
+                      {weeklyRevenue.weekStart} to {weeklyRevenue.weekEnd}
+                    </small>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary"
+                  onClick={fetchWeeklyRevenue}
+                  disabled={loadingWeeklyRevenue}
+                >
+                  {loadingWeeklyRevenue ? 'Refreshing...' : 'Refresh'}
+                </button>
+              </div>
             </div>
             <div className="card-body">
+              {errorWeeklyRevenue && <div className="alert alert-warning py-2">{errorWeeklyRevenue}</div>}
               <div style={{ position: 'relative', height: 260 }}>
                 <Line
                   data={revenueSparkline}
@@ -209,7 +260,14 @@ const DashboardHome = () => {
                     responsive: true,
                     maintainAspectRatio: false,
                     plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true } }
+                    scales: {
+                      y: {
+                        beginAtZero: true,
+                        ticks: {
+                          callback: (value) => `₹${Number(value || 0).toLocaleString('en-IN')}`
+                        }
+                      }
+                    }
                   }}
                 />
               </div>

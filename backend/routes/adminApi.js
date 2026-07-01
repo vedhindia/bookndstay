@@ -461,6 +461,7 @@ router.get('/reports/pay-at-hotel-commission', requireRole(['ADMIN', 'SUPER_ADMI
 router.post('/reports/pay-at-hotel-commission/settle', requireRole(['ADMIN', 'SUPER_ADMIN']), adminCtrl.settlePayAtHotelCommissionDueWeekly);
 router.get('/reports/vendor-settlement', requireRole(['ADMIN', 'SUPER_ADMIN']), adminCtrl.getVendorSettlementWeekly);
 router.post('/reports/vendor-settlement/settle', requireRole(['ADMIN', 'SUPER_ADMIN']), adminCtrl.settleVendorSettlementWeekly);
+router.get('/reports/vendor-settlement/history', requireRole(['ADMIN', 'SUPER_ADMIN']), adminCtrl.getVendorSettlementHistory);
 
 // ============ REVIEW MODERATION API ============
 router.get('/reviews', requireRole(['ADMIN', 'SUPER_ADMIN']), adminCtrl.getReviews);
