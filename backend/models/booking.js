@@ -16,6 +16,28 @@ module.exports = (sequelize) => {
     check_out_at: { type: DataTypes.DATE, allowNull: true },
     duration_hours: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true },
     guests: { type: DataTypes.INTEGER.UNSIGNED, defaultValue: 1 },
+    adults_count: { type: DataTypes.INTEGER.UNSIGNED, defaultValue: 1 },
+    children_count: { type: DataTypes.INTEGER.UNSIGNED, defaultValue: 0 },
+    child_ages: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      get() {
+        const raw = this.getDataValue('child_ages');
+        if (!raw) return [];
+        try {
+          const parsed = JSON.parse(raw);
+          return Array.isArray(parsed) ? parsed : [];
+        } catch {
+          return [];
+        }
+      },
+      set(value) {
+        const arr = Array.isArray(value) ? value : [];
+        this.setDataValue('child_ages', arr.length ? JSON.stringify(arr) : null);
+      }
+    },
+    chargeable_child_count: { type: DataTypes.INTEGER.UNSIGNED, defaultValue: 0 },
+    child_surcharge_amount: { type: DataTypes.FLOAT, allowNull: false, defaultValue: 0 },
     booked_room: { type: DataTypes.INTEGER.UNSIGNED, defaultValue: 1 },
     status: { type: DataTypes.ENUM('PENDING','CONFIRMED','CANCELLED','COMPLETED'), defaultValue: 'PENDING' },
     amount: { type: DataTypes.FLOAT, allowNull: false },

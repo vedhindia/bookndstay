@@ -94,6 +94,50 @@ const PORT = process.env.PORT || 3001;
           after: 'guests'
         });
       }
+      if (!bookings.adults_count) {
+        console.log('Adding missing column bookings.adults_count');
+        await qi.addColumn('bookings', 'adults_count', {
+          type: DataTypes.INTEGER.UNSIGNED,
+          allowNull: false,
+          defaultValue: 1,
+          after: 'guests'
+        });
+      }
+      if (!bookings.children_count) {
+        console.log('Adding missing column bookings.children_count');
+        await qi.addColumn('bookings', 'children_count', {
+          type: DataTypes.INTEGER.UNSIGNED,
+          allowNull: false,
+          defaultValue: 0,
+          after: 'adults_count'
+        });
+      }
+      if (!bookings.child_ages) {
+        console.log('Adding missing column bookings.child_ages');
+        await qi.addColumn('bookings', 'child_ages', {
+          type: DataTypes.TEXT,
+          allowNull: true,
+          after: 'children_count'
+        });
+      }
+      if (!bookings.chargeable_child_count) {
+        console.log('Adding missing column bookings.chargeable_child_count');
+        await qi.addColumn('bookings', 'chargeable_child_count', {
+          type: DataTypes.INTEGER.UNSIGNED,
+          allowNull: false,
+          defaultValue: 0,
+          after: 'child_ages'
+        });
+      }
+      if (!bookings.child_surcharge_amount) {
+        console.log('Adding missing column bookings.child_surcharge_amount');
+        await qi.addColumn('bookings', 'child_surcharge_amount', {
+          type: DataTypes.FLOAT,
+          allowNull: false,
+          defaultValue: 0,
+          after: 'chargeable_child_count'
+        });
+      }
       if (!bookings.price_per_night) {
         console.log('Adding missing column bookings.price_per_night');
         await qi.addColumn('bookings', 'price_per_night', {

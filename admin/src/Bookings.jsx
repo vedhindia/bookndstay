@@ -31,6 +31,7 @@ const Bookings = () => {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [selected, setSelected] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -80,6 +81,47 @@ const Bookings = () => {
     if (v === 'AC') return 'AC';
     if (v === 'NON_AC' || v === 'NON-AC' || v === 'NON AC') return 'Non-AC';
     return v;
+  };
+
+  const normalizeBookingFromApi = (b) => {
+    const bookingMode = String(b?.booking_mode || b?.bookingMode || 'NIGHTLY').toUpperCase();
+    const childAgesRaw = b?.child_ages ?? b?.childAges ?? [];
+    const childAges = Array.isArray(childAgesRaw)
+      ? childAgesRaw
+      : (() => {
+          try {
+            const parsed = JSON.parse(childAgesRaw || '[]');
+            return Array.isArray(parsed) ? parsed : [];
+          } catch {
+            return [];
+          }
+        })();
+    return {
+      id: b?.id || b?.booking_id || b?._id || '',
+      userId: b?.user?.id || b?.user?._id || b?.userId || '',
+      user: b?.user?.full_name || b?.user?.name || b?.userName || '',
+      userEmail: b?.user?.email || b?.userEmail || '',
+      hotel: b?.hotel?.name || b?.hotelName || '',
+      roomType: b?.room_type || b?.roomType || b?.room || b?.type || '',
+      bookingMode,
+      checkIn: bookingMode === 'HOURLY'
+        ? (b?.check_in_at || b?.checkInAt || b?.check_in || b?.checkInDate || b?.checkIn || '')
+        : (b?.check_in || b?.checkInDate || b?.checkIn || ''),
+      checkOut: bookingMode === 'HOURLY'
+        ? (b?.check_out_at || b?.checkOutAt || b?.check_out || b?.checkOutDate || b?.checkOut || '')
+        : (b?.check_out || b?.checkOutDate || b?.checkOut || ''),
+      guests: b?.guests || b?.noOfGuests || 0,
+      price: b?.amount || b?.finalAmount || 0,
+      status: (b?.status || 'PENDING').toString().charAt(0).toUpperCase() + (b?.status || 'PENDING').toString().slice(1).toLowerCase(),
+      paymentMethod: b?.payment_method || b?.paymentMethod || null,
+      checkedInAt: b?.checked_in_at || b?.checkedInAt || null,
+      paymentReceivedAt: b?.payment_received_at || b?.paymentReceivedAt || null,
+      adultsCount: Number(b?.adults_count ?? b?.adultsCount ?? Math.max(0, Number(b?.guests || 0) - childAges.length) ?? 0),
+      childrenCount: Number(b?.children_count ?? b?.childrenCount ?? childAges.length ?? 0),
+      childAges,
+      chargeableChildCount: Number(b?.chargeable_child_count ?? b?.chargeableChildCount ?? childAges.filter((age) => Number(age) > 8).length),
+      childSurchargeAmount: Number(b?.child_surcharge_amount ?? b?.childSurchargeAmount ?? 0)
+    };
   };
 
   useEffect(() => {
@@ -166,29 +208,7 @@ const Bookings = () => {
         : Array.isArray(res)
         ? res
         : [];
-      const normalized = list.map((b) => ({
-        id: b.id || b.booking_id || b._id || '',
-        userId: b.user?.id || b.user?._id || b.userId || '',
-        user: b.user?.full_name || b.user?.name || b.userName || '',
-        userEmail: b.user?.email || b.userEmail || '',
-        hotel: b.hotel?.name || b.hotelName || '',
-        roomType: b.room_type || b.roomType || b.room || b.type || '',
-        bookingMode: String(b.booking_mode || b.bookingMode || 'NIGHTLY').toUpperCase(),
-        checkIn:
-          String(b.booking_mode || b.bookingMode || 'NIGHTLY').toUpperCase() === 'HOURLY'
-            ? (b.check_in_at || b.checkInAt || b.check_in || b.checkInDate || b.checkIn || '')
-            : (b.check_in || b.checkInDate || b.checkIn || ''),
-        checkOut:
-          String(b.booking_mode || b.bookingMode || 'NIGHTLY').toUpperCase() === 'HOURLY'
-            ? (b.check_out_at || b.checkOutAt || b.check_out || b.checkOutDate || b.checkOut || '')
-            : (b.check_out || b.checkOutDate || b.checkOut || ''),
-        guests: b.guests || b.noOfGuests || 0,
-        price: b.amount || b.finalAmount || 0,
-        status: (b.status || 'PENDING').toString().charAt(0).toUpperCase() + (b.status || 'PENDING').toString().slice(1).toLowerCase(),
-        paymentMethod: b.payment_method || b.paymentMethod || null,
-        checkedInAt: b.checked_in_at || b.checkedInAt || null,
-        paymentReceivedAt: b.payment_received_at || b.paymentReceivedAt || null,
-      }));
+      const normalized = list.map((b) => normalizeBookingFromApi(b));
       setItems(normalized);
       const computedTotal = res?.total ?? res?.pagination?.total ?? res?.meta?.total ?? res?.count ?? normalized.length;
       setTotal(Number(computedTotal));
@@ -247,6 +267,24 @@ const Bookings = () => {
       setTimeout(() => setError(''), 3000);
     } finally {
       setLoadingPayment(false);
+    }
+  };
+
+  const openBookingDetails = async (booking) => {
+    const bookingId = booking?.id;
+    if (!bookingId) return;
+    markBookingAsSeen(bookingId);
+    setSelected(booking);
+    setDetailLoading(true);
+    try {
+      const res = await adminBookings.getById(bookingId);
+      const raw = res?.data?.booking || res?.booking || res?.data || null;
+      if (raw) setSelected(normalizeBookingFromApi(raw));
+    } catch (err) {
+      setError('Failed to load booking details');
+      setTimeout(() => setError(''), 3000);
+    } finally {
+      setDetailLoading(false);
     }
   };
 
@@ -538,8 +576,7 @@ const Bookings = () => {
                         <button 
                           className="btn btn-sm btn-outline-primary" 
                           onClick={() => {
-                            markBookingAsSeen(b.id);
-                            setSelected(b);
+                            openBookingDetails(b);
                           }}
                           title="View Details"
                         >
@@ -614,6 +651,14 @@ const Bookings = () => {
                 ></button>
               </div>
               <div className="modal-body">
+                {detailLoading ? (
+                  <div className="text-center py-5">
+                    <div className="spinner-border text-primary" role="status">
+                      <span className="visually-hidden">Loading...</span>
+                    </div>
+                    <div className="mt-2 text-muted">Loading booking details...</div>
+                  </div>
+                ) : (
                 <div className="row g-3">
                   <div className="col-md-6">
                     <label className="form-label fw-bold small text-muted">User Name</label>
@@ -687,7 +732,38 @@ const Bookings = () => {
                     <label className="form-label fw-bold small text-muted">Total Price</label>
                     <input className="form-control fw-bold" value={`₹${selected.price}`} readOnly />
                   </div>
+                  <div className="col-12"><hr className="my-1" /></div>
+                  <div className="col-md-6">
+                    <label className="form-label fw-bold small text-muted">Adults Count</label>
+                    <input className="form-control" value={selected.adultsCount ?? Math.max(0, Number(selected.guests || 0) - Number(selected.childrenCount || 0))} readOnly />
+                  </div>
+                  <div className="col-md-6">
+                    <label className="form-label fw-bold small text-muted">Children Count</label>
+                    <input className="form-control" value={selected.childrenCount ?? 0} readOnly />
+                  </div>
+                  <div className="col-md-6">
+                    <label className="form-label fw-bold small text-muted">Child Ages</label>
+                    <input
+                      className="form-control"
+                      value={Array.isArray(selected.childAges) && selected.childAges.length ? selected.childAges.join(', ') : 'None'}
+                      readOnly
+                    />
+                  </div>
+                  <div className="col-md-6">
+                    <label className="form-label fw-bold small text-muted">Chargeable Children</label>
+                    <input className="form-control" value={selected.chargeableChildCount ?? 0} readOnly />
+                  </div>
+                  <div className="col-md-6">
+                    <label className="form-label fw-bold small text-muted">Child Surcharge</label>
+                    <input className="form-control" value={`₹${Number(selected.childSurchargeAmount || 0).toLocaleString('en-IN')}`} readOnly />
+                  </div>
+                  <div className="col-md-6 d-flex align-items-end">
+                    <small className="text-muted">
+                      Above 8 years is chargeable at Rs 300 per child. Ages shown here are the values entered by the guest at booking time.
+                    </small>
+                  </div>
                 </div>
+                )}
                 <hr className="my-4" />
                 <div className="d-flex flex-wrap gap-2">
                   <button 

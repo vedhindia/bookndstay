@@ -10,6 +10,11 @@ const HOURLY_DAY_START_HOUR = 6;
 const HOURLY_DAY_END_HOUR = 18;
 const HOURLY_LATEST_SAME_DAY_CHECKOUT_HOUR = 21;
 const HOURLY_OVERNIGHT_CHECKOUT_HOUR = 11;
+const CHILD_AGE_CHARGE_THRESHOLD = 8;
+const CHILD_SURCHARGE_AMOUNT = 300;
+const DEFAULT_CHILD_AGE = 5;
+const MAX_CHILDREN_PER_ROOM = 2;
+const createRoomConfig = (id) => ({ id, guests: 2, children: 0, childAges: [] });
 
 const RoomDetailsPage = ({ state = {}, actions = {} }) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
@@ -28,7 +33,7 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
   
   // Room and Guest Configuration
   const [selectedRoomType, setSelectedRoomType] = useState('AC');
-  const [roomConfigs, setRoomConfigs] = useState([{ id: 1, guests: 2, children: 0 }]);
+  const [roomConfigs, setRoomConfigs] = useState([createRoomConfig(1)]);
   const [showRoomGuestModal, setShowRoomGuestModal] = useState(false);
 
   const [bookingMode, setBookingMode] = useState('NIGHTLY');
@@ -570,34 +575,53 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
   const addRoom = () => {
     if (roomConfigs.length < 5) {
       const newId = Math.max(...roomConfigs.map(r => r.id)) + 1;
-      setRoomConfigs([...roomConfigs, { id: newId, guests: 2, children: 0 }]);
+      setRoomConfigs((prev) => [...prev, createRoomConfig(newId)]);
     }
   };
 
   const deleteRoom = (id) => {
     if (roomConfigs.length > 1) {
-      setRoomConfigs(roomConfigs.filter(r => r.id !== id));
+      setRoomConfigs((prev) => prev.filter((r) => r.id !== id));
     }
   };
 
   const updateGuestCount = (id, increment) => {
-    setRoomConfigs(roomConfigs.map(r => {
-      if (r.id === id) {
-        const newGuests = increment ? r.guests + 1 : r.guests - 1;
-        return { ...r, guests: Math.max(1, Math.min(2, newGuests)) };
-      }
-      return r;
-    }));
+    setRoomConfigs((prev) =>
+      prev.map((r) => {
+        if (r.id === id) {
+          const newGuests = increment ? r.guests + 1 : r.guests - 1;
+          return { ...r, guests: Math.max(1, Math.min(2, newGuests)) };
+        }
+        return r;
+      })
+    );
   };
 
   const updateChildrenCount = (id, increment) => {
-    setRoomConfigs(roomConfigs.map(r => {
-      if (r.id === id) {
-        const newChildren = increment ? r.children + 1 : r.children - 1;
-        return { ...r, children: Math.max(0, Math.min(2, newChildren)) };
-      }
-      return r;
-    }));
+    setRoomConfigs((prev) =>
+      prev.map((r) => {
+        if (r.id !== id) return r;
+        const currentChildren = Number(r.children || 0);
+        const nextChildren = increment ? currentChildren + 1 : currentChildren - 1;
+        const normalizedChildren = Math.max(0, Math.min(MAX_CHILDREN_PER_ROOM, nextChildren));
+        const existingAges = Array.isArray(r.childAges) ? [...r.childAges] : [];
+        while (existingAges.length < normalizedChildren) {
+          existingAges.push(DEFAULT_CHILD_AGE);
+        }
+        return { ...r, children: normalizedChildren, childAges: existingAges.slice(0, normalizedChildren) };
+      })
+    );
+  };
+
+  const updateChildAge = (id, childIndex, age) => {
+    setRoomConfigs((prev) =>
+      prev.map((r) => {
+        if (r.id !== id) return r;
+        const nextAges = Array.isArray(r.childAges) ? [...r.childAges] : [];
+        nextAges[childIndex] = Math.max(0, Math.min(17, Number(age) || 0));
+        return { ...r, childAges: nextAges };
+      })
+    );
   };
 
   const nextImage = () => setCurrentImageIndex((prev) => (prev + 1) % roomImages.length);
@@ -649,7 +673,14 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
     : Number(selectedRoomPrice || 0);
 
   const totalRooms = roomConfigs.length;
+  const totalAdults = roomConfigs.reduce((sum, room) => sum + Number(room.guests || 0), 0);
+  const totalChildren = roomConfigs.reduce((sum, room) => sum + Number(room.children || 0), 0);
   const totalGuests = roomConfigs.reduce((sum, room) => sum + room.guests + (room.children || 0), 0);
+  const childAges = roomConfigs.flatMap((room) => (Array.isArray(room.childAges) ? room.childAges : []).slice(0, Number(room.children || 0)));
+  const chargeableChildrenCount = childAges.filter((age) => Number(age) > CHILD_AGE_CHARGE_THRESHOLD).length;
+  const roomBaseAmount = Math.round(unitPrice * unitCount * totalRooms);
+  const childSurchargeAmount = Math.round(CHILD_SURCHARGE_AMOUNT * chargeableChildrenCount);
+  const pricingBaseAmount = roomBaseAmount + childSurchargeAmount;
 
   const getHourlyDateRange = () => {
     const start = new Date(checkInAt);
@@ -713,7 +744,7 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
       return;
     }
     const code = codeToUse.trim().toUpperCase();
-    const base = Math.round(unitPrice * unitCount * totalRooms);
+    const base = pricingBaseAmount;
 
     const token = getToken();
     if (token) {
@@ -864,7 +895,14 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
           : { check_in: checkIn, check_out: checkOut }),
         guests: totalGuests,
         rooms: roomConfigs.length,
-        booked_room: roomConfigs.length // Redundant but ensures backend catches it
+        booked_room: roomConfigs.length, // Redundant but ensures backend catches it
+        child_ages: childAges,
+        guest_breakdown: roomConfigs.map((room) => ({
+          room_id: room.id,
+          adults: Number(room.guests || 0),
+          children: Number(room.children || 0),
+          child_ages: (Array.isArray(room.childAges) ? room.childAges : []).slice(0, Number(room.children || 0))
+        }))
       };
 
       if (couponCode.trim()) {
@@ -902,6 +940,9 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
       }
 
       const apiBaseAmount = data?.data?.base_amount ?? booking?.base_amount;
+      const apiRoomBaseAmount = data?.data?.room_base_amount ?? roomBaseAmount;
+      const apiChildSurchargeAmount = data?.data?.child_surcharge_amount ?? childSurchargeAmount;
+      const apiChargeableChildren = data?.data?.chargeable_child_count ?? chargeableChildrenCount;
       const apiDiscount = data?.data?.discount_amount ?? booking?.discount_amount ?? discountAmount;
       const apiAmount = data?.data?.amount ?? booking?.amount;
       const basePrice = Math.round(Number(apiBaseAmount ?? (unitPrice * unitCount * roomConfigs.length)) || 0);
@@ -926,6 +967,11 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
         breakdown: {
           amount: finalAmount,
           base_amount: basePrice,
+          room_base_amount: Math.round(Number(apiRoomBaseAmount || 0)),
+          child_surcharge_amount: Math.round(Number(apiChildSurchargeAmount || 0)),
+          chargeable_child_count: Number(apiChargeableChildren || 0),
+          child_age_threshold: CHILD_AGE_CHARGE_THRESHOLD,
+          child_surcharge_amount_per_child: CHILD_SURCHARGE_AMOUNT,
           discount_amount: Math.round(Number(apiDiscount ?? 0)),
           booking_mode: bookingMode,
           price_per_night: bookingMode === 'NIGHTLY' ? selectedRoomPrice : undefined,
@@ -1031,7 +1077,7 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
                     </div>
                     
                     <div className="flex justify-between items-center mb-3">
-                      <span className="text-gray-600">Guests (Max 2)</span>
+                      <span className="text-gray-600">Adults (Max 2)</span>
                       <div className="flex items-center gap-3">
                         <button
                           onClick={() => updateGuestCount(room.id, false)}
@@ -1052,7 +1098,7 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
                     </div>
 
                     <div className="flex justify-between items-center">
-                      <span className="text-gray-600">Children/Adults (Max 2)</span>
+                      <span className="text-gray-600">Children (Max 2)</span>
                       <div className="flex items-center gap-3">
                         <button
                           onClick={() => updateChildrenCount(room.id, false)}
@@ -1071,6 +1117,30 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
                         </button>
                       </div>
                     </div>
+
+                    {room.children > 0 && (
+                      <div className="mt-3 space-y-2">
+                        <p className="text-xs text-gray-500">
+                          Child age is required. Children above {CHILD_AGE_CHARGE_THRESHOLD} years are charged Rs {CHILD_SURCHARGE_AMOUNT} per child.
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {Array.from({ length: room.children }).map((_, childIndex) => (
+                            <label key={`${room.id}-${childIndex}`} className="text-sm text-gray-600">
+                              Child {childIndex + 1} Age
+                              <select
+                                value={room.childAges?.[childIndex] ?? DEFAULT_CHILD_AGE}
+                                onChange={(e) => updateChildAge(room.id, childIndex, e.target.value)}
+                                className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#ee2e24] focus:outline-none"
+                              >
+                                {Array.from({ length: 18 }).map((__, age) => (
+                                  <option key={age} value={age}>{age} year{age === 1 ? '' : 's'}</option>
+                                ))}
+                              </select>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
 
@@ -1099,6 +1169,9 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
                   Done
                 </button>
               </div>
+              <p className="mt-3 text-xs text-gray-500">
+                Pricing rule: children up to {CHILD_AGE_CHARGE_THRESHOLD} years are free. Above {CHILD_AGE_CHARGE_THRESHOLD} years, Rs {CHILD_SURCHARGE_AMOUNT} is added per child.
+              </p>
             </div>
           </div>
         </div>
@@ -1536,7 +1609,10 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
                   onClick={() => setShowRoomGuestModal(true)}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-left hover:border-gray-400 focus:ring-2 focus:ring-[#ee2e24] focus:outline-none transition-colors"
                 >
-                  <span className="text-gray-700">{totalRooms} Room{totalRooms > 1 ? 's' : ''}, {totalGuests} Guest{totalGuests > 1 ? 's' : ''}</span>
+                  <span className="text-gray-700">
+                    {totalRooms} Room{totalRooms > 1 ? 's' : ''}, {totalGuests} Guest{totalGuests > 1 ? 's' : ''}
+                    {totalChildren > 0 ? ` (${totalAdults} Adult${totalAdults > 1 ? 's' : ''}, ${totalChildren} Child${totalChildren > 1 ? 'ren' : ''})` : ''}
+                  </span>
                 </button>
               </div>
 
@@ -1606,17 +1682,24 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
               <div className="bg-gray-50 rounded-lg p-4 mb-6">
                 <h4 className="font-semibold mb-3 text-gray-800">Price Breakdown</h4>
                 {(() => {
-                  const base = Math.round(unitPrice * unitCount * totalRooms);
-                  // Removed Service Fee and GST as requested
-                  const total = Math.max(0, base - discountAmount);
+                  const total = Math.max(0, pricingBaseAmount - discountAmount);
                   return (
                     <div className="space-y-2">
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">
                           {totalRooms} Room{totalRooms > 1 ? 's' : ''} × {unitCount} {unitLabel}{unitCount > 1 ? 's' : ''}
                         </span>
-                        <span className="text-gray-800">₹{base.toLocaleString()}</span>
+                        <span className="text-gray-800">₹{roomBaseAmount.toLocaleString()}</span>
                       </div>
+
+                      {childSurchargeAmount > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">
+                            Child surcharge ({chargeableChildrenCount} child{chargeableChildrenCount > 1 ? 'ren' : ''} above {CHILD_AGE_CHARGE_THRESHOLD} years)
+                          </span>
+                          <span className="text-gray-800">₹{childSurchargeAmount.toLocaleString()}</span>
+                        </div>
+                      )}
                       
                       {discountAmount > 0 && (
                         <div className="flex justify-between text-sm">
@@ -1629,6 +1712,9 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
                         <span className="font-bold text-gray-800">Total Amount</span>
                         <span className="text-2xl font-bold text-[#ee2e24]">₹{total.toLocaleString()}</span>
                       </div>
+                      <p className="text-xs text-gray-500">
+                        Children up to {CHILD_AGE_CHARGE_THRESHOLD} years stay free. Above {CHILD_AGE_CHARGE_THRESHOLD} years, Rs {CHILD_SURCHARGE_AMOUNT} per child is added.
+                      </p>
                     </div>
                   );
                 })()}

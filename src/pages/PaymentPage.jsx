@@ -557,7 +557,7 @@ export default function PaymentPage() {
                   <span className="text-gray-600">
                     {breakdown.duration_hours} Hour{breakdown.duration_hours > 1 ? 's' : ''} × {summary?.rooms || 1} Room{(summary?.rooms || 1) !== 1 ? 's' : ''} × ₹{Math.round(breakdown.price_per_hour)}
                   </span>
-                  <span>₹{Math.round(breakdown.base_amount || 0)}</span>
+                  <span>₹{Math.round(breakdown.room_base_amount || breakdown.base_amount || 0)}</span>
                 </div>
               )}
               {breakdown.nights && breakdown.price_per_night && (
@@ -565,7 +565,15 @@ export default function PaymentPage() {
                   <span className="text-gray-600">
                     {breakdown.nights} Night{breakdown.nights > 1 ? 's' : ''} × {summary?.rooms || 1} Room{(summary?.rooms || 1) !== 1 ? 's' : ''} × ₹{Math.round(breakdown.price_per_night)}
                   </span>
-                  <span>₹{Math.round(breakdown.base_amount || 0)}</span>
+                  <span>₹{Math.round(breakdown.room_base_amount || breakdown.base_amount || 0)}</span>
+                </div>
+              )}
+              {Number(breakdown.child_surcharge_amount || 0) > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">
+                    Child surcharge ({Number(breakdown.chargeable_child_count || 0)} child{Number(breakdown.chargeable_child_count || 0) === 1 ? '' : 'ren'} above {Number(breakdown.child_age_threshold || 8)} years)
+                  </span>
+                  <span>₹{Math.round(breakdown.child_surcharge_amount || 0)}</span>
                 </div>
               )}
               {breakdown.discount_amount > 0 && (

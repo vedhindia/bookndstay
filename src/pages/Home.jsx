@@ -12,6 +12,8 @@ const Home = ({ state, actions }) => {
   const [copied, setCopied] = useState(false); // State for coupon copy feedback
   const [showMap, setShowMap] = useState(false);
   const searchRef = useRef(null);
+  const checkInInputRef = useRef(null);
+  const checkOutInputRef = useRef(null);
   const [popularPerPage, setPopularPerPage] = useState(4);
   const [popularIndex, setPopularIndex] = useState(0);
   const [popularPaused, setPopularPaused] = useState(false);
@@ -396,6 +398,32 @@ const Home = ({ state, actions }) => {
     actions.navigate('searchhotel');
   };
 
+  const formatSearchDate = (value) => {
+    if (!value) return '';
+    const d = new Date(`${value}T00:00:00`);
+    if (Number.isNaN(d.getTime())) return value;
+    return d.toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    });
+  };
+
+  const openDatePicker = (inputRef) => {
+    const el = inputRef?.current;
+    if (!el) return;
+    try {
+      if (typeof el.showPicker === 'function') {
+        el.showPicker();
+        return;
+      }
+    } catch {
+      void 0;
+    }
+    el.focus();
+    el.click();
+  };
+
   const handleNearMe = () => {
     // Navigate to searchhotel with nearMe param
     // We assume actions.navigate handles params or we construct url
@@ -538,9 +566,27 @@ const Home = ({ state, actions }) => {
               </button>
             </div>
             
-            <div className='col-span-12 sm:col-span-6 md:col-span-3 flex items-center gap-3 sm:gap-4 px-3 sm:px-4 h-12 md:h-16 md:border-l md:border-gray-200'>
+            <div
+              className='col-span-12 sm:col-span-6 md:col-span-3 flex items-center gap-3 sm:gap-4 px-3 sm:px-4 h-12 md:h-16 md:border-l md:border-gray-200 relative cursor-pointer'
+              onClick={() => openDatePicker(checkInInputRef)}
+              role='button'
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  openDatePicker(checkInInputRef);
+                }
+              }}
+            >
               <FaCalendarAlt className='text-gray-600 flex-shrink-0' />
+              <div className='min-w-0 flex-1'>
+                <div className='text-[11px] sm:text-xs text-gray-500 leading-none mb-1'>Check-in Date</div>
+                <div className={`text-sm leading-none ${state.checkIn ? 'text-gray-900' : 'text-gray-400'}`}>
+                  {state.checkIn ? formatSearchDate(state.checkIn) : 'Select date'}
+                </div>
+              </div>
               <input
+                ref={checkInInputRef}
                 type='date'
                 value={state.checkIn}
                 min={todayStr}
@@ -548,14 +594,32 @@ const Home = ({ state, actions }) => {
                   actions.setCheckIn(e.target.value); 
                   actions.triggerSearch(); 
                 }}
-                className='w-full min-w-0 bg-transparent border-0 focus:outline-none focus:ring-0 text-sm placeholder-gray-500 leading-none appearance-none'
+                className='absolute inset-0 opacity-0 cursor-pointer'
                 aria-label='Check-in'
               />
             </div>
             
-            <div className='col-span-12 sm:col-span-6 md:col-span-3 flex items-center gap-3 sm:gap-4 px-3 sm:px-4 h-12 md:h-16 md:border-l md:border-gray-200'>
+            <div
+              className='col-span-12 sm:col-span-6 md:col-span-3 flex items-center gap-3 sm:gap-4 px-3 sm:px-4 h-12 md:h-16 md:border-l md:border-gray-200 relative cursor-pointer'
+              onClick={() => openDatePicker(checkOutInputRef)}
+              role='button'
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  openDatePicker(checkOutInputRef);
+                }
+              }}
+            >
               <FaCalendarAlt className='text-gray-600 flex-shrink-0' />
+              <div className='min-w-0 flex-1'>
+                <div className='text-[11px] sm:text-xs text-gray-500 leading-none mb-1'>Check-out Date</div>
+                <div className={`text-sm leading-none ${state.checkOut ? 'text-gray-900' : 'text-gray-400'}`}>
+                  {state.checkOut ? formatSearchDate(state.checkOut) : 'Select date'}
+                </div>
+              </div>
               <input
+                ref={checkOutInputRef}
                 type='date'
                 value={state.checkOut}
                 min={getMinCheckOut()}
@@ -563,7 +627,7 @@ const Home = ({ state, actions }) => {
                   actions.setCheckOut(e.target.value); 
                   actions.triggerSearch(); 
                 }}
-                className='w-full min-w-0 bg-transparent border-0 focus:outline-none focus:ring-0 text-sm placeholder-gray-500 leading-none appearance-none'
+                className='absolute inset-0 opacity-0 cursor-pointer'
                 aria-label='Check-out'
               />
             </div>

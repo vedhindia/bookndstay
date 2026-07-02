@@ -93,6 +93,31 @@ const MIN_HOURLY_HOURS = 3;
 const HOURLY_DAY_START_HOUR = 6;
 const HOURLY_DAY_END_HOUR = 18;
 const HOURLY_LATEST_SAME_DAY_CHECKOUT_TIME = '09:00 PM';
+const CHILD_AGE_CHARGE_THRESHOLD = 8;
+const CHILD_SURCHARGE_AMOUNT = 300;
+
+const normalizeChildAges = (rawValue) => {
+  const input = Array.isArray(rawValue) ? rawValue : [];
+  return input
+    .map((age) => Number(age))
+    .filter((age) => Number.isFinite(age) && age >= 0 && age <= 17)
+    .map((age) => Math.round(age));
+};
+
+const normalizeGuestBreakdown = (rawValue) => {
+  if (!Array.isArray(rawValue)) return [];
+  return rawValue.map((room, index) => {
+    const adults = Math.max(0, Math.round(Number(room?.adults) || 0));
+    const children = Math.max(0, Math.round(Number(room?.children) || 0));
+    const childAges = normalizeChildAges(room?.child_ages);
+    return {
+      room_id: room?.room_id ?? room?.roomId ?? index + 1,
+      adults,
+      children,
+      child_ages: childAges.slice(0, children)
+    };
+  });
+};
 
 const normalizeRoomTypeValue = (value) =>
   String(value || '').trim().toUpperCase().replace(/[\s-]+/g, '_');
@@ -993,7 +1018,7 @@ module.exports = {
    * Create a new booking
    */
   createBooking: asyncHandler(async (req, res) => {
-    const { hotel_id, room_type, check_in, check_out, check_in_at, check_out_at, booking_mode, guests = 1, rooms = 1, coupon_code } = req.body;
+    const { hotel_id, room_type, check_in, check_out, check_in_at, check_out_at, booking_mode, guests = 1, rooms = 1, coupon_code, child_ages = [], guest_breakdown = [] } = req.body;
     
     // Validate required fields
     const bookingMode = String(booking_mode || 'NIGHTLY').toUpperCase();
@@ -1112,6 +1137,16 @@ module.exports = {
 
     let createdBooking = null;
     let computed = null;
+    const normalizedBreakdown = normalizeGuestBreakdown(guest_breakdown);
+    const breakdownChildAges = normalizedBreakdown.flatMap((room) => room.child_ages);
+    const normalizedChildAges = normalizeChildAges(Array.isArray(child_ages) && child_ages.length ? child_ages : breakdownChildAges);
+    const breakdownAdultsCount = normalizedBreakdown.reduce((sum, room) => sum + Number(room.adults || 0), 0);
+    const breakdownChildrenCount = normalizedBreakdown.reduce((sum, room) => sum + Number(room.children || 0), 0);
+    const childrenCount = Math.max(normalizedChildAges.length, breakdownChildrenCount);
+    const requestedGuests = Math.max(1, Math.round(Number(guests) || 0));
+    const adultsCount = Math.max(1, breakdownAdultsCount || (requestedGuests - childrenCount));
+    const totalGuests = Math.max(1, adultsCount + childrenCount);
+    const chargeableChildCount = normalizedChildAges.filter((age) => age > CHILD_AGE_CHARGE_THRESHOLD).length;
 
     await sequelize.transaction(async (t) => {
       const hotel = await Hotel.findOne({ where: { id: hotel_id, status: 'APPROVED' }, transaction: t, lock: t.LOCK.UPDATE });
@@ -1189,6 +1224,8 @@ module.exports = {
       let baseAmount = 0;
       let nights = null;
       let pricePerHour = null;
+      let roomBaseAmount = 0;
+      let childSurchargeAmount = 0;
 
       if (bookingMode === 'HOURLY') {
         const explicitPricePerHour =
@@ -1197,12 +1234,20 @@ module.exports = {
             : parseFloat(hotel.non_ac_price_per_hour || 0);
         const derived = parseFloat((pricePerNight / 24).toFixed(2));
         pricePerHour = explicitPricePerHour > 0 ? explicitPricePerHour : derived;
-        baseAmount = pricePerHour * Number(durationHours) * Number(rooms);
+        roomBaseAmount = pricePerHour * Number(durationHours) * Number(rooms);
+        childSurchargeAmount = CHILD_SURCHARGE_AMOUNT * chargeableChildCount;
+        baseAmount = roomBaseAmount + childSurchargeAmount;
       } else {
         const calculated = calculateBookingAmount(pricePerNight, effectiveCheckIn, effectiveCheckOut);
         nights = calculated.nights;
-        baseAmount = calculated.amount * Number(rooms);
+        roomBaseAmount = calculated.amount * Number(rooms);
+        childSurchargeAmount = CHILD_SURCHARGE_AMOUNT * chargeableChildCount;
+        baseAmount = roomBaseAmount + childSurchargeAmount;
       }
+
+      roomBaseAmount = round2(roomBaseAmount);
+      childSurchargeAmount = round2(childSurchargeAmount);
+      baseAmount = round2(baseAmount);
 
       let finalAmount = baseAmount;
       let discountAmount = 0;
@@ -1254,7 +1299,12 @@ module.exports = {
           check_in_at: ciAt,
           check_out_at: coAt,
           duration_hours: durationHours,
-          guests,
+          guests: totalGuests,
+          adults_count: adultsCount,
+          children_count: childrenCount,
+          child_ages: normalizedChildAges,
+          chargeable_child_count: chargeableChildCount,
+          child_surcharge_amount: childSurchargeAmount,
           booked_room: rooms,
           amount: finalAmount,
           price_per_night: pricePerNight,
@@ -1275,6 +1325,14 @@ module.exports = {
         price_per_night: pricePerNight,
         price_per_hour: pricePerHour,
         base_amount: baseAmount,
+        room_base_amount: roomBaseAmount,
+        child_surcharge_amount: childSurchargeAmount,
+        adults_count: adultsCount,
+        children_count: childrenCount,
+        child_ages: normalizedChildAges,
+        chargeable_child_count: chargeableChildCount,
+        child_age_threshold: CHILD_AGE_CHARGE_THRESHOLD,
+        child_surcharge_amount_per_child: CHILD_SURCHARGE_AMOUNT,
         discount_amount: discountAmount,
         nights,
         duration_hours: durationHours,

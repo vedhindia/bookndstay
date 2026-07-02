@@ -2,6 +2,22 @@ import { useState } from 'react';
 import { submitVendorApplication } from '../api/vendorApply';
 import { FaUser, FaEnvelope, FaPhone, FaBuilding, FaFileUpload } from 'react-icons/fa';
 
+const TERMS_AND_CONDITIONS = [
+  'Admin will deduct 10% commission from every successful online booking.',
+  'Vendor is responsible for maintaining accurate hotel information, pricing, room availability, and uploaded documents.',
+  'Admin reserves the right to approve, suspend, or remove any hotel listing without prior notice if policy violations, fraud, or repeated customer complaints occur.',
+  'Vendors must honor all confirmed bookings unless unavoidable circumstances arise.',
+  'Admin acts only as an online booking platform and is not responsible for disputes, accidents, theft, injuries, property damage, service quality, or losses arising between guests and hotel vendors.',
+  'Vendors are responsible for obtaining all required licenses, permits, GST registration, and complying with applicable laws.',
+  'Vendors agree not to upload false information, fake reviews, misleading images, or incorrect pricing.',
+  "Any refund or cancellation shall follow the hotel's cancellation policy unless otherwise specified by the platform.",
+  'Admin reserves the right to hold payments while investigating fraudulent activity or customer disputes.',
+  'Vendors agree that all information provided is true and accurate.',
+  'By submitting this application, the vendor agrees to all platform policies and future updates to these Terms & Conditions.'
+];
+
+const IMPORTANT_TERMS_COUNT = 3;
+
 export default function VendorApplyPage() {
   const [form, setForm] = useState({
     full_name: '',
@@ -16,6 +32,7 @@ export default function VendorApplyPage() {
   const [gstFile, setGstFile] = useState(null);
   const [hotelLicenseFile, setHotelLicenseFile] = useState(null);
   const [acceptTerms, setAcceptTerms] = useState(false);
+  const [showAllTerms, setShowAllTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -253,9 +270,19 @@ export default function VendorApplyPage() {
           <div className="border border-gray-200 rounded-md p-3 bg-gray-50">
             <div className="text-sm font-semibold text-gray-800 mb-2">Terms &amp; Conditions</div>
             <ul className="text-sm text-gray-700 list-disc pl-5 space-y-1">
-              <li>Admin gets 10% commission on each booking (Online).</li>
-              <li>Admin can approve or reject the hotel at any time if any problems occur.</li>
+              {(showAllTerms ? TERMS_AND_CONDITIONS : TERMS_AND_CONDITIONS.slice(0, IMPORTANT_TERMS_COUNT)).map((term) => (
+                <li key={term}>{term}</li>
+              ))}
             </ul>
+            {TERMS_AND_CONDITIONS.length > IMPORTANT_TERMS_COUNT && (
+              <button
+                type="button"
+                onClick={() => setShowAllTerms((prev) => !prev)}
+                className="mt-2 text-sm font-medium text-[#ee2e24] hover:text-[#d5281f]"
+              >
+                {showAllTerms ? 'Show less' : 'Read more'}
+              </button>
+            )}
             <label className="flex items-start gap-2 mt-3 text-sm text-gray-800 select-none">
               <input
                 type="checkbox"

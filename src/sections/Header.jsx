@@ -135,9 +135,9 @@ export default function Header({ navigate, state, actions }) {
             <motion.div 
               whileHover={{ rotate: 10, scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
-              className='rounded-full bg-[#ee2e24]/10 p-1 xs:p-1.5 sm:p-2 shadow-sm border border-[#ee2e24]/20 mr-1.5 xs:mr-2 group-hover:bg-[#ee2e24]/20 transition-colors'
+              className=' p-1 xs:p-1.5 sm:p-2   mr-1.5 xs:mr-2  transition-colors'
             >
-              <img src="/oyo-logo.svg" alt="Logo" className='h-5 xs:h-6 sm:h-7 md:h-8 w-auto' />
+              <img src="/BookndStay_Logo.png" alt="Logo" className='h-6 xs:h-7 sm:h-8 md:h-9 w-auto' />
             </motion.div>
           </a>
         </div>

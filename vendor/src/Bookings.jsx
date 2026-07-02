@@ -77,6 +77,17 @@ const Bookings = () => {
 
   const normalizeBookingFromApi = (b) => {
     const bookingMode = String(b?.booking_mode || b?.bookingMode || 'NIGHTLY').toUpperCase();
+    const childAgesRaw = b?.child_ages ?? b?.childAges ?? [];
+    const childAges = Array.isArray(childAgesRaw)
+      ? childAgesRaw
+      : (() => {
+          try {
+            const parsed = JSON.parse(childAgesRaw || '[]');
+            return Array.isArray(parsed) ? parsed : [];
+          } catch {
+            return [];
+          }
+        })();
     const normalized = {
       id: b?.id || b?.booking_id || b?._id || '',
       userId: b?.user?.id || b?.user?._id || b?.userId || '',
@@ -100,7 +111,12 @@ const Bookings = () => {
       paymentReceivedMethod: b?.payment_received_method || b?.paymentReceivedMethod || null,
       paymentReceivedAmount: b?.payment_received_amount || b?.paymentReceivedAmount || null,
       commissionPercent: b?.commission_percent ?? b?.commissionPercent ?? null,
-      commissionAmount: b?.commission_amount ?? b?.commissionAmount ?? null
+      commissionAmount: b?.commission_amount ?? b?.commissionAmount ?? null,
+      adultsCount: Number(b?.adults_count ?? b?.adultsCount ?? Math.max(0, Number(b?.guests || 0) - childAges.length) ?? 0),
+      childrenCount: Number(b?.children_count ?? b?.childrenCount ?? childAges.length ?? 0),
+      childAges,
+      chargeableChildCount: Number(b?.chargeable_child_count ?? b?.chargeableChildCount ?? childAges.filter((age) => Number(age) > 8).length),
+      childSurchargeAmount: Number(b?.child_surcharge_amount ?? b?.childSurchargeAmount ?? 0)
     };
     return normalized;
   };
@@ -577,6 +593,45 @@ const Bookings = () => {
                       </div>
                     </div>
                     
+                    <div className="col-12"><hr className="my-3" /></div>
+
+                    <div className="col-md-6">
+                      <h6 className="text-muted text-uppercase small mb-2">Guest Verification</h6>
+                      <div className="mb-2">
+                        <i className="fas fa-user-friends text-muted me-2"></i>
+                        <span>Adults: <strong>{selected.adultsCount ?? Math.max(0, Number(selected.guests || 0) - Number(selected.childrenCount || 0))}</strong></span>
+                      </div>
+                      <div className="mb-2">
+                        <i className="fas fa-child text-muted me-2"></i>
+                        <span>Children: <strong>{selected.childrenCount ?? 0}</strong></span>
+                      </div>
+                      <div className="mb-2">
+                        <i className="fas fa-id-badge text-muted me-2"></i>
+                        <span>Chargeable Children: <strong>{selected.chargeableChildCount ?? 0}</strong></span>
+                      </div>
+                      <div>
+                        <i className="fas fa-list-ol text-muted me-2"></i>
+                        <span>
+                          Child Ages: <strong>{Array.isArray(selected.childAges) && selected.childAges.length ? selected.childAges.join(', ') : 'None'}</strong>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="col-md-6">
+                      <h6 className="text-muted text-uppercase small mb-2">Child Pricing</h6>
+                      <div className="mb-2">
+                        <i className="fas fa-info-circle text-muted me-2"></i>
+                        <span>Rule: <strong>Above 8 years = Rs 300 per child</strong></span>
+                      </div>
+                      <div className="mb-2">
+                        <i className="fas fa-rupee-sign text-muted me-2"></i>
+                        <span>Child Surcharge: <strong>₹{Number(selected.childSurchargeAmount || 0).toLocaleString('en-IN')}</strong></span>
+                      </div>
+                      <div className="text-muted small">
+                        Ages shown here are the values entered by the guest at booking time for check-in verification.
+                      </div>
+                    </div>
+
                     <div className="col-12"><hr className="my-3" /></div>
                     
                     <div className="col-md-6">
