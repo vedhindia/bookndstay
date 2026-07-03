@@ -38,7 +38,7 @@ export default function Footer() {
         <div className='container mx-auto px-4 py-10 hidden md:grid grid-cols-5 gap-8 text-sm'>
           <div className='col-span-2 md:col-span-2'>
             <div className='flex items-center gap-3 mb-3'>
-              <img src='/BookndStay_Logo.png' alt='BookndStay' className='h-9 w-auto' />
+              <img src='/BookndStay_Logo_footer.png' alt='BookndStay' className='h-9 w-auto' />
         
             </div>
             <p className='text-xs text-gray-400 mb-4'>Great stays. Easy booking. Hassle-free support.</p>
@@ -105,7 +105,7 @@ export default function Footer() {
 
         <div className='container mx-auto px-4 py-8 md:hidden text-sm'>
           <div className='flex items-center gap-3 mb-3'>
-            <img src='/BookndStay_Logo.png' alt='BookndStay' className='h-9 w-auto' />
+            <img src='/BookndStay_Logo_footer.png' alt='BookndStay' className='h-9 w-auto' />
           </div>
           <p className='text-xs text-gray-400 mb-4'>Great stays. Easy booking. Hassle-free support.</p>
 
