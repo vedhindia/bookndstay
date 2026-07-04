@@ -214,8 +214,9 @@ export default function InvoicePage() {
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                   {/* Logo & Branding */}
                   <div className="text-center sm:text-left">
-                    <h1 className="text-3xl sm:text-4xl font-bold text-[#ee2e24] mb-1 print:text-black">BookndStay</h1>
-                    <p className="text-sm text-gray-600 print:text-gray-700">Hotel Booking Platform</p>
+                    {/* <h1 className="text-3xl sm:text-4xl font-bold text-[#ee2e24] mb-1 print:text-black">BookndStay</h1> */}
+                    <img src='/BookndStay_Logo.png' alt='BookndStay' className='h-10 w-auto m-auto d-block' />
+                    <p className="text-sm text-gray-600 mt-2 print:text-black">Hotel Booking Platform</p>
                   </div>
                   
                   {/* Invoice Info */}

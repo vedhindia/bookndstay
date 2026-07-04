@@ -95,6 +95,7 @@ const HOURLY_DAY_END_HOUR = 18;
 const HOURLY_LATEST_SAME_DAY_CHECKOUT_TIME = '09:00 PM';
 const CHILD_AGE_CHARGE_THRESHOLD = 8;
 const CHILD_SURCHARGE_AMOUNT = 300;
+const HOURLY_PRICE_MULTIPLIER = 2;
 
 const normalizeChildAges = (rawValue) => {
   const input = Array.isArray(rawValue) ? rawValue : [];
@@ -976,6 +977,10 @@ module.exports = {
       types.push({
         type: 'AC',
         price_per_night: acPrice,
+        price_per_hour:
+          Number(hotel.ac_price_per_hour || 0) > 0
+            ? Number(hotel.ac_price_per_hour || 0)
+            : Math.max(1, Math.round((Number(acPrice || 0) / 24) * HOURLY_PRICE_MULTIPLIER)),
         total: acTotal,
         available: acAvailable
       });
@@ -984,6 +989,10 @@ module.exports = {
       types.push({
         type: 'NON_AC',
         price_per_night: nonAcPrice,
+        price_per_hour:
+          Number(hotel.non_ac_price_per_hour || 0) > 0
+            ? Number(hotel.non_ac_price_per_hour || 0)
+            : Math.max(1, Math.round((Number(nonAcPrice || 0) / 24) * HOURLY_PRICE_MULTIPLIER)),
         total: nonAcTotal,
         available: nonAcAvailable
       });
@@ -1232,7 +1241,7 @@ module.exports = {
           normalizedRoomType === 'AC'
             ? parseFloat(hotel.ac_price_per_hour || 0)
             : parseFloat(hotel.non_ac_price_per_hour || 0);
-        const derived = parseFloat((pricePerNight / 24).toFixed(2));
+        const derived = Math.max(1, Math.round((Number(pricePerNight || 0) / 24) * HOURLY_PRICE_MULTIPLIER));
         pricePerHour = explicitPricePerHour > 0 ? explicitPricePerHour : derived;
         roomBaseAmount = pricePerHour * Number(durationHours) * Number(rooms);
         childSurchargeAmount = CHILD_SURCHARGE_AMOUNT * chargeableChildCount;

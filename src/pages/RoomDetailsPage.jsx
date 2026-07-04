@@ -325,10 +325,15 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
                   initialRooms = types.map((type) => {
                     const normalizedType = String(type.type || '').toUpperCase();
                     const isNonAc = normalizedType.includes('NON');
+                    const nightlyPrice = Math.round(Number(type.price_per_night || type.price || 0));
                     return {
                       id: isNonAc ? 'non-ac' : 'ac',
                       name: isNonAc ? 'Non AC' : 'AC',
-                      price: Math.round(Number(type.price_per_night || type.price || 0)),
+                      price: nightlyPrice,
+                      hourlyPrice:
+                        Number(type.price_per_hour || 0) > 0
+                          ? Math.round(Number(type.price_per_hour || 0))
+                          : Math.max(1, Math.round((nightlyPrice / 24) * HOURLY_PRICE_MULTIPLIER)),
                       available: Math.max(0, Number(type.available || 0))
                     };
                   }).filter((room) => room.price > 0);
@@ -341,14 +346,46 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
                 // Fallback to hotel fields only if the dedicated availability endpoint is unavailable.
                 const acPrice = parseFloat(hotel.ac_room_price);
                 const nonAcPrice = parseFloat(hotel.non_ac_room_price);
+                const acHourlyPrice = parseFloat(hotel.ac_price_per_hour);
+                const nonAcHourlyPrice = parseFloat(hotel.non_ac_price_per_hour);
                 const acCount = parseInt(hotel.ac_rooms) || 0;
                 const nonAcCount = parseInt(hotel.non_ac_rooms) || 0;
                 const base = Math.round((hotel.base_price ?? hotel.price ?? safeSel?.price ?? 799));
-                if (!isNaN(nonAcPrice) && nonAcPrice > 0) initialRooms.push({ id: 'non-ac', name: 'Non AC', price: Math.round(nonAcPrice), available: nonAcCount });
-                if (!isNaN(acPrice) && acPrice > 0) initialRooms.push({ id: 'ac', name: 'AC', price: Math.round(acPrice), available: acCount });
+                if (!isNaN(nonAcPrice) && nonAcPrice > 0) initialRooms.push({
+                  id: 'non-ac',
+                  name: 'Non AC',
+                  price: Math.round(nonAcPrice),
+                  hourlyPrice:
+                    Number.isFinite(nonAcHourlyPrice) && nonAcHourlyPrice > 0
+                      ? Math.round(nonAcHourlyPrice)
+                      : Math.max(1, Math.round((Math.round(nonAcPrice) / 24) * HOURLY_PRICE_MULTIPLIER)),
+                  available: nonAcCount
+                });
+                if (!isNaN(acPrice) && acPrice > 0) initialRooms.push({
+                  id: 'ac',
+                  name: 'AC',
+                  price: Math.round(acPrice),
+                  hourlyPrice:
+                    Number.isFinite(acHourlyPrice) && acHourlyPrice > 0
+                      ? Math.round(acHourlyPrice)
+                      : Math.max(1, Math.round((Math.round(acPrice) / 24) * HOURLY_PRICE_MULTIPLIER)),
+                  available: acCount
+                });
                 if (!initialRooms.length) {
-                  initialRooms.push({ id: 'non-ac', name: 'Non AC', price: base, available: 5 });
-                  initialRooms.push({ id: 'ac', name: 'AC', price: base + 300, available: 5 });
+                  initialRooms.push({
+                    id: 'non-ac',
+                    name: 'Non AC',
+                    price: base,
+                    hourlyPrice: Math.max(1, Math.round(base / 24)),
+                    available: 5
+                  });
+                  initialRooms.push({
+                    id: 'ac',
+                    name: 'AC',
+                    price: base + 300,
+                    hourlyPrice: Math.max(1, Math.round((base + 300) / 24)),
+                    available: 5
+                  });
                 }
               }
               setAvailableRooms(initialRooms);
@@ -668,8 +705,22 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
 
   const unitCount = bookingMode === 'HOURLY' ? durationHours : nights;
   const unitLabel = bookingMode === 'HOURLY' ? 'Hour' : 'Night';
+  const selectedRoomInfo = availableRooms.find((room) => room.name === selectedRoomType) || null;
   const unitPrice = bookingMode === 'HOURLY'
-    ? Math.max(1, Math.round((Number(selectedRoomPrice || 0) / 24) * HOURLY_PRICE_MULTIPLIER))
+    ? Math.max(
+        1,
+        Math.round(
+          Number(
+            selectedRoomInfo?.hourlyPrice
+            ?? (
+              Number(detail?.[selectedRoomType === 'AC' ? 'ac_price_per_hour' : 'non_ac_price_per_hour'] || 0) > 0
+                ? Number(detail?.[selectedRoomType === 'AC' ? 'ac_price_per_hour' : 'non_ac_price_per_hour'] || 0)
+                : Math.max(1, Math.round((Number(selectedRoomPrice || 0) / 24) * HOURLY_PRICE_MULTIPLIER))
+            )
+            ?? (Number(selectedRoomPrice || 0) / 24)
+          ) || 0
+        )
+      )
     : Number(selectedRoomPrice || 0);
 
   const totalRooms = roomConfigs.length;
@@ -1426,7 +1477,22 @@ const RoomDetailsPage = ({ state = {}, actions = {} }) => {
                         <div className="flex justify-between items-center">
                           <span className="font-semibold text-gray-800">{room.name}</span>
                           <span className="text-[#ee2e24] font-bold text-lg">
-                            ₹{bookingMode === 'HOURLY' ? Math.max(1, Math.round((Number(room.price || 0) / 24) * HOURLY_PRICE_MULTIPLIER)) : room.price}
+                            ₹{bookingMode === 'HOURLY'
+                              ? Math.max(
+                                  1,
+                                  Math.round(
+                                    Number(
+                                      room.hourlyPrice
+                                      ?? (
+                                        Number(detail?.[room.name === 'AC' ? 'ac_price_per_hour' : 'non_ac_price_per_hour'] || 0) > 0
+                                          ? Number(detail?.[room.name === 'AC' ? 'ac_price_per_hour' : 'non_ac_price_per_hour'] || 0)
+                                          : Math.max(1, Math.round((Number(room.price || 0) / 24) * HOURLY_PRICE_MULTIPLIER))
+                                      )
+                                      ?? (Number(room.price || 0) / 24)
+                                    ) || 0
+                                  )
+                                )
+                              : room.price}
                           </span>
                         </div>
                         <div className="flex justify-between items-center mt-1">
