@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FaChevronDown, FaChevronUp, FaPhone, FaEnvelope, FaComments } from 'react-icons/fa';
+import { FaChevronDown, FaChevronUp, FaPhone, FaEnvelope, FaLocationArrow } from 'react-icons/fa';
 
 export default function HelpPage() {
   const [openFaq, setOpenFaq] = useState(null);
@@ -78,13 +78,10 @@ export default function HelpPage() {
         {/* Live Chat */}
         <div className="bg-white rounded-lg shadow-md p-6 text-center">
           <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <FaComments className="text-[#ee2e24] text-2xl" />
+            <FaLocationArrow className="text-[#ee2e24] text-2xl" />
           </div>
-          <h3 className="text-xl font-semibold mb-2">Live Chat</h3>
-          <p className="text-gray-600 mb-4">Chat with our support team</p>
-          <button className="bg-[#ee2e24] text-white px-4 py-2 rounded hover:bg-[#d62c22]">
-            Start Chat
-          </button>
+          <h3 className="text-xl font-semibold mb-2">Address</h3>
+          <p className="text-gray-600 mb-4">S. No 21 1, Hinjewadi - Wakad road behind KFC Hinjewadi Pimpri-Chinchwad, Pune, Hinjawadi, Pune, India, 411057</p>
         </div>
       </div>
 

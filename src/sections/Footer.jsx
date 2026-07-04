@@ -82,13 +82,19 @@ export default function Footer() {
             <h5 className='text-white font-semibold mb-3'>Support</h5>
             <ul className='space-y-2'>
               <li>
-                <Link to='/help' className='hover:text-white transition-colors'>Help Center</Link>
-              </li>
-              <li>
                 <Link to='/contact' className='hover:text-white transition-colors'>Contact Us</Link>
               </li>
               <li>
+                <Link to='/help' className='hover:text-white transition-colors'>FAQs</Link>
+              </li>
+              <li>
                 <Link to='/refund-policy' className='hover:text-white transition-colors'>Cancellation & Refunds</Link>
+              </li>
+              <li>
+                <Link to='/privacy-policy' className='hover:text-white transition-colors'>Privacy Policy</Link>
+              </li>
+              <li>
+                <Link to='/terms-and-conditions' className='hover:text-white transition-colors'>Terms & Conditions</Link>
               </li>
             </ul>
           </div>
@@ -134,6 +140,8 @@ export default function Footer() {
                 <li><Link to='/help' className='hover:text-white transition-colors'>Help Center</Link></li>
                 <li><Link to='/contact' className='hover:text-white transition-colors'>Contact Us</Link></li>
                 <li><Link to='/refund-policy' className='hover:text-white transition-colors'>Cancellation & Refunds</Link></li>
+                <li><Link to='/privacy-policy' className='hover:text-white transition-colors'>Privacy Policy</Link></li>
+                <li><Link to='/terms-and-conditions' className='hover:text-white transition-colors'>Terms & Conditions</Link></li>
               </ul>
             </details>
 

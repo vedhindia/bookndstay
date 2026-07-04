@@ -23,6 +23,8 @@ import VendorLoginPage from './pages/VendorLoginPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import VendorApplyPage from './pages/VendorApplyPage';
 import RefundPolicyPage from './pages/RefundPolicyPage';
+import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
+import TermsAndConditionsPage from './pages/TermsAndConditionsPage';
 
 const VENDOR_APPLY_ROUTE = '/list-your-property';
 
@@ -199,6 +201,16 @@ const AppContent = () => {
           <Route path="/refund-policy" element={
             <Layout state={state} actions={extendedActions}>
               <RefundPolicyPage />
+            </Layout>
+          } />
+          <Route path="/privacy-policy" element={
+            <Layout state={state} actions={extendedActions}>
+              <PrivacyPolicyPage />
+            </Layout>
+          } />
+          <Route path="/terms-and-conditions" element={
+            <Layout state={state} actions={extendedActions}>
+              <TermsAndConditionsPage />
             </Layout>
           } />
         </Routes>

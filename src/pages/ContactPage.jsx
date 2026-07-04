@@ -91,11 +91,7 @@ export default function ContactPage() {
                 <div>
                   <h3 className="font-medium mb-1">Address</h3>
                   <p className="text-gray-700">
-                    BookndStay Corporate Office
-                    <br />
-                    Pune, Maharashtra 411001
-                    <br />
-                    India
+                    S. No 21 1, Hinjewadi -Wakad road behind KFC Hinjewadi Pimpri-Chinchwad, Pune, Hinjawadi, Pune, India, 411057
                   </p>
                 </div>
               </div>
@@ -212,10 +208,16 @@ export default function ContactPage() {
       {/* Map */}
       <div className="mt-8 bg-white rounded-lg shadow-md p-6">
         <h2 className="text-2xl font-semibold mb-6">Our Location</h2>
-        <div className="w-full h-96 bg-gray-300 rounded-lg flex items-center justify-center">
-          <p className="text-gray-600">
-            Map placeholder - Google Maps would be integrated here
-          </p>
+        <div className="w-full h-96 rounded-lg overflow-hidden">
+          <iframe
+            title="BookndStay Location"
+            src="https://www.google.com/maps/embed?pb=!1m14!1m8!1m3!1d472.70051555925517!2d73.747867!3d18.591878!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3bc2bb84ef0aaa61%3A0x4d66d7a650fd07a2!2sCollection%20O%20Sai%20Raj%20Lodge!5e0!3m2!1sen!2sus!4v1783070673108!5m2!1sen!2sus"
+            className="w-full h-full"
+            style={{ border: 0 }}
+            allowFullScreen
+            loading="lazy"
+            referrerPolicy="strict-origin-when-cross-origin"
+          />
         </div>
       </div>
     </div>
