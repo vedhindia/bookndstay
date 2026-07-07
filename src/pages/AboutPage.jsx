@@ -81,7 +81,7 @@ export default function AboutPage() {
       </div>
 
       {/* Company Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+      {/* <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         {[
           { value: "100+", label: "Hotels in India" },
           { value: "50+", label: "Cities" },
@@ -98,7 +98,7 @@ export default function AboutPage() {
             <p className="text-gray-700">{stat.label}</p>
           </div>
         ))}
-      </div>
+      </div> */}
 
       {/* Our Story */}
       <div className="bg-white rounded-lg shadow-md p-6">
