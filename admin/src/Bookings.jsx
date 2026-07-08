@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { adminBookings, adminPayments } from './services/adminApi';
 import Pagination from './components/Pagination';
@@ -192,9 +192,12 @@ const Bookings = () => {
         status: status !== 'All' ? status.toUpperCase() : undefined,
         hotel: hotel !== 'All' ? hotel : undefined,
         userId: userFilter?.userId || undefined,
-        // Support both "search" and "q" param names so it works with different APIs
+        user_id: userFilter?.userId || undefined,
+        hotel_id: undefined,
         search: searchTerm || undefined,
         q: searchTerm || undefined,
+        start_date: dateFrom || undefined,
+        end_date: dateTo || undefined,
         dateFrom: dateFrom || undefined,
         dateTo: dateTo || undefined,
       });
@@ -210,7 +213,13 @@ const Bookings = () => {
         : [];
       const normalized = list.map((b) => normalizeBookingFromApi(b));
       setItems(normalized);
-      const computedTotal = res?.total ?? res?.pagination?.total ?? res?.meta?.total ?? res?.count ?? normalized.length;
+      const computedTotal =
+        res?.total ??
+        res?.pagination?.totalItems ??
+        res?.pagination?.total ??
+        res?.meta?.total ??
+        res?.count ??
+        normalized.length;
       setTotal(Number(computedTotal));
     } catch (e) {
       console.warn('Failed to load bookings, using mock', e?.message);
@@ -228,20 +237,6 @@ const Bookings = () => {
   useEffect(() => {
     fetchBookings();
   }, [page, pageSize, status, hotel, dateFrom, dateTo, userFilter?.userId, query]);
-
-  const filtered = useMemo(() => {
-    const qLower = query.toLowerCase();
-    return items.filter(b => {
-      const matches = [b.user, b.hotel, b.id, b.userEmail || ''].some(v =>
-        (v || '').toString().toLowerCase().includes(qLower)
-      );
-      const hotelMatch = hotel === 'All' || b.hotel === hotel;
-      const statusMatch = status === 'All' || b.status === status;
-      const fromMatch = !dateFrom || new Date(b.checkIn) >= new Date(dateFrom);
-      const toMatch = !dateTo || new Date(b.checkOut) <= new Date(dateTo);
-      return matches && hotelMatch && statusMatch && fromMatch && toMatch;
-    });
-  }, [query, hotel, status, dateFrom, dateTo, items]);
 
   const clearUserFilter = () => {
     navigate('/dashboard/bookings', { replace: true, state: {} });
@@ -443,7 +438,7 @@ const Bookings = () => {
                 type="date" 
                 className="form-control" 
                 value={dateFrom} 
-                onChange={e => setDateFrom(e.target.value)} 
+                onChange={e => { setDateFrom(e.target.value); setPage(1); }} 
               />
             </div>
             <div className="col-md-2">
@@ -452,7 +447,7 @@ const Bookings = () => {
                 type="date" 
                 className="form-control" 
                 value={dateTo} 
-                onChange={e => setDateTo(e.target.value)} 
+                onChange={e => { setDateTo(e.target.value); setPage(1); }} 
               />
             </div>
             <div className="col-md-1 d-flex align-items-end">
@@ -521,8 +516,8 @@ const Bookings = () => {
                       <div className="mt-2 text-muted">Loading bookings...</div>
                     </td>
                   </tr>
-                ) : filtered.length > 0 ? (
-                  filtered.map((b, index) => (
+                ) : items.length > 0 ? (
+                  items.map((b, index) => (
                     <tr key={b.id}>
                       <td className="px-3 text-muted fw-semibold">{getSerialNumber(index)}</td>
                       <td>

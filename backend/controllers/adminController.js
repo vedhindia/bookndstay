@@ -1234,6 +1234,7 @@ module.exports = {
       include: getBookingIncludes(),
       limit,
       offset,
+      distinct: true,
       order: [['createdAt', 'DESC']]
     });
 
@@ -1984,6 +1985,7 @@ module.exports = {
     const vendorId = vendorIdRaw !== null && vendorIdRaw !== undefined && String(vendorIdRaw).trim() !== ''
       ? Number(vendorIdRaw)
       : null;
+    const q = String(req.query?.q || '').trim();
 
     const pageRaw = Number(req.query?.page ?? 1);
     const limitRaw = Number(req.query?.limit ?? 10);
@@ -2005,6 +2007,34 @@ module.exports = {
       [Op.or]: [{ payment_method: { [Op.ne]: 'PAY_AT_HOTEL' } }, { payment_method: null }]
     };
     if (Number.isFinite(vendorId) && vendorId > 0) where.vendor_id = vendorId;
+
+    if (q && !(Number.isFinite(vendorId) && vendorId > 0)) {
+      const qLower = q.toLowerCase();
+      const numericId = Number(qLower);
+      const candidates = await Vendor.findAll({
+        where: {
+          [Op.or]: [
+            ...(Number.isFinite(numericId) && numericId > 0 ? [{ id: numericId }] : []),
+            { full_name: { [Op.like]: `%${q}%` } },
+            { business_name: { [Op.like]: `%${q}%` } },
+            { email: { [Op.like]: `%${q}%` } },
+            { phone: { [Op.like]: `%${q}%` } }
+          ]
+        },
+        attributes: ['id'],
+        raw: true
+      });
+
+      const vendorIds = Array.from(new Set(candidates.map((r) => Number(r.id)).filter((n) => Number.isFinite(n) && n > 0)));
+      if (vendorIds.length === 0) {
+        return sendSuccess(
+          res,
+          { percent: percentFallback, items: [], pagination: { page, limit, totalItems: 0, totalPages: 1 } },
+          'Vendor settlement history retrieved'
+        );
+      }
+      where.vendor_id = { [Op.in]: vendorIds };
+    }
 
     const countExpr = vendorId
       ? 'COUNT(DISTINCT settlement_week_start)'

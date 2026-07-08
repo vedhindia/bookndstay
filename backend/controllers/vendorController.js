@@ -604,12 +604,54 @@ module.exports = {
   getMyBookings: asyncHandler(async (req, res) => {
     const { page, limit } = validatePagination(req.query.page, req.query.limit);
     const offset = getPaginationOffset(page, limit);
+    const status = String(req.query.status || '').trim().toUpperCase();
+    const q = String(req.query.q || req.query.search || '').trim();
+    const userIdRaw = req.query.user_id ?? req.query.userId ?? '';
+    const userId = Number(userIdRaw);
+    const startDate = String(req.query.start_date || req.query.dateFrom || '').trim();
+    const endDate = String(req.query.end_date || req.query.dateTo || '').trim();
+
+    const where = { vendor_id: req.user.id };
+
+    if (status && status !== 'ALL') {
+      where.status = status;
+    }
+
+    if (Number.isFinite(userId) && userId > 0) {
+      where.user_id = userId;
+    }
+
+    if (startDate && endDate) {
+      where.check_in = { [Op.between]: [startDate, endDate] };
+    } else if (startDate) {
+      where.check_in = { [Op.gte]: startDate };
+    }
+
+    if (endDate) {
+      where.check_out = { ...(where.check_out || {}), [Op.lte]: endDate };
+    }
+
+    if (q) {
+      const searchConditions = [
+        { '$user.full_name$': { [Op.like]: `%${q}%` } },
+        { '$user.email$': { [Op.like]: `%${q}%` } },
+        { '$user.phone$': { [Op.like]: `%${q}%` } },
+        { '$hotel.name$': { [Op.like]: `%${q}%` } }
+      ];
+
+      if (!Number.isNaN(parseInt(q, 10))) {
+        searchConditions.push({ id: parseInt(q, 10) });
+      }
+
+      where[Op.or] = searchConditions;
+    }
 
     const bookings = await Booking.findAndCountAll({
-      where: { vendor_id: req.user.id },
+      where,
       include: getBookingIncludes(),
       limit,
       offset,
+      distinct: true,
       order: [['createdAt', 'DESC']]
     });
 
@@ -635,6 +677,7 @@ module.exports = {
       include: getBookingIncludes(),
       limit,
       offset,
+      distinct: true,
       order: [['createdAt', 'DESC']]
     });
 

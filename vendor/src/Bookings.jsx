@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import api from './services/apiClient';
 import Pagination from './components/Pagination';
@@ -226,14 +226,20 @@ const Bookings = () => {
     setLoading(true);
     setError('');
     try {
+      const searchTerm = query.trim();
       const resResp = await api.get('/vendor/bookings', {
         params: {
           page,
           limit: pageSize,
           status: status !== 'All' ? status.toUpperCase() : undefined,
           userId: userFilter?.userId || undefined,
-          dateFrom,
-          dateTo
+          user_id: userFilter?.userId || undefined,
+          q: searchTerm || undefined,
+          search: searchTerm || undefined,
+          start_date: dateFrom || undefined,
+          end_date: dateTo || undefined,
+          dateFrom: dateFrom || undefined,
+          dateTo: dateTo || undefined
         }
       });
       const res = resResp?.data;
@@ -270,7 +276,13 @@ const Bookings = () => {
         paymentReceivedAt: b.payment_received_at || b.paymentReceivedAt || null,
       }));
       setItems(normalized);
-      const computedTotal = res?.total ?? res?.pagination?.total ?? res?.meta?.total ?? res?.count ?? normalized.length;
+      const computedTotal =
+        res?.total ??
+        res?.pagination?.totalItems ??
+        res?.pagination?.total ??
+        res?.meta?.total ??
+        res?.count ??
+        normalized.length;
       setTotal(Number(computedTotal));
     } catch (e) {
       console.warn('Failed to load bookings, using mock', e?.message);
@@ -287,20 +299,7 @@ const Bookings = () => {
 
   useEffect(() => {
     fetchBookings();
-  }, [page, pageSize, status, dateFrom, dateTo, userFilter?.userId]);
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return items.filter(b => {
-      const values = [b.user, b.hotel, b.id, b.userEmail]
-        .map(v => (v || '').toString().toLowerCase());
-      const matches = q ? values.some(v => v.includes(q)) : true;
-      const statusMatch = status === 'All' || !status || b.status === status;
-      const fromMatch = !dateFrom || (b.checkIn && new Date(b.checkIn) >= new Date(dateFrom));
-      const toMatch = !dateTo || (b.checkOut && new Date(b.checkOut) <= new Date(dateTo));
-      return matches && statusMatch && fromMatch && toMatch;
-    });
-  }, [query, status, dateFrom, dateTo, items]);
+  }, [page, pageSize, status, dateFrom, dateTo, userFilter?.userId, query]);
 
   const clearUserFilter = () => {
     navigate('/dashboard/bookings', { replace: true, state: {} });
@@ -372,7 +371,7 @@ const Bookings = () => {
                 type="date" 
                 className="form-control" 
                 value={dateFrom} 
-                onChange={e => setDateFrom(e.target.value)} 
+                onChange={e => { setDateFrom(e.target.value); setPage(1); }} 
               />
             </div>
             <div className="col-md-2">
@@ -381,7 +380,7 @@ const Bookings = () => {
                 type="date" 
                 className="form-control" 
                 value={dateTo} 
-                onChange={e => setDateTo(e.target.value)} 
+                onChange={e => { setDateTo(e.target.value); setPage(1); }} 
               />
             </div>
             <div className="col-md-1 d-flex align-items-end">
@@ -446,8 +445,8 @@ const Bookings = () => {
                       <div className="mt-2 text-muted">Loading bookings...</div>
                     </td>
                   </tr>
-                ) : filtered.length > 0 ? (
-                  filtered.map((b, index) => (
+                ) : items.length > 0 ? (
+                  items.map((b, index) => (
                     <tr key={b.id}>
                       <td className="px-3">
                         <span className="badge bg-light text-dark">
@@ -529,7 +528,7 @@ const Bookings = () => {
           <div className="p-3 border-top d-flex flex-wrap justify-content-between align-items-center gap-3">
             <div className="d-flex align-items-center gap-2">
               <small className="text-muted">
-                Showing <strong>{filtered.length}</strong> of <strong>{total}</strong> bookings
+                Showing {Math.min((page - 1) * pageSize + 1, total)} to {Math.min(page * pageSize, total)} of <strong>{total}</strong> bookings
               </small>
               <select 
                 className="form-select form-select-sm" 

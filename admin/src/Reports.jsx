@@ -27,6 +27,8 @@ function Reports() {
   const [error, setError] = useState('');
   const [settlementVendors, setSettlementVendors] = useState([]);
   const [settlementTotals, setSettlementTotals] = useState({ online_payable: 0 });
+  const [settlementPage, setSettlementPage] = useState(1);
+  const [settlementPageSize, setSettlementPageSize] = useState(10);
   const [selectedSettlementVendor, setSelectedSettlementVendor] = useState(null);
   const [settlementRef, setSettlementRef] = useState('');
   const [settlingSettlementVendorId, setSettlingSettlementVendorId] = useState(null);
@@ -49,6 +51,7 @@ function Reports() {
       setWeekEnd(data.week_end || '');
       setSettlementTotals(data.totals || { online_payable: 0 });
       setSettlementVendors(Array.isArray(data.vendors) ? data.vendors : []);
+      setSettlementPage(1);
     } catch (e) {
       setError('Failed to load vendor settlement report.');
       setSettlementVendors([]);
@@ -67,7 +70,7 @@ function Reports() {
     setHistoryError('');
     try {
       const resp = await api.get('/admin/reports/vendor-settlement/history', {
-        params: { page: historyPage, limit: historyPageSize }
+        params: { page: historyPage, limit: historyPageSize, q: historyQuery.trim() || undefined }
       });
       const data = resp?.data?.data || {};
       const pagination = data.pagination || {};
@@ -84,7 +87,7 @@ function Reports() {
 
   useEffect(() => {
     loadSettlementHistory();
-  }, [historyPage, historyPageSize]);
+  }, [historyPage, historyPageSize, historyQuery]);
 
   const settleVendorSettlementWeek = async (vendorId) => {
     setSettlingSettlementVendorId(vendorId);
@@ -186,7 +189,9 @@ function Reports() {
                       </td>
                     </tr>
                   ) : (
-                    settlementVendors.map((v) => (
+                    settlementVendors
+                      .slice((settlementPage - 1) * settlementPageSize, settlementPage * settlementPageSize)
+                      .map((v) => (
                       <tr key={v.vendor_id}>
                         <td>
                           <div className="fw-semibold">{v.business_name || v.vendor_name || `Vendor #${v.vendor_id}`}</div>
@@ -216,6 +221,35 @@ function Reports() {
             </div>
           )}
         </Card.Body>
+        {settlementVendors.length > settlementPageSize && (
+          <div className="p-3 border-top d-flex flex-wrap justify-content-between align-items-center gap-3">
+            <div className="d-flex align-items-center gap-2">
+              <small className="text-muted">
+                Showing {Math.min((settlementPage - 1) * settlementPageSize + 1, settlementVendors.length)} to {Math.min(settlementPage * settlementPageSize, settlementVendors.length)} of{' '}
+                <strong>{settlementVendors.length}</strong> vendors
+              </small>
+              <select
+                className="form-select form-select-sm"
+                style={{ width: 'auto' }}
+                value={settlementPageSize}
+                onChange={(e) => {
+                  setSettlementPageSize(Number(e.target.value));
+                  setSettlementPage(1);
+                }}
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+            </div>
+            <Pagination
+              current={settlementPage}
+              total={settlementVendors.length}
+              pageSize={settlementPageSize}
+              onChange={setSettlementPage}
+            />
+          </div>
+        )}
       </Card>
 
       <div className="mt-4 mb-2">
@@ -291,22 +325,7 @@ function Reports() {
                   </tr>
                 </thead>
                 <tbody>
-                  {historyItems
-                    .filter((it) => {
-                      const q = historyQuery.trim().toLowerCase();
-                      if (!q) return true;
-                      const v = it.vendor || {};
-                      const values = [
-                        v.full_name,
-                        v.business_name,
-                        v.email,
-                        String(it.vendor_id || ''),
-                      ]
-                        .filter(Boolean)
-                        .map((x) => String(x).toLowerCase());
-                      return values.some((x) => x.includes(q));
-                    })
-                    .map((it) => (
+                  {historyItems.map((it) => (
                       <tr key={`${it.vendor_id}-${it.week_start}`}>
                         <td>
                           <div className="fw-semibold">
